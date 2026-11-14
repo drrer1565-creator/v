@@ -556,6 +556,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
     isolatedWysiwygExport: (opts) => ipcRenderer.invoke('isolated-wysiwyg-export', opts),
     showReelsExportError: (payload) => ipcRenderer.invoke('show-reels-export-error', payload),
     cancelIsolatedWysiwygExport: (requestId) => ipcRenderer.send('cancel-isolated-wysiwyg-export', requestId),
+    verifyExportOutputs: (filePaths) => ipcRenderer.invoke('verify-export-outputs', filePaths),
+    readReelsExportJournal: () => ipcRenderer.invoke('read-reels-export-journal'),
+    saveReelsExportJournal: (journal) => ipcRenderer.invoke('save-reels-export-journal', journal),
+    clearReelsExportJournal: () => ipcRenderer.invoke('clear-reels-export-journal'),
+    setExportTaskbarProgress: (progress, options) => ipcRenderer.invoke('set-export-taskbar-progress', progress, options),
+    notifyExportComplete: (payload) => ipcRenderer.invoke('notify-export-complete', payload),
     getLatestCrashDiagnostic: () => ipcRenderer.invoke('get-latest-crash-diagnostic'),
     onReelsCrashDiagnostic: (callback) => {
         const handler = (_, data) => callback(data);

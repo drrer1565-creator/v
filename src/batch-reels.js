@@ -7599,7 +7599,7 @@ const REELS_EXPORT_SETTING_DEFAULTS = {
     'reels-fast-alpha-mode': true,
     'reels-loop-fade-dur': '1',
     'reels-resolution-select': '1080x1920',
-    'reels-export-concurrency': '10',
+    'reels-export-concurrency': '2',
     'reels-export-recycle-every': String(REELS_EXPORT_RECYCLE_EVERY_DEFAULT),
     'reels-copy-project-to-output': false,
 };
@@ -12602,6 +12602,379 @@ function _reelsUpdateExportProgressUI(done, total) {
     if (progressText) progressText.textContent = `${pct}% (${safeDone}/${safeTotal})`;
 }
 
+let _reelsActiveExportJournal = null;
+
+function _buildReelsJobKey(job, index) {
+    const task = job?.task || {};
+    return [
+        task.id || '', task._folderQueueId || '', task.audioPath || '',
+        task.videoPath || task.bgPath || '', task.baseName || task.fileName || '',
+        job?.presetName || '', index,
+    ].join('|');
+}
+
+function _saveReelsExportJournal(journal) {
+    if (!journal || typeof journal !== 'object') return;
+    journal.updatedAt = Date.now();
+    _reelsActiveExportJournal = journal;
+    try {
+        if (typeof localStorage?.setItem === 'function') {
+            localStorage.setItem(REELS_EXPORT_RESUME_KEY, JSON.stringify(journal));
+        }
+    } catch (_) { }
+    try {
+        if (window?.electronAPI?.saveReelsExportJournal) {
+            Promise.resolve(window.electronAPI.saveReelsExportJournal(journal)).catch(() => { });
+        }
+    } catch (_) { }
+}
+
+async function _loadReelsExportJournal() {
+    let ipcJournal = null;
+    let lsJournal = null;
+    try {
+        if (window?.electronAPI?.readReelsExportJournal) {
+            const loaded = await window.electronAPI.readReelsExportJournal();
+            if (loaded && typeof loaded === 'object' && Array.isArray(loaded.jobs)) ipcJournal = loaded;
+        }
+    } catch (_) { }
+    try {
+        if (typeof localStorage?.getItem === 'function') {
+            const raw = localStorage.getItem(REELS_EXPORT_RESUME_KEY);
+            const parsed = raw ? JSON.parse(raw) : null;
+            if (parsed && typeof parsed === 'object' && (Array.isArray(parsed.jobs) || parsed.active)) lsJournal = parsed;
+        }
+    } catch (_) { }
+    if (ipcJournal && lsJournal) {
+        return (Number(ipcJournal.updatedAt) || 0) >= (Number(lsJournal.updatedAt) || 0) ? ipcJournal : lsJournal;
+    }
+    return ipcJournal || lsJournal || null;
+}
+
+async function _clearReelsExportJournal() {
+    _reelsActiveExportJournal = null;
+    try {
+        if (typeof localStorage?.removeItem === 'function') {
+            localStorage.removeItem(REELS_EXPORT_RESUME_KEY);
+        }
+    } catch (_) { }
+    try {
+        if (window?.electronAPI?.clearReelsExportJournal) {
+            await window.electronAPI.clearReelsExportJournal();
+        }
+    } catch (_) { }
+}
+
+function _classifyReelsJournalJobs(journal, verifiedMap = null) {
+    const jobs = Array.isArray(journal?.jobs) ? journal.jobs : [];
+    const unfinishedIndices = [];
+    const failedIndices = [];
+    let verifiedSuccessCount = 0;
+    jobs.forEach((job, idx) => {
+        const jIdx = Number.isFinite(Number(job?.index)) ? Number(job.index) : idx;
+        const status = job?.status || 'pending';
+        const hasVerifiedFile = verifiedMap
+            ? Boolean((job?.finalOutputPath && verifiedMap[job.finalOutputPath]) || (job?.outputPath && verifiedMap[job.outputPath]))
+            : true;
+        if (status === 'success' && hasVerifiedFile) {
+            verifiedSuccessCount += 1;
+            return;
+        }
+        unfinishedIndices.push(jIdx);
+        if (status === 'failed' || status === 'canceled' || (status === 'success' && !hasVerifiedFile)) {
+            failedIndices.push(jIdx);
+        }
+    });
+    return {
+        total: jobs.length,
+        verifiedSuccessCount,
+        unfinishedIndices,
+        failedIndices,
+    };
+}
+
+function _matchJournalJobsToTasks(journal, tasks = []) {
+    const matchedTaskIndices = new Set();
+    const journalJobs = Array.isArray(journal?.jobs) ? journal.jobs : [];
+    const taskList = Array.isArray(tasks) ? tasks : [];
+    const usedTask = new Set();
+    const jobToTaskIndex = new Map();
+    journalJobs.forEach((entry, pos) => {
+        const jIdx = Number.isFinite(Number(entry?.index)) ? Number(entry.index) : pos;
+        let found = -1;
+        if (entry?.taskId) {
+            found = taskList.findIndex((t, ti) => !usedTask.has(ti) && t && t.id && t.id === entry.taskId);
+        }
+        if (found < 0 && entry?.fileName) {
+            found = taskList.findIndex((t, ti) => !usedTask.has(ti) && t && (t.fileName === entry.fileName || t.baseName === entry.fileName));
+        }
+        if (found < 0 && entry?.taskListRowNo && taskList[entry.taskListRowNo - 1] && !usedTask.has(entry.taskListRowNo - 1)) {
+            found = entry.taskListRowNo - 1;
+        }
+        if (found >= 0) {
+            usedTask.add(found);
+            matchedTaskIndices.add(found);
+            jobToTaskIndex.set(jIdx, found);
+        }
+    });
+    return { matchedTaskIndices, jobToTaskIndex };
+}
+
+function _hideReelsExportRecoveryBar() {
+    const bar = document.getElementById('reels-export-recovery-bar');
+    if (!bar) return;
+    bar.replaceChildren();
+    bar.style.display = 'none';
+    bar.hidden = true;
+}
+
+function _renderReelsCompletionBanner({ okCount = 0, failCount = 0, totalJobs = 0, outputDir = '' } = {}) {
+    const bar = document.getElementById('reels-export-recovery-bar');
+    if (!bar || okCount <= 0 || failCount > 0) return;
+    bar.replaceChildren();
+    bar.hidden = false;
+    bar.style.display = 'flex';
+    bar.style.borderColor = 'rgba(67,201,119,.45)';
+    bar.style.background = 'rgba(16,185,129,.12)';
+    const label = document.createElement('span');
+    label.style.cssText = 'color:#6ee7b7;font-weight:600;margin-right:auto;';
+    label.textContent = `✅ 本次导出全部完成：${okCount}/${totalJobs} 个视频`;
+    bar.appendChild(label);
+    if (outputDir) {
+        const openBtn = document.createElement('button');
+        openBtn.type = 'button';
+        openBtn.className = 'btn btn-secondary';
+        openBtn.style.cssText = 'font-size:11px;padding:3px 9px;';
+        openBtn.textContent = '📂 打开输出目录';
+        openBtn.onclick = () => window.electronAPI?.apiCall?.('file/open-folder', { path: outputDir }).catch(() => { });
+        bar.appendChild(openBtn);
+    }
+    const closeBtn = document.createElement('button');
+    closeBtn.type = 'button';
+    closeBtn.className = 'btn btn-secondary';
+    closeBtn.style.cssText = 'font-size:11px;padding:3px 8px;';
+    closeBtn.textContent = '✕';
+    closeBtn.onclick = _hideReelsExportRecoveryBar;
+    bar.appendChild(closeBtn);
+}
+
+async function _renderReelsExportRecoveryBar(journal = null) {
+    const bar = document.getElementById('reels-export-recovery-bar');
+    if (!bar) return null;
+    const targetJournal = journal || await _loadReelsExportJournal();
+    if (!targetJournal || !Array.isArray(targetJournal.jobs) || targetJournal.jobs.length === 0) {
+        return null;
+    }
+    const candidatePaths = [];
+    targetJournal.jobs.forEach(j => {
+        if (j?.finalOutputPath) candidatePaths.push(j.finalOutputPath);
+        if (j?.outputPath && j.outputPath !== j.finalOutputPath) candidatePaths.push(j.outputPath);
+    });
+    let verifiedMap = null;
+    if (candidatePaths.length > 0 && window?.electronAPI?.verifyExportOutputs) {
+        try { verifiedMap = await window.electronAPI.verifyExportOutputs(candidatePaths); } catch (_) { }
+    }
+    const summary = _classifyReelsJournalJobs(targetJournal, verifiedMap);
+    bar.replaceChildren();
+    bar.hidden = false;
+    bar.style.display = 'flex';
+    bar.style.borderColor = summary.unfinishedIndices.length > 0 ? 'rgba(56,189,248,.42)' : 'rgba(67,201,119,.45)';
+    bar.style.background = summary.unfinishedIndices.length > 0 ? 'rgba(14,116,144,.16)' : 'rgba(16,185,129,.12)';
+
+    const label = document.createElement('span');
+    label.style.cssText = 'color:var(--text-primary);margin-right:auto;';
+    if (summary.unfinishedIndices.length > 0) {
+        label.textContent = `📋 导出进度记录：已完成 ${summary.verifiedSuccessCount}/${summary.total}（已核验磁盘文件），未完成 ${summary.unfinishedIndices.length}${summary.failedIndices.length > 0 ? `（含失败/取消 ${summary.failedIndices.length}）` : ''}`;
+    } else {
+        label.textContent = `✅ 上次批量任务 ${summary.total}/${summary.total} 个视频已在磁盘核验完成`;
+    }
+    bar.appendChild(label);
+
+    if (summary.unfinishedIndices.length > 0) {
+        const resumeBtn = document.createElement('button');
+        resumeBtn.type = 'button';
+        resumeBtn.className = 'btn btn-primary';
+        resumeBtn.style.cssText = 'font-size:11px;padding:3px 10px;white-space:nowrap;';
+        resumeBtn.textContent = `▶ 继续渲染未完成 (${summary.unfinishedIndices.length})`;
+        resumeBtn.onclick = () => reelsResumeExportFromJournal('unfinished');
+        bar.appendChild(resumeBtn);
+
+        if (summary.failedIndices.length > 0 && summary.failedIndices.length < summary.unfinishedIndices.length) {
+            const failedBtn = document.createElement('button');
+            failedBtn.type = 'button';
+            failedBtn.className = 'btn btn-secondary';
+            failedBtn.style.cssText = 'font-size:11px;padding:3px 9px;white-space:nowrap;border-color:rgba(248,113,113,.5);color:#fca5a5;';
+            failedBtn.textContent = `⚠️ 仅重渲失败/取消项 (${summary.failedIndices.length})`;
+            failedBtn.onclick = () => reelsResumeExportFromJournal('failed-only');
+            bar.appendChild(failedBtn);
+        }
+
+        const selectBtn = document.createElement('button');
+        selectBtn.type = 'button';
+        selectBtn.className = 'btn btn-secondary';
+        selectBtn.style.cssText = 'font-size:11px;padding:3px 9px;white-space:nowrap;';
+        selectBtn.textContent = '☑️ 勾选未完成项';
+        selectBtn.onclick = () => reelsSelectIncompleteTasksFromJournal();
+        bar.appendChild(selectBtn);
+    }
+
+    if (targetJournal.outputDirTrimmed) {
+        const openBtn = document.createElement('button');
+        openBtn.type = 'button';
+        openBtn.className = 'btn btn-secondary';
+        openBtn.style.cssText = 'font-size:11px;padding:3px 9px;white-space:nowrap;';
+        openBtn.textContent = '📂 输出目录';
+        openBtn.onclick = () => window.electronAPI?.apiCall?.('file/open-folder', { path: targetJournal.outputDirTrimmed }).catch(() => { });
+        bar.appendChild(openBtn);
+    }
+
+    const dismissBtn = document.createElement('button');
+    dismissBtn.type = 'button';
+    dismissBtn.className = 'btn btn-secondary';
+    dismissBtn.style.cssText = 'font-size:11px;padding:3px 8px;white-space:nowrap;';
+    dismissBtn.textContent = '✕ 清除记录';
+    dismissBtn.onclick = async () => {
+        await _clearReelsExportJournal();
+        _hideReelsExportRecoveryBar();
+    };
+    bar.appendChild(dismissBtn);
+    return summary;
+}
+
+async function reelsSelectIncompleteTasksFromJournal() {
+    const journal = await _loadReelsExportJournal();
+    if (!journal || !Array.isArray(journal.jobs) || journal.jobs.length === 0) {
+        if (typeof showToast === 'function') showToast('暂无未完成导出记录', 'info');
+        return 0;
+    }
+    const candidatePaths = journal.jobs.flatMap(j => [j?.finalOutputPath, j?.outputPath].filter(Boolean));
+    const verifiedMap = (candidatePaths.length > 0 && window?.electronAPI?.verifyExportOutputs)
+        ? await window.electronAPI.verifyExportOutputs(candidatePaths).catch(() => null)
+        : null;
+    const summary = _classifyReelsJournalJobs(journal, verifiedMap);
+    const unfinishedSet = new Set(summary.unfinishedIndices);
+    const { jobToTaskIndex } = _matchJournalJobsToTasks(journal, _reelsState.tasks || []);
+    const targetTaskIndices = new Set();
+    unfinishedSet.forEach(jIdx => {
+        const ti = jobToTaskIndex.get(jIdx);
+        if (ti != null) targetTaskIndices.add(ti);
+    });
+    if (targetTaskIndices.size === 0) {
+        if (typeof showToast === 'function') showToast('未在当前任务列表中匹配到未完成任务（请先打开原工程）', 'warning', 5000);
+        return 0;
+    }
+    (_reelsState.tasks || []).forEach((task, idx) => {
+        if (task) task._exportSelected = targetTaskIndices.has(idx);
+    });
+    const modeSelect = document.getElementById('reels-download-mode');
+    if (modeSelect) modeSelect.value = 'all';
+    if (typeof _persistReelsExportSelectionChange === 'function') _persistReelsExportSelectionChange();
+    if (typeof _updateExportSelectedCountUI === 'function') _updateExportSelectedCountUI();
+    if (window.ReelsBatchTable?.render) {
+        try { window.ReelsBatchTable.render(); } catch (_) { }
+    }
+    if (typeof showToast === 'function') {
+        showToast(`已在任务列表自动勾选 ${targetTaskIndices.size} 个未完成任务`, 'success', 4500);
+    }
+    return targetTaskIndices.size;
+}
+window.reelsSelectIncompleteTasksFromJournal = reelsSelectIncompleteTasksFromJournal;
+
+async function reelsResumeExportFromJournal(mode = 'unfinished', singleJobIndex = null) {
+    if (_reelsState.isExporting) return;
+    const journal = await _loadReelsExportJournal();
+    if (!journal || !Array.isArray(journal.jobs) || journal.jobs.length === 0) {
+        if (typeof showToast === 'function') showToast('暂无可恢复的导出记录', 'warning');
+        return;
+    }
+    const candidatePaths = journal.jobs.flatMap(j => [j?.finalOutputPath, j?.outputPath].filter(Boolean));
+    const verifiedMap = (candidatePaths.length > 0 && window?.electronAPI?.verifyExportOutputs)
+        ? await window.electronAPI.verifyExportOutputs(candidatePaths).catch(() => null)
+        : null;
+    const summary = _classifyReelsJournalJobs(journal, verifiedMap);
+    if (mode !== 'single' && summary.unfinishedIndices.length === 0) {
+        await _clearReelsExportJournal();
+        _hideReelsExportRecoveryBar();
+        if (typeof showToast === 'function') showToast('磁盘核验显示全部视频均已完成，无需重复渲染', 'success', 4500);
+        return;
+    }
+    return reelsStartExport({
+        journalResume: {
+            journal,
+            mode,
+            singleJobIndex,
+            verifiedMap,
+        },
+        skipConfirm: true,
+    });
+}
+window.reelsResumeExportFromJournal = reelsResumeExportFromJournal;
+
+async function reelsRenderSingleJobFromJournal(jobIndex) {
+    return reelsResumeExportFromJournal('single', Number(jobIndex));
+}
+window.reelsRenderSingleJobFromJournal = reelsRenderSingleJobFromJournal;
+
+function _reelsPlayExportCompletionChime(hasError = false) {
+    try {
+        const AudioCtx = window.AudioContext || window.webkitAudioContext;
+        if (!AudioCtx) return;
+        const ctx = new AudioCtx();
+        const now = ctx.currentTime;
+        const notes = hasError ? [440, 349.23] : [523.25, 659.25, 783.99];
+        notes.forEach((freq, idx) => {
+            const osc = ctx.createOscillator();
+            const gain = ctx.createGain();
+            const start = now + idx * 0.11;
+            const end = start + 0.22;
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(freq, start);
+            gain.gain.setValueAtTime(0.0001, start);
+            gain.gain.exponentialRampToValueAtTime(0.09, start + 0.02);
+            gain.gain.exponentialRampToValueAtTime(0.0001, end);
+            osc.connect(gain);
+            gain.connect(ctx.destination);
+            osc.start(start);
+            osc.stop(end + 0.02);
+        });
+        setTimeout(() => { try { ctx.close(); } catch (_) { } }, 900);
+    } catch (_) { }
+}
+
+async function _reelsNotifyExportFinished({ okCount = 0, failCount = 0, totalJobs = 0, canceled = false, outputDir = '', latestPath = '' } = {}) {
+    try {
+        if (window?.electronAPI?.setExportTaskbarProgress) {
+            if (!canceled && failCount > 0) {
+                await window.electronAPI.setExportTaskbarProgress(1, { mode: 'error' }).catch(() => { });
+                setTimeout(() => { window.electronAPI?.setExportTaskbarProgress?.(-1)?.catch?.(() => { }); }, 4500);
+            } else {
+                await window.electronAPI.setExportTaskbarProgress(-1).catch(() => { });
+            }
+        }
+    } catch (_) { }
+    if (totalJobs <= 0 || (canceled && okCount === 0 && failCount === 0)) return;
+    const hasError = failCount > 0 || canceled;
+    _reelsPlayExportCompletionChime(hasError);
+    const title = failCount > 0
+        ? `VideoKit 导出完成（${okCount}/${totalJobs} 成功，${failCount} 失败）`
+        : (canceled ? `VideoKit 导出已暂停（已完成 ${okCount}/${totalJobs}）` : `VideoKit 导出完成（${okCount}/${totalJobs}）`);
+    const body = failCount > 0
+        ? `输出目录: ${outputDir}\n可在导出面板点击“继续渲染未完成”或“仅重渲失败项”`
+        : `输出目录: ${outputDir}${latestPath ? `\n最新成片: ${latestPath}` : ''}`;
+    try {
+        await window?.electronAPI?.notifyExportComplete?.({ title, body, folderPath: outputDir });
+    } catch (_) { }
+    if (typeof showToast === 'function') {
+        showToast(
+            failCount > 0
+                ? `导出结束：${okCount}/${totalJobs} 成功，${failCount} 个失败（可一键单独重渲失败项）`
+                : `🎉 视频导出全部完成：${okCount}/${totalJobs} 个成片已保存`,
+            failCount > 0 ? 'warning' : 'success',
+            9000,
+        );
+    }
+}
+
 function _reelsInitJobProgressUI(jobs) {
     const list = document.getElementById('reels-export-job-progress-list');
     if (!list) return;
@@ -12621,7 +12994,7 @@ function _reelsInitJobProgressUI(jobs) {
         row.dataset.jobIndex = String(index);
         row.dataset.jobState = 'pending';
         row.dataset.jobProgress = '0';
-        row.style.cssText = 'display:grid;grid-template-columns:minmax(130px,1fr) minmax(80px,1.15fr) 72px 78px 38px;gap:7px;align-items:center;padding:4px 3px;border-top:1px solid rgba(255,255,255,.055);font-size:10px;';
+        row.style.cssText = 'display:grid;grid-template-columns:minmax(120px,1fr) minmax(72px,1.05fr) 74px 74px 36px 56px;gap:6px;align-items:center;padding:4px 3px;border-top:1px solid rgba(255,255,255,.055);font-size:10px;';
 
         const name = document.createElement('span');
         const presetLabel = job && job.presetName ? ` [${job.presetName}]` : '';
@@ -12651,7 +13024,20 @@ function _reelsInitJobProgressUI(jobs) {
         percent.textContent = '0%';
         percent.style.cssText = 'text-align:right;font-variant-numeric:tabular-nums;color:var(--text-secondary);';
 
-        row.append(name, track, stage, speed, percent);
+        const actionWrap = document.createElement('span');
+        actionWrap.dataset.role = 'action-wrap';
+        actionWrap.style.cssText = 'text-align:right;';
+        const retryBtn = document.createElement('button');
+        retryBtn.type = 'button';
+        retryBtn.dataset.role = 'retry';
+        retryBtn.className = 'btn btn-secondary';
+        retryBtn.textContent = '🔁 重渲';
+        retryBtn.title = '单独重新渲染这一条视频';
+        retryBtn.style.cssText = 'display:none;font-size:10px;padding:1px 6px;white-space:nowrap;';
+        retryBtn.onclick = () => reelsRenderSingleJobFromJournal(index);
+        actionWrap.appendChild(retryBtn);
+
+        row.append(name, track, stage, speed, percent, actionWrap);
         list.appendChild(row);
 
         let capabilityTask = job && job.task;
@@ -12720,6 +13106,10 @@ function _reelsUpdateJobProgressUI(jobIndex, pct, stage, state = 'running') {
         stageEl.style.color = colors[state] || 'var(--text-secondary)';
     }
     if (percentEl) percentEl.textContent = `${normalized}%`;
+    const retryBtn = row.querySelector('[data-role="retry"]');
+    if (retryBtn) {
+        retryBtn.style.display = (state === 'failed' || state === 'canceled') ? 'inline-block' : 'none';
+    }
 }
 
 function _reelsCancelUnfinishedJobProgressUI() {
@@ -12890,7 +13280,16 @@ function _prefixReelsExportRowName(name, rowNumber) {
 }
 
 function reelsCancelExport() {
-    try { localStorage.removeItem(REELS_EXPORT_RESUME_KEY); } catch (_) { }
+    if (_reelsActiveExportJournal && Array.isArray(_reelsActiveExportJournal.jobs)) {
+        _reelsActiveExportJournal.active = false;
+        _reelsActiveExportJournal.reloadPending = false;
+        _reelsActiveExportJournal.canceled = true;
+        _reelsActiveExportJournal.jobs.forEach(j => {
+            if (j && (j.status === 'pending' || j.status === 'running')) j.status = 'canceled';
+        });
+        _saveReelsExportJournal(_reelsActiveExportJournal);
+    }
+    try { window?.electronAPI?.setExportTaskbarProgress?.(-1)?.catch?.(() => { }); } catch (_) { }
     if (_reelsState.isExporting) {
         _reelsFinishExportTiming();
         _reelsState.isExporting = false;
@@ -13354,9 +13753,11 @@ function _updateMultiPresetSummary() {
 }
 
 function _resolveSafeReelsExportConcurrency(requested, totalJobs, options = {}) {
-    const wanted = Math.max(1, Math.min(10, parseInt(requested, 10) || 1));
-    // Reserve CPU and memory for editing while the shared export job is capped.
-    return wanted;
+    const parsed = parseInt(requested, 10);
+    const wanted = Math.max(1, Math.min(10, Number.isFinite(parsed) && parsed > 0 ? parsed : 2));
+    const cap = Number(totalJobs) > 0 ? Math.max(1, Number(totalJobs)) : wanted;
+    // Cap worker count to totalJobs so tiny queues never allocate idle workers.
+    return Math.min(wanted, cap);
 }
 
 function _sanitizeReelsExportRecycleEvery(value) {
@@ -14055,6 +14456,75 @@ function _selectReelsDownloadTasks(tasks, settings) {
     return tasks.filter((task, index) => selected.has(index));
 }
 
+function _buildReelsJobOutputInfo(job, baseName, outputDirTrimmed, outputJoinSep, suffix) {
+    let jobBaseName = baseName;
+    if (job?.presetName) {
+        const safePresetName = String(job.presetName).replace(/[<>:"/\\|?*]+/g, '_').replace(/[. ]+$/g, '').trim() || '模板';
+        jobBaseName = `${baseName}_${safePresetName}`;
+    }
+    const outputPath = `${outputDirTrimmed}${outputJoinSep}${jobBaseName}${suffix}.mp4`;
+    return { jobBaseName, outputPath };
+}
+
+async function _runReelsWysiwygWithFallback({ wysiwygParams, tw, th, task, i, totalJobs, presetLabel, statusEl, concurrency, estimatedDuration, expectedDuration }) {
+    const maxIsolatedAttempts = 3;
+    const retryableExitRe = /后台渲染进程异常退出|renderer.*exited|terminated|crashed|destroyed|GPU/i;
+    if (window.electronAPI?.isolatedWysiwygExport) {
+        const isolatedParams = _cloneProjectDataForSave(wysiwygParams);
+        delete isolatedParams.canvas;
+        const runIsolatedOnce = async (attempt) => {
+            const requestId = `reels-job-${Date.now()}-${i}-${attempt}-${Math.random().toString(36).slice(2, 8)}`;
+            const unsubscribe = window.electronAPI.onIsolatedWysiwygProgress(
+                requestId,
+                data => wysiwygParams.onProgress?.(Number(data.pct) || 0),
+            );
+            const cancelTimer = setInterval(() => {
+                if (wysiwygParams.isCancelled?.()) window.electronAPI.cancelIsolatedWysiwygExport(requestId);
+            }, 250);
+            try {
+                // Canvas 与回调不能跨进程；其余任务数据先移除 DOM/运行时缓存再发送。
+                return await window.electronAPI.isolatedWysiwygExport({ requestId, params: isolatedParams });
+            } finally {
+                clearInterval(cancelTimer);
+                unsubscribe();
+            }
+        };
+        let lastErr = null;
+        for (let attempt = 1; attempt <= maxIsolatedAttempts; attempt++) {
+            try {
+                return await runIsolatedOnce(attempt);
+            } catch (error) {
+                lastErr = error;
+                const msg = String(error?.message || error || '');
+                if (wysiwygParams.isCancelled?.() || !retryableExitRe.test(msg)) {
+                    throw error;
+                }
+                if (attempt < maxIsolatedAttempts) {
+                    console.warn(`[Reels] 后台渲染器异常退出，自动重试(${attempt}/${maxIsolatedAttempts - 1}): ${task.fileName}`);
+                    if (statusEl) statusEl.textContent = `后台渲染器已恢复，正在重试(${attempt}) ${i + 1}/${totalJobs}: ${task.fileName}${presetLabel}`;
+                    await new Promise(resolve => setTimeout(resolve, 650 * attempt));
+                }
+            }
+        }
+        const durationSec = Math.max(Number(estimatedDuration) || 0, Number(expectedDuration) || 0);
+        const allowMainFallback = concurrency <= 1 && durationSec <= 95;
+        if (!allowMainFallback) {
+            const rawMsg = String(lastErr?.message || lastErr || '后台渲染进程异常退出');
+            throw new Error(`${rawMsg}（已重试 ${maxIsolatedAttempts} 次；为保护主界面不崩溃，长视频/高并发任务已停用主窗口回退，请点击“继续渲染未完成”重渲该项）`);
+        }
+        console.warn(`[Reels] 独立渲染窗口不可用，低并发短片回退当前窗口直接渲染: ${task.fileName}`);
+    }
+    const offCanvas = document.createElement('canvas');
+    offCanvas.width = tw;
+    offCanvas.height = th;
+    try {
+        return await window.reelsWysiwygExport({ ...wysiwygParams, canvas: offCanvas });
+    } finally {
+        try { offCanvas.width = 0; offCanvas.height = 0; } catch (_) {}
+        try { window.ReelsOverlay?.clearRuntimeCaches?.(); } catch (_) {}
+    }
+}
+
 async function _reelsShowExportError(detail) {
     const message = String(detail || '未知导出错误');
     _reelsUpdateLastErrorUI(message);
@@ -14079,7 +14549,29 @@ async function reelsStartExport(options = {}) {
         const status = document.getElementById('reels-export-status');
         if (status) status.textContent = '❌ 导出失败：' + message;
         _reelsFinishExportTiming();
-        try { localStorage.removeItem(REELS_EXPORT_RESUME_KEY); } catch (_) { }
+        if (typeof _reelsActiveExportJournal === 'object' && _reelsActiveExportJournal) {
+            _reelsActiveExportJournal.active = false;
+            _reelsActiveExportJournal.reloadPending = false;
+            _reelsActiveExportJournal.lastError = message;
+            if (typeof _saveReelsExportJournal === 'function') _saveReelsExportJournal(_reelsActiveExportJournal);
+        } else if (typeof localStorage?.getItem === 'function') {
+            try {
+                const raw = localStorage.getItem(REELS_EXPORT_RESUME_KEY);
+                const parsed = raw ? JSON.parse(raw) : null;
+                if (parsed && typeof parsed === 'object') {
+                    parsed.active = false;
+                    parsed.reloadPending = false;
+                    parsed.lastError = message;
+                    localStorage.setItem(REELS_EXPORT_RESUME_KEY, JSON.stringify(parsed));
+                }
+            } catch (_) { }
+        } else {
+            try { localStorage.removeItem(REELS_EXPORT_RESUME_KEY); } catch (_) { }
+        }
+        try { window?.electronAPI?.setExportTaskbarProgress?.(-1)?.catch?.(() => { }); } catch (_) { }
+        if (typeof _renderReelsExportRecoveryBar === 'function') {
+            Promise.resolve(_renderReelsExportRecoveryBar()).catch(() => { });
+        }
         await _reelsShowExportError(message);
         return { error: message };
     } finally {
@@ -14102,16 +14594,35 @@ async function _reelsStartExportImpl(options = {}) {
     const rowOfTask = task => taskListRows.get(task) || taskListIdRows.get(task?.id) || null;
     const taskRowLabel = task => rowOfTask(task) ? `任务列表第 ${rowOfTask(task)} 项` : '任务列表任务';
     const resumeState = options && options.resumeState ? options.resumeState : null;
-    const exportRange = resumeState?.exportRange || {
+    const journalResume = options && options.journalResume ? options.journalResume : null;
+    const skipPrompts = Boolean(resumeState || journalResume || options?.skipConfirm);
+    const exportRange = resumeState?.exportRange || journalResume?.journal?.exportRange || {
         mode: document.getElementById('reels-download-mode')?.value || 'all',
         text: document.getElementById('reels-download-range')?.value || '',
     };
     let selectedForExport;
-    try { selectedForExport = _selectReelsDownloadTasks(_reelsState.tasks, exportRange); }
-    catch (error) { alert(error.message); return; }
+    try {
+        const sigs = journalResume?.journal?.selectedTaskSignatures;
+        if (journalResume && exportRange?.mode !== 'custom' && Array.isArray(sigs) && sigs.length > 0 && Array.isArray(_reelsState.tasks)) {
+            const usedIdx = new Set();
+            const restored = [];
+            for (const sig of sigs) {
+                let found = -1;
+                if (sig?.id) found = _reelsState.tasks.findIndex((t, idx) => !usedIdx.has(idx) && t && t.id === sig.id);
+                if (found < 0 && sig?.fileName) found = _reelsState.tasks.findIndex((t, idx) => !usedIdx.has(idx) && t && (t.fileName === sig.fileName || t.baseName === sig.fileName));
+                if (found >= 0) {
+                    usedIdx.add(found);
+                    restored.push(_reelsState.tasks[found]);
+                }
+            }
+            selectedForExport = restored.length > 0 ? restored : _selectReelsDownloadTasks(_reelsState.tasks, exportRange);
+        } else {
+            selectedForExport = _selectReelsDownloadTasks(_reelsState.tasks, exportRange);
+        }
+    } catch (error) { alert(error.message); return; }
     const workMode = _getWorkMode();
     
-    if (!resumeState && !localStorage.getItem('reelsQualityReminderShown')) {
+    if (!skipPrompts && !localStorage.getItem('reelsQualityReminderShown')) {
         const proceed = confirm("【画质选择提醒】\\n\\n画质档位会显示目标码率和最大码率：\\n\\n• 口播低质量（默认 2/3 Mbps）：固定机位、人物和背景运动少\\n• 口播高质量（8/11 Mbps）：绿幕、细节多或人物动作较多\\n• Reels高质量（12 Mbps）：动态背景、转场和运动镜头\\n• 自定义码率：按需要手动设置\\n\\n建议先导出一个片段确认画质。您要继续当前导出吗？（本提示仅显示一次）");
         if (!proceed) return;
         localStorage.setItem('reelsQualityReminderShown', 'true');
@@ -14119,7 +14630,7 @@ async function _reelsStartExportImpl(options = {}) {
 
     // 明确告知导出会沿用哪些非默认设置，避免用户忘记上次保存过的参数。
     const customSettings = _getReelsExportCustomSettingsSummary();
-    if (!resumeState && customSettings.length > 0) {
+    if (!skipPrompts && customSettings.length > 0) {
         const preview = customSettings.slice(0, 12).join('、');
         const remaining = customSettings.length > 12 ? ` 等 ${customSettings.length} 项` : '';
         const proceed = confirm(`本次导出将使用已修改并保存的设置：\n\n${preview}${remaining}\n\n确认继续导出？`);
@@ -14289,9 +14800,9 @@ async function _reelsStartExportImpl(options = {}) {
     const quality = document.getElementById('reels-quality').value;
     let exportEngine = (document.getElementById('reels-export-engine') || {}).value || 'precise';
     if (exportEngine === 'experimental') exportEngine = 'hardware';
-    const suffix = document.getElementById('reels-suffix').value || '_subtitled';
+    const suffix = journalResume?.journal?.suffix ?? (document.getElementById('reels-suffix').value || '_subtitled');
     const copyProjectToOutput = !!document.getElementById('reels-copy-project-to-output')?.checked;
-    const namingMode = (document.getElementById('reels-export-naming-mode-outer') || {}).value || (document.getElementById('reels-naming-mode') || {}).value || localStorage.getItem('reels_naming_mode') || 'text';
+    const namingMode = journalResume?.journal?.namingMode ?? ((document.getElementById('reels-export-naming-mode-outer') || {}).value || (document.getElementById('reels-naming-mode') || {}).value || localStorage.getItem('reels_naming_mode') || 'text');
     // 导出前只同步当前界面选中任务在 UI 中的微调，切勿跨任务强行覆盖其他任务的独立样式与模板
     const currentTaskForSync = _getSelectedTask();
     if (currentTaskForSync) {
@@ -14366,14 +14877,15 @@ async function _reelsStartExportImpl(options = {}) {
     const dateStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
     const timeStr = `${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}`;
     const subFolderName = `${dateStr}_${timeStr}_批量Reels`;
-    const outputDirTrimmed = resumeState?.outputDirTrimmed
-        ? String(resumeState.outputDirTrimmed)
+    const persistedDir = resumeState?.outputDirTrimmed || journalResume?.journal?.outputDirTrimmed;
+    const outputDirTrimmed = persistedDir
+        ? String(persistedDir)
         : `${outputDirBase}${outputJoinSep}${subFolderName}`;
 
     const concurrencyInput = document.getElementById('reels-export-concurrency');
-    const requestedConcurrency = resumeState?.requestedConcurrency
-        ? Math.max(1, parseInt(resumeState.requestedConcurrency) || 1)
-        : (concurrencyInput ? Math.max(1, parseInt(concurrencyInput.value) || 1) : 1);
+    const requestedConcurrency = (resumeState?.requestedConcurrency || journalResume?.journal?.requestedConcurrency)
+        ? Math.max(1, parseInt(resumeState?.requestedConcurrency || journalResume?.journal?.requestedConcurrency) || 2)
+        : (concurrencyInput ? Math.max(1, parseInt(concurrencyInput.value) || 2) : 2);
 
     // ═══ 导出前并行预提取所有任务的音视频时长，确保循环计算与时长判断精确 ═══
     await Promise.all(tasks.map(t => _preFetchTaskMediaDurations(t)));
@@ -14390,7 +14902,7 @@ async function _reelsStartExportImpl(options = {}) {
     }
 
     // ═══ 多模板矩阵展开 ═══
-    const multiPresetCfg = resumeState?.multiPresetCfg || _getMultiPresetConfig();
+    const multiPresetCfg = resumeState?.multiPresetCfg || journalResume?.journal?.multiPresetCfg || _getMultiPresetConfig();
     if (multiPresetCfg) multiPresetCfg.naming = 'flat';
     const exportJobs = [];
     if (multiPresetCfg) {
@@ -14422,19 +14934,12 @@ async function _reelsStartExportImpl(options = {}) {
         }
     }
     const totalJobs = exportJobs.length;
-    const exportJobKeys = exportJobs.map((job, index) => {
-        const task = job.task || {};
-        return [
-            task.id || '', task._folderQueueId || '', task.audioPath || '',
-            task.videoPath || task.bgPath || '', task.baseName || task.fileName || '',
-            job.presetName || '', index,
-        ].join('|');
-    });
+    const exportJobKeys = exportJobs.map((job, index) => _buildReelsJobKey(job, index));
     if (resumeState) {
         const sameJobs = resumeState.totalJobs === totalJobs
             && JSON.stringify(resumeState.jobKeys || []) === JSON.stringify(exportJobKeys);
         if (!sameJobs) {
-            try { localStorage.removeItem(REELS_EXPORT_RESUME_KEY); } catch (_) { }
+            await _clearReelsExportJournal();
             _reelsState.isExporting = false;
             if (exportBtn) { exportBtn.disabled = false; exportBtn.innerHTML = '🚀 开始导出'; }
             alert('导出队列在释放内存期间发生了变化，已停止自动续传。请重新点击导出。');
@@ -14448,99 +14953,215 @@ async function _reelsStartExportImpl(options = {}) {
         height: _reelsState.targetHeight || 1920,
     });
     const recycleEvery = _sanitizeReelsExportRecycleEvery(
-        resumeState?.recycleEvery ?? _getReelsExportRecycleEvery()
+        resumeState?.recycleEvery ?? journalResume?.journal?.recycleEvery ?? _getReelsExportRecycleEvery()
     );
-    if (!resumeState && !doFcpxml && totalJobs > recycleEvery && typeof showToast === 'function') {
+    if (!skipPrompts && !doFcpxml && totalJobs > recycleEvery && typeof showToast === 'function') {
         showToast(`长队列分段模式：段内并发 ${concurrency}，每 ${recycleEvery} 条刷新并自动续传`, 'info', 7000);
     }
     const autoShutdownCheckbox = document.getElementById('reels-export-auto-shutdown');
     if (resumeState?.autoShutdown && autoShutdownCheckbox) {
         autoShutdownCheckbox.checked = true;
     }
-    const resumeManifest = {
-        version: 1,
-        active: true,
-        reloadPending: false,
-        startedAt: _reelsState.exportTiming.startedAt,
-        outputDirTrimmed,
-        requestedConcurrency,
-        recycleEvery,
-        multiPresetCfg,
-        exportRange,
-        totalJobs,
-        jobKeys: exportJobKeys,
-        nextIndex: Math.max(0, Math.min(totalJobs, Number(resumeState?.nextIndex) || 0)),
-        okCount: Math.max(0, Number(resumeState?.okCount) || 0),
-        failCount: Math.max(0, Number(resumeState?.failCount) || 0),
-        failDetails: Array.isArray(resumeState?.failDetails) ? resumeState.failDetails.slice(-30) : [],
-        autoShutdown: Boolean(autoShutdownCheckbox?.checked),
-    };
-    try { localStorage.setItem(REELS_EXPORT_RESUME_KEY, JSON.stringify(resumeManifest)); } catch (_) { }
-    // 并发任务各自上报进度。汇总时必须按每个任务的最新进度相加，
-    // 不能用“任务序号 + 当前百分比”，否则回调交错会让总进度条来回跳。
-    const jobProgress = new Array(totalJobs).fill(0);
-    let lastOverallProgress = 0;
-    const updateConcurrentOverallProgress = (jobIndex, pct) => {
-        const normalized = Math.max(0, Math.min(100, Number(pct) || 0));
-        jobProgress[jobIndex] = Math.max(jobProgress[jobIndex] || 0, normalized);
-        const overall = Math.round(jobProgress.reduce((sum, value) => sum + value, 0) / Math.max(1, totalJobs));
-        lastOverallProgress = Math.max(lastOverallProgress, overall);
-        const progressInner = document.getElementById('reels-export-progress-inner');
-        const progressText = document.getElementById('reels-export-progress-text');
-        if (progressInner) progressInner.style.width = `${lastOverallProgress}%`;
-        if (progressText) progressText.textContent = `${lastOverallProgress}% (${okCount + failCount}/${totalJobs})`;
-    };
 
     // ── 矩阵模式确认 ──
-    // 分段重启后是同一批导出的自动续传，不能每 6 条重复询问。
-    if (!resumeState && multiPresetCfg && totalJobs > tasks.length) {
+    // 分段重启与崩溃恢复续传不重复弹确认窗。
+    if (!skipPrompts && multiPresetCfg && totalJobs > tasks.length) {
         const ok = confirm(`🎭 多模板矩阵导出\n\n${tasks.length} 个任务 × ${multiPresetCfg.presets.length} 个覆层预设 = ${totalJobs} 个视频\n\n已选模板: ${multiPresetCfg.presets.join(', ')}\n命名方式: ${multiPresetCfg.naming === 'folder' ? '按模板分目录' : '平铺命名'}\n\n确认开始导出？`);
         if (!ok) {
-            try { localStorage.removeItem(REELS_EXPORT_RESUME_KEY); } catch (_) { }
             if (exportBtn) { exportBtn.disabled = false; exportBtn.innerHTML = '🚀 开始导出'; }
             _reelsState.isExporting = false;
             return;
         }
     }
 
-    _reelsInitJobProgressUI(exportJobs);
-    for (let completedIndex = 0; completedIndex < resumeManifest.nextIndex; completedIndex++) {
-        jobProgress[completedIndex] = 100;
-        _reelsUpdateJobProgressUI(completedIndex, 100, '已完成（续传）', 'success');
-    }
-    lastOverallProgress = Math.round((resumeManifest.nextIndex / Math.max(1, totalJobs)) * 100);
-    _reelsUpdateExportProgressUI(resumeManifest.nextIndex, totalJobs);
-
     // ═══ 文件名去重：行号 + 冲突检测 ═══
-    if (namingMode === 'ai-cn-date') {
-        const statusEl = document.getElementById('reels-export-status');
-        if (statusEl) statusEl.textContent = '🤖 正在生成日期-AI首句中文命名(含上下篇识别)...';
-        await _ensureReelsAiChineseExportNames(exportJobs.map(j => j.task));
-        if (window.ReelsBatchTable && typeof window.ReelsBatchTable.render === 'function') {
-            try { window.ReelsBatchTable.render(); } catch (_) { }
+    const storedResolvedNames = journalResume?.journal?.resolvedBaseNames;
+    let _exportResolvedNames;
+    if (Array.isArray(storedResolvedNames) && storedResolvedNames.length === totalJobs) {
+        _exportResolvedNames = storedResolvedNames.slice();
+    } else {
+        if (namingMode === 'ai-cn-date') {
+            const statusEl = document.getElementById('reels-export-status');
+            if (statusEl) statusEl.textContent = '🤖 正在生成日期-AI首句中文命名(含上下篇识别)...';
+            await _ensureReelsAiChineseExportNames(exportJobs.map(j => j.task));
+            if (window.ReelsBatchTable && typeof window.ReelsBatchTable.render === 'function') {
+                try { window.ReelsBatchTable.render(); } catch (_) { }
+            }
         }
+        _exportResolvedNames = _resolveReelsJobBaseNames(exportJobs, namingMode);
     }
-    const _exportResolvedNames = _resolveReelsJobBaseNames(exportJobs, namingMode);
+
+    const startIdx = resumeState ? Math.max(0, Math.min(totalJobs, Number(resumeState.nextIndex) || 0)) : 0;
+    const priorJobsList = Array.isArray(journalResume?.journal?.jobs)
+        ? journalResume.journal.jobs
+        : (Array.isArray(resumeState?.jobs) ? resumeState.jobs : []);
+    const priorByKey = new Map();
+    const priorByOrigIndex = new Map();
+    priorJobsList.forEach((pj, pPos) => {
+        if (!pj) return;
+        const origIdx = Number.isFinite(Number(pj.index)) ? Number(pj.index) : pPos;
+        priorByOrigIndex.set(origIdx, pj);
+        if (pj.jobKey) priorByKey.set(pj.jobKey, pj);
+    });
+
+    const initialJobs = exportJobs.map((job, idx) => {
+        const baseName = _exportResolvedNames[idx] || _resolveReelsExportBaseName(job.task, namingMode);
+        const { jobBaseName, outputPath } = _buildReelsJobOutputInfo(job, baseName, outputDirTrimmed, outputJoinSep, suffix);
+        const directPrior = priorByOrigIndex.get(idx);
+        const matchedPrior = (directPrior && (directPrior.jobKey === exportJobKeys[idx] || (job.task?.id && directPrior.taskId === job.task.id && (job.presetName || '') === (directPrior.presetName || ''))))
+            ? directPrior
+            : priorByKey.get(exportJobKeys[idx]);
+        const priorStatus = matchedPrior?.status || (resumeState && idx < startIdx ? 'success' : 'pending');
+        return {
+            index: idx,
+            priorIndex: matchedPrior ? (Number.isFinite(Number(matchedPrior.index)) ? Number(matchedPrior.index) : idx) : idx,
+            jobKey: exportJobKeys[idx],
+            taskId: job.task?.id || '',
+            taskListRowNo: job.taskListRowNo || null,
+            fileName: job.task?.fileName || job.task?.baseName || `任务 ${idx + 1}`,
+            presetName: job.presetName || '',
+            jobBaseName,
+            outputPath,
+            finalOutputPath: matchedPrior?.finalOutputPath || outputPath,
+            status: priorStatus,
+            error: matchedPrior?.error || '',
+            updatedAt: matchedPrior?.updatedAt || Date.now(),
+        };
+    });
+
+    const segmentedExport = !doFcpxml && recycleEvery > 0 && totalJobs > recycleEvery;
+    let activeQueue = [];
+    if (journalResume) {
+        const rMode = journalResume.mode || 'unfinished';
+        const verifiedMap = journalResume.verifiedMap || null;
+        const isJobVerifiedDone = (j) => j.status === 'success' && (!verifiedMap || Boolean((j.finalOutputPath && verifiedMap[j.finalOutputPath]) || (j.outputPath && verifiedMap[j.outputPath])));
+        let candidateIndices = [];
+        if (rMode === 'single') {
+            const targetIdx = Number(journalResume.singleJobIndex);
+            const matchedCi = initialJobs.findIndex(j => j.priorIndex === targetIdx);
+            if (matchedCi >= 0) {
+                candidateIndices = [matchedCi];
+            } else if (targetIdx >= 0 && targetIdx < totalJobs) {
+                candidateIndices = [targetIdx];
+            }
+        } else if (rMode === 'failed-only') {
+            candidateIndices = initialJobs
+                .map((j, ci) => ((j.status === 'failed' || j.status === 'canceled' || (j.status === 'success' && !isJobVerifiedDone(j))) ? ci : -1))
+                .filter(ci => ci >= 0);
+            if (candidateIndices.length === 0) {
+                candidateIndices = initialJobs.map((j, ci) => (!isJobVerifiedDone(j) ? ci : -1)).filter(ci => ci >= 0);
+            }
+        } else {
+            candidateIndices = initialJobs.map((j, ci) => (!isJobVerifiedDone(j) ? ci : -1)).filter(ci => ci >= 0);
+        }
+        activeQueue = (segmentedExport && candidateIndices.length > recycleEvery && rMode === 'unfinished')
+            ? candidateIndices.slice(0, recycleEvery)
+            : candidateIndices;
+        activeQueue.forEach(ci => {
+            initialJobs[ci].status = 'pending';
+            initialJobs[ci].error = '';
+        });
+    } else {
+        const segmentEnd = segmentedExport
+            ? Math.min(totalJobs, startIdx + recycleEvery)
+            : totalJobs;
+        for (let k = startIdx; k < segmentEnd; k++) activeQueue.push(k);
+    }
+
+    const activeSet = new Set(activeQueue);
+    const activeTotal = activeQueue.length;
+    const resumeManifest = {
+        version: 2,
+        active: true,
+        finished: false,
+        canceled: false,
+        reloadPending: false,
+        reloadMode: '',
+        startedAt: _reelsState.exportTiming.startedAt,
+        outputDirTrimmed,
+        requestedConcurrency,
+        recycleEvery,
+        multiPresetCfg,
+        exportRange,
+        namingMode,
+        suffix,
+        selectedTaskSignatures: selectedForExport.map(t => ({
+            id: t?.id || '',
+            fileName: t?.fileName || t?.baseName || '',
+            audioPath: t?.audioPath || '',
+        })),
+        resolvedBaseNames: _exportResolvedNames.slice(),
+        totalJobs,
+        jobKeys: exportJobKeys,
+        jobs: initialJobs,
+        nextIndex: startIdx,
+        okCount: resumeState ? Math.max(0, Number(resumeState.okCount) || 0) : 0,
+        failCount: resumeState ? Math.max(0, Number(resumeState.failCount) || 0) : 0,
+        failDetails: resumeState && Array.isArray(resumeState.failDetails) ? resumeState.failDetails.slice(-30) : [],
+        autoShutdown: Boolean(autoShutdownCheckbox?.checked),
+    };
+    _saveReelsExportJournal(resumeManifest);
+
+    // 并发任务各自上报进度。汇总时必须按本次活动队列中每个任务的最新进度相加。
+    const jobProgress = new Array(totalJobs).fill(0);
+    let lastOverallProgress = 0;
+    let lastTaskbarSentAt = 0;
+    const updateConcurrentOverallProgress = (jobIndex, pct) => {
+        const normalized = Math.max(0, Math.min(100, Number(pct) || 0));
+        jobProgress[jobIndex] = Math.max(jobProgress[jobIndex] || 0, normalized);
+        const trackedIndices = resumeState
+            ? Array.from({ length: totalJobs }, (_, idx) => idx)
+            : (activeTotal > 0 ? activeQueue : [jobIndex]);
+        const denom = Math.max(1, trackedIndices.length);
+        const sumPct = trackedIndices.reduce((sum, idx) => sum + (jobProgress[idx] || 0), 0);
+        const overall = Math.round(sumPct / denom);
+        lastOverallProgress = Math.max(lastOverallProgress, overall);
+        const progressInner = document.getElementById('reels-export-progress-inner');
+        const progressText = document.getElementById('reels-export-progress-text');
+        const doneDisplay = resumeState ? (okCount + failCount) : activeQueue.filter(idx => ['success', 'failed', 'canceled'].includes(resumeManifest.jobs[idx]?.status)).length;
+        const totalDisplay = resumeState ? totalJobs : activeTotal;
+        if (progressInner) progressInner.style.width = `${lastOverallProgress}%`;
+        if (progressText) progressText.textContent = `${lastOverallProgress}% (${Math.min(totalDisplay, doneDisplay)}/${totalDisplay})`;
+        const nowMs = Date.now();
+        if (nowMs - lastTaskbarSentAt >= 300 || lastOverallProgress >= 100) {
+            lastTaskbarSentAt = nowMs;
+            window?.electronAPI?.setExportTaskbarProgress?.(Math.max(0, Math.min(1, lastOverallProgress / 100)))?.catch?.(() => { });
+        }
+    };
+
+    _reelsInitJobProgressUI(exportJobs);
+    _hideReelsExportRecoveryBar();
+    initialJobs.forEach((j, idx) => {
+        if (activeSet.has(idx)) return;
+        if (j.status === 'success') {
+            jobProgress[idx] = 100;
+            _reelsUpdateJobProgressUI(idx, 100, resumeState ? '已完成（续传）' : '已完成（已核验）', 'success');
+        } else if (j.status === 'failed' || j.status === 'canceled') {
+            _reelsUpdateJobProgressUI(idx, 0, j.status === 'failed' ? '失败' : '已取消', j.status);
+        } else {
+            _reelsUpdateJobProgressUI(idx, 0, '本次跳过', 'pending');
+        }
+    });
+    if (resumeState) {
+        lastOverallProgress = Math.round((startIdx / Math.max(1, totalJobs)) * 100);
+        _reelsUpdateExportProgressUI(startIdx, totalJobs);
+    } else {
+        _reelsUpdateExportProgressUI(0, Math.max(1, activeTotal));
+    }
 
     failCount = resumeManifest.failCount;
     okCount = resumeManifest.okCount;
     failDetails.splice(0, failDetails.length, ...resumeManifest.failDetails);
-    let currentIndex = resumeManifest.nextIndex;
-    let contiguousCompletedIndex = resumeManifest.nextIndex;
+    let queueCursor = 0;
+    let contiguousCompletedIndex = startIdx;
     const completedOutOfOrder = new Set();
-    const segmentedExport = !doFcpxml && recycleEvery > 0 && totalJobs > recycleEvery;
-    // 按用户设定的条数正常刷新一次，释放累计的 Canvas/解码资源后自动续传。
-    // 刷新前会同步任务、设置和断点；绝不能杀掉 renderer。
-    let segmentEnd = segmentedExport
-        ? Math.min(totalJobs, resumeManifest.nextIndex + recycleEvery)
-        : totalJobs;
     const processNext = async () => {
-        while (currentIndex < segmentEnd) {
+        while (queueCursor < activeQueue.length) {
             if (!_reelsState.isExporting) {
                 canceled = true;
                 break;
             }
-            const i = currentIndex++;
+            const i = activeQueue[queueCursor++];
             const job = exportJobs[i];
             // 每个导出 job 都必须拥有独立的任务快照。多模板矩阵会为同一
             // 原任务同时创建多个 job；若直接临时改写 task.overlays，并发导出
@@ -14587,12 +15208,13 @@ async function _reelsStartExportImpl(options = {}) {
 
             // One batch folder for every tab, queue and preset. Keep presets in filenames.
             const jobOutputDir = outputDirTrimmed;
-            let jobBaseName = baseName;
-            if (job.presetName) {
-                const safePresetName = String(job.presetName).replace(/[<>:"/\\|?*]+/g, '_').replace(/[. ]+$/g, '').trim() || '模板';
-                jobBaseName = `${baseName}_${safePresetName}`;
+            const { jobBaseName, outputPath } = _buildReelsJobOutputInfo(job, baseName, jobOutputDir, outputJoinSep, suffix);
+            if (resumeManifest.jobs[i]) {
+                resumeManifest.jobs[i].status = 'running';
+                resumeManifest.jobs[i].outputPath = outputPath;
+                resumeManifest.jobs[i].updatedAt = Date.now();
+                _saveReelsExportJournal(resumeManifest);
             }
-            const outputPath = `${jobOutputDir}${outputJoinSep}${jobBaseName}${suffix}.mp4`;
             if (window.electronAPI && window.electronAPI.ensureDirectory) {
                 const dirResult = await window.electronAPI.ensureDirectory(jobOutputDir);
                 if (dirResult && dirResult.ok === false) {
@@ -14994,12 +15616,8 @@ async function _reelsStartExportImpl(options = {}) {
             // ═══ MP4 视频导出（WYSIWYG）═══
             if (doMp4 && (typeof window.reelsWysiwygExport === 'function')
                 && window.electronAPI && window.electronAPI.reelsComposeWysiwyg) {
-                // 创建离屏 canvas
                 const tw = Math.min(_reelsState.targetWidth || 1080, _reelsState.targetHeight || 1920);
                 const th = Math.max(_reelsState.targetWidth || 1080, _reelsState.targetHeight || 1920);
-                const offCanvas = document.createElement('canvas');
-                offCanvas.width = tw;
-                offCanvas.height = th;
 
                 // ═══ V3 并行影子窗口检测 ═══
                 const cpuCores = navigator.hardwareConcurrency || 4;
@@ -15174,7 +15792,7 @@ async function _reelsStartExportImpl(options = {}) {
                     updateConcurrentOverallProgress(i, pct);
                 };
                 const wysiwygParams = {
-                    canvas: offCanvas,
+                    canvas: null,
                     style: taskStyle,
                     segments: task.segments || [],
                     originalScript: task.ttsText || task.aiScript || task.txtContent || "",
@@ -15256,47 +15874,26 @@ async function _reelsStartExportImpl(options = {}) {
                         _reelsAppendExportLogUI(`${task.fileName}：${msg}`);
                     },
                 };
-                let wysiwygResult;
-                if (window.electronAPI?.isolatedWysiwygExport) {
-                    const isolatedParams = _cloneProjectDataForSave(wysiwygParams);
-                    delete isolatedParams.canvas;
-                    const runIsolatedOnce = async (attempt) => {
-                        const requestId = `reels-job-${Date.now()}-${i}-${attempt}-${Math.random().toString(36).slice(2, 8)}`;
-                        const unsubscribe = window.electronAPI.onIsolatedWysiwygProgress(
-                            requestId,
-                            data => reportWysiwygProgress(Number(data.pct) || 0),
-                        );
-                        const cancelTimer = setInterval(() => {
-                            if (!_reelsState.isExporting) window.electronAPI.cancelIsolatedWysiwygExport(requestId);
-                        }, 250);
-                        try {
-                        // Canvas 与回调不能跨进程；其余任务数据先移除 DOM/运行时缓存再发送。
-                            return await window.electronAPI.isolatedWysiwygExport({ requestId, params: isolatedParams });
-                        } finally {
-                            clearInterval(cancelTimer);
-                            unsubscribe();
-                        }
-                    };
-                    try {
-                        wysiwygResult = await runIsolatedOnce(1);
-                    } catch (error) {
-                        if (!_reelsState.isExporting || !/后台渲染进程异常退出/.test(String(error?.message || error))) throw error;
-                        console.warn(`[Reels] 后台渲染器异常退出，自动重试一次: ${task.fileName}`);
-                        if (statusEl) statusEl.textContent = `后台渲染器已恢复，正在重试 ${i + 1}/${totalJobs}: ${task.fileName}${presetLabel}`;
-                        await new Promise(resolve => setTimeout(resolve, 600));
-                        try {
-                            wysiwygResult = await runIsolatedOnce(2);
-                        } catch (retryError) {
-                            if (!_reelsState.isExporting || !/后台渲染进程异常退出/.test(String(retryError?.message || retryError))) throw retryError;
-                            console.warn(`[Reels] 独立渲染窗口不可用，自动回退当前窗口直接渲染: ${task.fileName}`);
-                            wysiwygResult = await window.reelsWysiwygExport(wysiwygParams);
-                        }
-                    }
-                } else {
-                    wysiwygResult = await window.reelsWysiwygExport(wysiwygParams);
-                }
+                const wysiwygResult = await _runReelsWysiwygWithFallback({
+                    wysiwygParams,
+                    tw,
+                    th,
+                    task,
+                    i,
+                    totalJobs,
+                    presetLabel,
+                    statusEl,
+                    concurrency,
+                    estimatedDuration,
+                    expectedDuration: taskExpectedDuration,
+                });
                 if (wysiwygResult && wysiwygResult.cancelled) {
                     canceled = true;
+                    if (resumeManifest.jobs[i]) {
+                        resumeManifest.jobs[i].status = 'canceled';
+                        resumeManifest.jobs[i].updatedAt = Date.now();
+                        _saveReelsExportJournal(resumeManifest);
+                    }
                     _reelsUpdateJobProgressUI(i, jobProgress[i], '已取消', 'canceled');
                     break;
                 }
@@ -15438,6 +16035,13 @@ async function _reelsStartExportImpl(options = {}) {
             }
 
             okCount += 1;
+            if (resumeManifest.jobs[i]) {
+                resumeManifest.jobs[i].status = 'success';
+                resumeManifest.jobs[i].outputPath = outputPath;
+                resumeManifest.jobs[i].finalOutputPath = finalOutputPath;
+                resumeManifest.jobs[i].error = '';
+                resumeManifest.jobs[i].updatedAt = Date.now();
+            }
             _reelsUpdateJobProgressUI(i, 100, '已完成', 'success');
             _reelsState.lastExportOutputPath = finalOutputPath;
             _reelsUpdateLastOutputUI(finalOutputPath);
@@ -15448,6 +16052,11 @@ async function _reelsStartExportImpl(options = {}) {
             const errMsg = err && err.message ? err.message : String(err || '未知错误');
             const displayErr = errMsg.replace(/^(?:Error invoking remote method '[^']+':\s*(?:Error:\s*)*)+/i, '');
             failDetails.push(`${taskListLabel}${presetLabel}: ${displayErr}`);
+            if (resumeManifest.jobs[i]) {
+                resumeManifest.jobs[i].status = 'failed';
+                resumeManifest.jobs[i].error = displayErr;
+                resumeManifest.jobs[i].updatedAt = Date.now();
+            }
             _reelsAppendExportLogUI(`${taskListLabel}${presetLabel} 导出失败：${displayErr}`, 'error');
             _reelsUpdateJobProgressUI(i, jobProgress[i], '失败', 'failed');
             if (statusEl) statusEl.textContent = `❌ 导出失败: ${taskListLabel}${presetLabel} - ${displayErr}`;
@@ -15465,7 +16074,7 @@ async function _reelsStartExportImpl(options = {}) {
         resumeManifest.okCount = okCount;
         resumeManifest.failCount = failCount;
         resumeManifest.failDetails = failDetails.slice(-30);
-        try { localStorage.setItem(REELS_EXPORT_RESUME_KEY, JSON.stringify(resumeManifest)); } catch (_) { }
+        _saveReelsExportJournal(resumeManifest);
 
         // 给 Chromium 一个释放上个任务 Canvas/解码图像的时机。长队列不连续
         // 无间隙启动下一条，否则已清空的底层像素内存仍可能延迟回收。
@@ -15480,23 +16089,39 @@ async function _reelsStartExportImpl(options = {}) {
         await Promise.all(workers);
     };
     await runSegment();
-    const shouldRefreshForRecycle = segmentedExport && !canceled && resumeManifest.nextIndex < totalJobs;
+    const unfinishedAfterRun = _classifyReelsJournalJobs(resumeManifest, null).unfinishedIndices.length;
+    const shouldRefreshForRecycle = segmentedExport && !canceled && (
+        journalResume
+            ? (journalResume.mode === 'unfinished' && unfinishedAfterRun > 0 && queueCursor >= activeQueue.length)
+            : resumeManifest.nextIndex < totalJobs
+    );
     if (shouldRefreshForRecycle) {
         resumeManifest.reloadPending = true;
+        resumeManifest.reloadMode = journalResume ? 'unfinished' : 'segment';
         resumeManifest.reloadRequestedAt = Date.now();
         resumeManifest.autoShutdown = Boolean(document.getElementById('reels-export-auto-shutdown')?.checked);
         try {
             if (typeof _batchAutoSave === 'function') _batchAutoSave();
             if (typeof window.reelsSaveHistory === 'function') window.reelsSaveHistory();
             _saveReelsExportSettings();
-            localStorage.setItem(REELS_EXPORT_RESUME_KEY, JSON.stringify(resumeManifest));
+            _saveReelsExportJournal(resumeManifest);
         } catch (error) { console.warn('[Reels] 分段刷新前保存失败:', error); }
         _reelsState.isExporting = false;
-        if (statusEl) statusEl.textContent = `已完成 ${resumeManifest.nextIndex}/${totalJobs}，正在刷新并自动续传…`;
+        const finishedSoFar = totalJobs - unfinishedAfterRun;
+        if (statusEl) statusEl.textContent = `已完成 ${journalResume ? finishedSoFar : resumeManifest.nextIndex}/${totalJobs}，正在刷新并自动续传…`;
         setTimeout(() => window.location.reload(), 500);
         return;
     }
-    if (canceled) _reelsCancelUnfinishedJobProgressUI();
+    if (canceled) {
+        for (let k = queueCursor; k < activeQueue.length; k++) {
+            const remIdx = activeQueue[k];
+            if (resumeManifest.jobs[remIdx] && ['pending', 'running'].includes(resumeManifest.jobs[remIdx].status)) {
+                resumeManifest.jobs[remIdx].status = 'canceled';
+                resumeManifest.jobs[remIdx].updatedAt = Date.now();
+            }
+        }
+        _reelsCancelUnfinishedJobProgressUI();
+    }
 
     // ── 按标签分组输出 FCPXML；未分组任务仍输出一个总时间线 ──
     if (doFcpxml && fcpxmlBatchTasks.length > 0 && !canceled && typeof window.reelsBatchFcpxmlExport === 'function') {
@@ -15545,16 +16170,17 @@ async function _reelsStartExportImpl(options = {}) {
     }
 
     const doneCount = okCount + failCount;
+    const summaryDenominator = resumeState ? totalJobs : Math.max(doneCount, activeTotal);
     _reelsFinishExportTiming();
-    _reelsUpdateExportProgressUI(doneCount, totalJobs);
+    _reelsUpdateExportProgressUI(doneCount, Math.max(1, summaryDenominator));
     if (statusEl) {
         if (canceled) {
-            statusEl.textContent = `⚠️ 已取消 (${doneCount}/${totalJobs})`;
+            statusEl.textContent = `⚠️ 已取消 (${doneCount}/${summaryDenominator})`;
         } else {
             const matrixNote = multiPresetCfg ? ` (${tasks.length}任务×${multiPresetCfg.presets.length}模板)` : '';
             statusEl.textContent = failCount > 0
-                ? `⚠️ 完成 ${okCount}/${totalJobs}，失败 ${failCount}${matrixNote}`
-                : `✅ 全部完成 (${totalJobs}个视频${matrixNote})`;
+                ? `⚠️ 完成 ${okCount}/${summaryDenominator}，失败 ${failCount}${matrixNote}`
+                : `✅ 全部完成 (${okCount}个视频${matrixNote})`;
         }
     }
     const autoShutdownEl = document.getElementById('reels-export-auto-shutdown');
@@ -15564,7 +16190,33 @@ async function _reelsStartExportImpl(options = {}) {
         exportBtn.innerHTML = '🚀 开始导出';
     }
     _reelsState.isExporting = false;
-    try { localStorage.removeItem(REELS_EXPORT_RESUME_KEY); } catch (_) { }
+
+    const finalJournalSummary = _classifyReelsJournalJobs(resumeManifest, null);
+    if (!canceled && failCount === 0 && finalJournalSummary.unfinishedIndices.length === 0) {
+        await _clearReelsExportJournal();
+        _renderReelsCompletionBanner({
+            okCount: resumeManifest.jobs.length,
+            failCount: 0,
+            totalJobs: resumeManifest.jobs.length,
+            outputDir: outputDirTrimmed,
+        });
+    } else {
+        resumeManifest.active = false;
+        resumeManifest.finished = true;
+        resumeManifest.canceled = canceled;
+        resumeManifest.reloadPending = false;
+        _saveReelsExportJournal(resumeManifest);
+        await _renderReelsExportRecoveryBar(resumeManifest);
+    }
+
+    await _reelsNotifyExportFinished({
+        okCount,
+        failCount,
+        totalJobs: summaryDenominator,
+        canceled,
+        outputDir: outputDirTrimmed,
+        latestPath: _reelsState.lastExportOutputPath || `${outputDirTrimmed}${outputJoinSep}`,
+    });
 
     if (shouldAutoShutdown) {
         if (autoShutdownEl) autoShutdownEl.checked = false;
@@ -15572,7 +16224,7 @@ async function _reelsStartExportImpl(options = {}) {
         _reelsShowAutoShutdownModal({
             okCount,
             failCount,
-            totalJobs,
+            totalJobs: summaryDenominator,
             outputDir: outputDirTrimmed,
             seconds: 10,
         });
@@ -15581,19 +16233,12 @@ async function _reelsStartExportImpl(options = {}) {
 
     if (!canceled && failCount > 0) {
         const shortErr = failDetails.slice(0, 5).join('\n');
-        await _reelsShowExportError(`导出失败 ${failCount} 个\n输出目录: ${outputDirTrimmed}\n\n失败原因:\n${shortErr}`);
+        _reelsUpdateLastErrorUI(`导出失败 ${failCount} 个: ${shortErr}`);
     } else if (!canceled && okCount > 0) {
         _reelsUpdateLastErrorUI('');
-        const latest = _reelsState.lastExportOutputPath || `${outputDirTrimmed}${outputJoinSep}`;
-        const fusionScript = _reelsState.lastResolveFusionScriptPath || '';
-        const fusionNote = fusionScript
-            ? `\nFusion 字幕已安装：${_reelsState.lastResolveFusionMenuScriptPath || fusionScript}\n重启 Resolve 后点 Workspace > Scripts > Comp > VideoKit Import Fusion，即可导入可编辑 Text+ 字幕。`
-            : '';
-        alert(`导出完成 ${okCount}/${totalJobs}\n输出目录: ${outputDirTrimmed}\n最新文件: ${latest}${fusionNote}`);
-        // 自动打开输出文件夹
-        if (window.electronAPI && window.electronAPI.apiCall) {
-            try { await window.electronAPI.apiCall('file/open-folder', { path: outputDirTrimmed }); } catch (e) { }
-        }
+    }
+    if (!canceled && okCount > 0 && window.electronAPI && window.electronAPI.apiCall) {
+        try { await window.electronAPI.apiCall('file/open-folder', { path: outputDirTrimmed }); } catch (e) { }
     }
 }
 
@@ -15767,23 +16412,40 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
     }
-    setTimeout(() => {
+    setTimeout(async () => {
         if (_reelsState.isExporting) return;
-        let manifest = null;
-        try { manifest = JSON.parse(localStorage.getItem(REELS_EXPORT_RESUME_KEY) || 'null'); } catch (_) { }
-        if (!manifest?.active || !manifest.reloadPending) return;
-        const age = Date.now() - (Number(manifest.reloadRequestedAt) || 0);
-        if (!(age >= 0 && age < 120000)) {
-            try { localStorage.removeItem(REELS_EXPORT_RESUME_KEY); } catch (_) { }
-            return;
+        const manifest = await _loadReelsExportJournal();
+        if (!manifest) return;
+        if (manifest.active && manifest.reloadPending) {
+            const age = Date.now() - (Number(manifest.reloadRequestedAt) || 0);
+            if (age >= 0 && age < 120000) {
+                const reloadMode = manifest.reloadMode;
+                manifest.reloadPending = false;
+                manifest.reloadMode = '';
+                _saveReelsExportJournal(manifest);
+                const resumeCall = reloadMode === 'unfinished'
+                    ? reelsResumeExportFromJournal('unfinished')
+                    : reelsStartExport({ resumeState: manifest });
+                resumeCall.catch(error => {
+                    console.error('[Reels] 分段导出自动续传失败:', error);
+                    manifest.active = false;
+                    manifest.reloadPending = false;
+                    manifest.lastError = error?.message || String(error);
+                    _saveReelsExportJournal(manifest);
+                    _renderReelsExportRecoveryBar(manifest);
+                });
+                return;
+            }
         }
-        manifest.reloadPending = false;
-        try { localStorage.setItem(REELS_EXPORT_RESUME_KEY, JSON.stringify(manifest)); } catch (_) { }
-        reelsStartExport({ resumeState: manifest }).catch(error => {
-            console.error('[Reels] 分段导出自动续传失败:', error);
-            try { localStorage.removeItem(REELS_EXPORT_RESUME_KEY); } catch (_) { }
-        });
-    }, 2200);
+        // Crash, unexpected exit, stale reload (>120s), cancel, or partial failures:
+        // preserve progress and surface the recovery bar instead of erasing user progress.
+        if (manifest.active || manifest.reloadPending) {
+            manifest.active = false;
+            manifest.reloadPending = false;
+            _saveReelsExportJournal(manifest);
+        }
+        await _renderReelsExportRecoveryBar(manifest);
+    }, 1800);
 });
 
 // ═══════════════════════════════════════════════════════

@@ -6357,7 +6357,7 @@ function _drawScrollOverlay(ctx, ov, clipX, clipY, clipW, clipH, currentTime, ca
             const actualTrySize = _getMaxFontSizeFromRanges(trySize, tMergedRanges);
             tLineH = actualTrySize * 1.3 + tLineSpacing;
             ctx.font = `${italicStr} ${tWeight} ${trySize}px "${tFamily}", ${tFallback}`;
-            titleLines = _wrapText(ctx, scrollTitleText, tTextW, tLetterSpacing);
+            titleLines = _wrapTextCached(ctx, scrollTitleText, tTextW, tLetterSpacing);
             const blockH = titleLines.length * tLineH;
             tSize = trySize;
             actualTitleFontSize = actualTrySize;
@@ -6384,7 +6384,7 @@ function _drawScrollOverlay(ctx, ov, clipX, clipY, clipW, clipH, currentTime, ca
             lineHeight = actualTrySize * 1.3 + lineSpacing;
             fontStr = `${italicStr} ${fontWeight} ${trySize}px "${fontFamily}", ${fallback}`;
             ctx.font = fontStr;
-            lines = _wrapText(ctx, content, textW, parseFloat(ov.scroll_letter_spacing || 0));
+            lines = _wrapTextCached(ctx, content, textW, parseFloat(ov.scroll_letter_spacing || 0));
             const totalH = lines.length * lineHeight;
             if (totalH <= bodyVisibleH) {
                 fontSize = trySize;
@@ -6397,7 +6397,7 @@ function _drawScrollOverlay(ctx, ov, clipX, clipY, clipW, clipH, currentTime, ca
         lineHeight = actualBfs * 1.3 + lineSpacing;
         fontStr = `${italicStr} ${fontWeight} ${fontSize}px "${fontFamily}", ${fallback}`;
         ctx.font = fontStr;
-        lines = _wrapText(ctx, content, textW, parseFloat(ov.scroll_letter_spacing || 0));
+        lines = _wrapTextCached(ctx, content, textW, parseFloat(ov.scroll_letter_spacing || 0));
     }
 
     // ── 预计算固定标题实际绘制高度与正文裁切窗口 (供仅包裹正文区 & 画板长度使用) ──
@@ -6788,7 +6788,10 @@ function _drawScrollOverlay(ctx, ov, clipX, clipY, clipW, clipH, currentTime, ca
             ? `${ov.bg_bookmark_style || _bgStyleCfg?.bookmarkStyle || 'swallowtail'}|${ov.bg_bookmark_pos || 'top-left'}|${ov.bg_bookmark_color || _bgStyleCfg?.bookmarkColor || '#DEC075'}|${ov.bg_bookmark_width ?? 46}|${ov.bg_bookmark_height ?? 88}|${ov.bg_bookmark_inset ?? 42}`
             : 'nbm';
         const _scrollOffQ = Math.round(_bgScrollOffsetY * 2) / 2;
-        const _cardCacheKey = !ov.bg_fullscreen && !ov.bg_blur_enabled
+        // 导出逐帧推进或正在连续滚动时每帧偏移都不同，跳过离屏位图缓存并复用单一工作 Canvas，
+        // 防止长文案数千帧反复创建/淘汰原生 Skia Canvas 引发 GPU 进程崩溃。
+        const _allowCardBitmapCache = !ov._exporting && _scrollOffQ === 0;
+        const _cardCacheKey = (_allowCardBitmapCache && !ov.bg_fullscreen && !ov.bg_blur_enabled)
             ? `${_bgEnabled ? 1 : 0}|${_bgStyle}|${ov.bg_color || '#000000'}|${bgAlpha.toFixed(3)}|${Math.round(_cardW)}x${Math.round(_cardH)}|${_cardRad}|${_edgeFeatherPx}|${_scrollOffQ}|${_bmKey}|${_borderKey}|${cardFeatherSpec.top}|${cardFeatherSpec.bottom}|${cardFeatherSpec.left}|${cardFeatherSpec.right}|${cardFeatherSpec.inT}|${cardFeatherSpec.inB}|${cardFeatherSpec.inL}|${cardFeatherSpec.inR}`
             : null;
 
@@ -6956,7 +6959,11 @@ function _drawScrollOverlay(ctx, ov, clipX, clipY, clipW, clipH, currentTime, ca
                 tmp = document.createElement('canvas');
                 if (pool.size >= 16) {
                     const oldestKey = pool.keys().next().value;
-                    if (oldestKey !== undefined) pool.delete(oldestKey);
+                    if (oldestKey !== undefined) {
+                        const evicted = pool.get(oldestKey);
+                        pool.delete(oldestKey);
+                        _releaseCanvasSurface(evicted);
+                    }
                 }
                 pool.set(poolKey, tmp);
             }
@@ -7018,7 +7025,7 @@ function _drawScrollOverlay(ctx, ov, clipX, clipY, clipW, clipH, currentTime, ca
                 const actualTrySize = _getMaxFontSizeFromRanges(trySize, tMergedRanges);
                 tLineH = actualTrySize * 1.3 + tLineSpacing;
                 ctx.font = `${italicStr} ${tWeight} ${trySize}px "${tFamily}", ${tFallback}`;
-                titleLines = _wrapText(ctx, titleText, tTextW, tLetterSpacing);
+                titleLines = _wrapTextCached(ctx, titleText, tTextW, tLetterSpacing);
                 const blockH = titleLines.length * tLineH;
                 tSize = trySize;
                 if (!ov.scroll_title_auto_fit || !(tMaxH > 0) || blockH <= tMaxH) break;
@@ -8501,6 +8508,52 @@ function _applyScrollFeatherGradientStops(grad, span, rawStartOff, rawStartFeath
     return axis;
 }
 
+function _isRealDomCanvasSurface(canvas) {
+    if (!canvas) return false;
+    if (typeof HTMLCanvasElement !== 'undefined' && canvas instanceof HTMLCanvasElement) return true;
+    return Boolean(canvas.nodeName === 'CANVAS' || typeof canvas.toDataURL === 'function');
+}
+
+function _releaseCanvasSurface(canvas) {
+    if (!_isRealDomCanvasSurface(canvas)) return;
+    try {
+        canvas.width = 0;
+        canvas.height = 0;
+    } catch (_) { }
+}
+
+const _scrollWrapCache = new Map();
+function _fastScrollTextHash(str) {
+    let h = 2166136261 >>> 0;
+    for (let i = 0; i < str.length; i++) {
+        h ^= str.charCodeAt(i);
+        h = Math.imul(h, 16777619) >>> 0;
+    }
+    return h.toString(36);
+}
+
+function _wrapTextCached(ctx, text, maxWidth, letterSpacing = 0) {
+    const str = text == null ? '' : String(text);
+    if (!str || !_isRealDomCanvasSurface(ctx?.canvas)) {
+        return _wrapText(ctx, str, maxWidth, letterSpacing);
+    }
+    const fontsSize = (typeof document !== 'undefined' && document.fonts) ? (document.fonts.size || 0) : 0;
+    const key = `${ctx.font || ''}|${Math.round((Number(maxWidth) || 0) * 100)}|${Math.round((Number(letterSpacing) || 0) * 100)}|${fontsSize}|${str.length}|${_fastScrollTextHash(str)}`;
+    const hit = _scrollWrapCache.get(key);
+    if (hit && hit.text === str) {
+        _scrollWrapCache.delete(key);
+        _scrollWrapCache.set(key, hit);
+        return hit.lines;
+    }
+    const lines = _wrapText(ctx, str, maxWidth, letterSpacing);
+    if (_scrollWrapCache.size >= 64) {
+        const oldest = _scrollWrapCache.keys().next().value;
+        if (oldest !== undefined) _scrollWrapCache.delete(oldest);
+    }
+    _scrollWrapCache.set(key, { text: str, lines });
+    return lines;
+}
+
 const _scrollCardBitmapCache = new Map();
 let _scrollCardScratchCanvas = null;
 
@@ -8565,13 +8618,18 @@ function _compositeCardLayerCanvas(ctx, x, y, w, h, featherCfg, cacheKey, paintF
     if (isRealDomCanvas && cacheKey) {
         workCanvas = document.createElement('canvas');
     }
-    workCanvas.width = cw;
-    workCanvas.height = ch;
+    if (workCanvas.width !== cw || workCanvas.height !== ch) {
+        workCanvas.width = cw;
+        workCanvas.height = ch;
+    }
     const wc = workCanvas.getContext('2d');
     if (!wc || typeof wc.fillRect !== 'function') {
         paintFn(ctx, x, y, w, h, false);
         return;
     }
+    if (typeof wc.setTransform === 'function') wc.setTransform(1, 0, 0, 1, 0, 0);
+    wc.globalCompositeOperation = 'source-over';
+    wc.globalAlpha = 1;
     wc.clearRect(0, 0, cw, ch);
     paintFn(wc, innerOffX, innerOffY, w, h, hasFeatherMask);
 
@@ -8596,7 +8654,11 @@ function _compositeCardLayerCanvas(ctx, x, y, w, h, featherCfg, cacheKey, paintF
     if (isRealDomCanvas && cacheKey) {
         if (_scrollCardBitmapCache.size >= 8) {
             const oldest = _scrollCardBitmapCache.keys().next().value;
-            if (oldest !== undefined) _scrollCardBitmapCache.delete(oldest);
+            if (oldest !== undefined) {
+                const evictedCanvas = _scrollCardBitmapCache.get(oldest);
+                _scrollCardBitmapCache.delete(oldest);
+                _releaseCanvasSurface(evictedCanvas);
+            }
         }
         _scrollCardBitmapCache.set(cacheKey, workCanvas);
     }
@@ -8724,7 +8786,7 @@ function _drawScrollTextBlock(ctx, ov, lines, textX, textY, textW, lineHeight, f
             const actualTrySize = _getMaxFontSizeFromRanges(trySize, tMergedRanges);
             tLineH = actualTrySize * 1.3 + parseFloat(ov.scroll_title_line_spacing ?? ov.line_spacing ?? 6);
             ctx.font = `${tItalic} ${tWeight} ${trySize}px "${tFamily}", ${tFallback}`;
-            titleLines = _wrapText(ctx, titleText, titleTextW, tLetterSpacing);
+            titleLines = _wrapTextCached(ctx, titleText, titleTextW, tLetterSpacing);
             const blockH = titleLines.length * tLineH;
             tSize = trySize;
             if (!ov.scroll_title_auto_fit || !(tMaxH > 0) || blockH <= tMaxH) break;
@@ -9866,6 +9928,7 @@ const ReelsBrushEngine = {
         // 限制缓存数量，防止连续拖动滑块时内存暴增
         const cacheKeys = Object.keys(this._tintCache);
         if (cacheKeys.length > 50) {
+            _releaseCanvasSurface(this._tintCache[cacheKeys[0]]);
             delete this._tintCache[cacheKeys[0]];
         }
         this._tintCache[key] = c;
@@ -14889,6 +14952,41 @@ function _overlayId() {
 
 OverlayManager.prototype._resolveOverlayTextFill = _resolveOverlayTextFill;
 
+function clearRuntimeCaches() {
+    for (const c of _scrollCardBitmapCache.values()) _releaseCanvasSurface(c);
+    _scrollCardBitmapCache.clear();
+    if (_scrollCardScratchCanvas) {
+        _releaseCanvasSurface(_scrollCardScratchCanvas);
+        _scrollCardScratchCanvas = null;
+    }
+    if (_drawScrollOverlay._featherPool) {
+        for (const c of _drawScrollOverlay._featherPool.values()) _releaseCanvasSurface(c);
+        _drawScrollOverlay._featherPool.clear();
+    }
+    _scrollTwTokenCache.clear();
+    _scrollWrapCache.clear();
+    for (const c of _filmGrainTileCache.values()) _releaseCanvasSurface(c);
+    _filmGrainTileCache.clear();
+    if (typeof _scrollMotionMeasureCanvas !== 'undefined' && _scrollMotionMeasureCanvas) {
+        _releaseCanvasSurface(_scrollMotionMeasureCanvas);
+        _scrollMotionMeasureCanvas = null;
+    }
+    if (typeof ReelsBrushEngine !== 'undefined' && ReelsBrushEngine) {
+        if (ReelsBrushEngine._scratchCanvas) {
+            _releaseCanvasSurface(ReelsBrushEngine._scratchCanvas);
+            ReelsBrushEngine._scratchCanvas = null;
+        }
+        if (ReelsBrushEngine._cutoutScratchCanvas) {
+            _releaseCanvasSurface(ReelsBrushEngine._cutoutScratchCanvas);
+            ReelsBrushEngine._cutoutScratchCanvas = null;
+        }
+        if (ReelsBrushEngine._tintCache) {
+            for (const c of Object.values(ReelsBrushEngine._tintCache)) _releaseCanvasSurface(c);
+            ReelsBrushEngine._tintCache = {};
+        }
+    }
+}
+
 const ReelsOverlay = {
     createTextOverlay,
     createImageOverlay,
@@ -14913,6 +15011,7 @@ const ReelsOverlay = {
     NA_PRAYER_EMBLEM_META,
     _resolveOverlayTextFill,
     _computeScrollFeatherAxis,
+    clearRuntimeCaches,
 };
 
 if (typeof window !== 'undefined') {

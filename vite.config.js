@@ -35,6 +35,24 @@ function copyStaticFiles() {
         }
       })
 
+      // 同步复制核心样式表到 dist/ 并显式保留在 <head> 中同步加载。
+      // Rollup IIFE 打包会把 CSS 内联到 defer 的 JS 包内，导致软件打开时先渲染未样式化 HTML；
+      // 在 <head> 中保留真实 <link rel="stylesheet"> 可确保首帧 0ms 即呈完整深色主题界面。
+      const staticCssEntries = [
+        { src: resolve(srcDir, 'styles.css'), outName: 'styles.css' },
+        { src: resolve(srcDir, 'sort-upload.css'), outName: 'sort-upload.css' },
+        { src: resolve(srcDir, 'studio', 'starry-theme.css'), outName: 'starry-theme.css' },
+      ]
+      const cssHashes = new Map()
+      staticCssEntries.forEach(({ src, outName }) => {
+        if (!existsSync(src)) return
+        const dest = resolve(distDir, outName)
+        copyFileSync(src, dest)
+        const hash = createHash('sha256').update(readFileSync(src)).digest('hex').slice(0, 10)
+        cssHashes.set(outName, `${pkgVersion}-${hash}`)
+        console.log(`Copied ${outName} to dist/ (v=${pkgVersion}-${hash})`)
+      })
+
       // 将 dist/index.html 中的静态脚本引用附加 ?v=<version>-<hash>，确保更新后 V8 Code Cache 自动失效重建
       const distHtmlPath = resolve(distDir, 'index.html')
       if (existsSync(distHtmlPath)) {
@@ -56,6 +74,20 @@ function copyStaticFiles() {
               return `<script defer src=${src}${attrs ? ' ' + attrs : ''}></script>`
             })
           .replace(/(<link\b[^>]*?)\s+\bcrossorigin\b(?:=["'][^"']*["'])?([^>]*>)/gi, '$1$2')
+
+        const injectedLinks = []
+        for (const [cssName, ver] of cssHashes.entries()) {
+          const re = new RegExp(`<link\\b[^>]*href=["'](?:\\.\\/)?${cssName.replace('.', '\\.')}(?:\\?[^"']*)?["'][^>]*>`, 'i')
+          const tag = `  <link rel="stylesheet" href="${cssName}?v=${ver}">`
+          if (re.test(html)) {
+            html = html.replace(re, tag.trim())
+          } else {
+            injectedLinks.push(tag)
+          }
+        }
+        if (injectedLinks.length > 0 && /<\/head>/i.test(html)) {
+          html = html.replace(/<\/head>/i, `${injectedLinks.join('\n')}\n</head>`)
+        }
         writeFileSync(distHtmlPath, html, 'utf8')
       }
       console.log(`✅ Copied ${jsFiles.length} JS files to dist/ with V8 Code Cache busting`)

@@ -10,6 +10,7 @@
 </head>
 
 <body>
+  <script>try{var _t=localStorage.getItem('videokit-theme')||'christmas-eve',_p=(window.electronAPI&&window.electronAPI.platform)||navigator.platform||'';document.body.classList.add('theme-'+_t,'platform-'+(/win/i.test(_p)?'win32':/mac|darwin/i.test(_p)?'darwin':'linux'));}catch(_){}</script>
   <div class="app">
     <!-- 标题栏 (极简单行布局) -->
     <header class="titlebar">
@@ -7671,8 +7672,8 @@
                 <label style="display:flex;align-items:center;gap:4px;font-size:11px;white-space:nowrap;">
                   并发数:
 
-                  <input type="range" id="reels-export-concurrency-range" min="1" max="10" step="1" value="1" style="width:80px;">
-                  <input type="number" id="reels-export-concurrency" class="input input-small" min="1" max="10" value="1" style="width:44px;font-size:11px;" title="同时导出的任务数">
+                  <input type="range" id="reels-export-concurrency-range" min="1" max="10" step="1" value="2" style="width:80px;">
+                  <input type="number" id="reels-export-concurrency" class="input input-small" min="1" max="10" value="2" style="width:44px;font-size:11px;" title="同时导出的任务数（长视频/多素材建议设为 1~2 更稳定）">
                 </label>
                 <label style="display:flex;align-items:center;gap:4px;font-size:11px;white-space:nowrap;">
                   刷新间隔:
@@ -7709,6 +7710,9 @@
               </div>
               <div id="reels-export-job-progress-list"
                 style="display:none;max-height:210px;overflow:auto;margin-top:7px;padding:5px;border:1px solid var(--border-color);border-radius:6px;background:rgba(0,0,0,.12);">
+              </div>
+              <div id="reels-export-recovery-bar" hidden
+                style="display:none;flex-wrap:wrap;align-items:center;gap:6px;margin-top:7px;padding:7px 9px;border:1px solid rgba(56,189,248,.38);border-radius:6px;background:rgba(14,116,144,.14);font-size:11px;">
               </div>
               <div style="display:flex; align-items:center; gap:8px; margin-top:6px;">
                 <span style="font-size:11px; color:var(--text-secondary); white-space:nowrap;">最新输出:</span>
@@ -8207,7 +8211,7 @@
           <div class="form-section">
             <h3 class="section-title">关于</h3>
             <div class="about-info">
-              <p><strong>VideoKit</strong> <span id="app-version-display">v4.6.1</span></p>
+              <p><strong>VideoKit</strong> <span id="app-version-display">v4.6.2-beta</span></p>
               <p>视频工具包-批量：音频生成-reels视频制作-多媒体转换</p>
               <div style="margin-top: 12px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
                 <button id="check-update-btn" class="btn btn-secondary" onclick="checkAppUpdate()"

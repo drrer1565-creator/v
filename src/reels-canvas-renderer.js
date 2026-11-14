@@ -696,6 +696,35 @@ class ReelsCanvasRenderer {
         return this._ambientLightingLayer;
     }
 
+    dispose() {
+        const shrinkCanvas = (c) => {
+            if (!c || typeof c !== 'object') return;
+            if (typeof HTMLCanvasElement !== 'undefined' && !(c instanceof HTMLCanvasElement)) return;
+            try { c.width = 0; c.height = 0; } catch (_) {}
+        };
+        shrinkCanvas(this._ambientLightingLayer);
+        this._ambientLightingLayer = null;
+        shrinkCanvas(this._writingCursorMeasureCanvas);
+        this._writingCursorMeasureCanvas = null;
+        if (this._writingCursorImages instanceof Map) {
+            for (const entry of this._writingCursorImages.values()) {
+                if (Array.isArray(entry?.frames)) {
+                    for (const f of entry.frames) shrinkCanvas(f?.image);
+                    entry.frames = null;
+                }
+                if (entry?.image && typeof entry.image === 'object') {
+                    shrinkCanvas(entry.image);
+                    try { if ('src' in entry.image) entry.image.src = ''; } catch (_) {}
+                    entry.image = null;
+                }
+            }
+            this._writingCursorImages.clear();
+        }
+        if (this._seCache) this._seCache = { key: null, img: null };
+        this._contextSegments = null;
+        this._rawContextSegmentsRef = null;
+    }
+
     _renderAmbientLightingDirect(ctx, centerX, centerY, innerR, outerR,
         rVal, gVal, bVal, centerOpacity, outerOpacity, videoW, videoH) {
         ctx.save();

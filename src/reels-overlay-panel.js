@@ -129,7 +129,7 @@ class ReelsOverlayPanel {
     }
 
     _requestRender() {
-        if (window.ReelsPreviewV2?.isOpen?.()) {
+        if (typeof window !== 'undefined' && window.ReelsPreviewV2?.isOpen?.()) {
             if (typeof window.ReelsPreviewV2.requestRender === 'function') {
                 window.ReelsPreviewV2.requestRender();
             } else {
@@ -137,6 +137,10 @@ class ReelsOverlayPanel {
             }
         }
         if (!this.videoCanvas) return;
+        if (typeof requestAnimationFrame !== 'function') {
+            this.videoCanvas.render();
+            return;
+        }
         if (this._renderRaf) cancelAnimationFrame(this._renderRaf);
         this._renderRaf = requestAnimationFrame(() => {
             this._renderRaf = null;
@@ -2393,8 +2397,9 @@ class ReelsOverlayPanel {
         colorInputs.forEach((colorEl) => this._enhanceColorInput(colorEl));
     }
 
-    _enhanceColorInput(colorEl, onChange) {
+    _enhanceColorInput(colorEl, onChange, options = {}) {
         if (!colorEl || colorEl.dataset.hexEnhanced === '1') return null;
+        const syncOverlay = options?.syncOverlay !== false;
 
         const wrapper = document.createElement('div');
         wrapper.className = 'rop-color-combo';
@@ -2431,8 +2436,8 @@ class ReelsOverlayPanel {
                     colorEl._ropGradBtn.title = '设置渐变色 (支持多节点自定义)';
                 }
             }
-            if (typeof onChange === 'function') onChange(normalized || colorEl.value);
-            this._syncToOverlay({ commit: e?.type === 'change' });
+            if (typeof onChange === 'function') onChange(normalized || colorEl.value, e);
+            if (syncOverlay) this._syncToOverlay({ commit: e?.type === 'change' });
         };
         const syncFromHex = (e) => {
             if (isInternalSync) return;
@@ -2457,8 +2462,8 @@ class ReelsOverlayPanel {
                     } finally {
                         isInternalSync = false;
                     }
-                    if (typeof onChange === 'function') onChange(gradStr);
-                    this._syncToOverlay({ commit: e?.type === 'change' });
+                    if (typeof onChange === 'function') onChange(gradStr, e);
+                    if (syncOverlay) this._syncToOverlay({ commit: e?.type === 'change' });
                     return;
                 }
             }
@@ -2480,8 +2485,8 @@ class ReelsOverlayPanel {
                 isInternalSync = false;
             }
             hexInput.value = normalized;
-            if (typeof onChange === 'function') onChange(normalized);
-            this._syncToOverlay({ commit: e?.type === 'change' });
+            if (typeof onChange === 'function') onChange(normalized, e);
+            if (syncOverlay) this._syncToOverlay({ commit: e?.type === 'change' });
         };
 
         colorEl.addEventListener('input', syncFromColor);
@@ -2623,8 +2628,8 @@ class ReelsOverlayPanel {
                             }
                         }
 
-                        if (typeof onChange === 'function') onChange(value);
-                        this._syncToOverlay({ commit: false });
+                        if (typeof onChange === 'function') onChange(value, null);
+                        if (syncOverlay) this._syncToOverlay({ commit: false });
                         if (typeof window.reelsSaveHistory === 'function') {
                             if (this._gradHistoryTimer) clearTimeout(this._gradHistoryTimer);
                             this._gradHistoryTimer = setTimeout(() => {
@@ -7636,15 +7641,10 @@ class ReelsOverlayPanel {
             this._val('rop-phone-cta-width', ov.w ?? 920);
         }
 
-        // Auto-Colorize panel visibility & sync
+        // Auto-Colorize panel visibility & sync (rules DOM is rebuilt only on overlay switch, preset load, or rule CRUD)
         const autoColorProps = this.container.querySelector('#rop-autocolor-props');
         if (autoColorProps) {
-            if (ov.type === 'textcard' || ov.type === 'scroll') {
-                autoColorProps.style.display = '';
-                this._renderAutoColorRules();
-            } else {
-                autoColorProps.style.display = 'none';
-            }
+            autoColorProps.style.display = (ov.type === 'textcard' || ov.type === 'scroll') ? '' : 'none';
         }
 
         if (ov.type === 'text' || ov.type === 'textcard') {
@@ -7666,6 +7666,19 @@ class ReelsOverlayPanel {
             this._updateScrollAccordionBadges(ov);
         }
 
+        this._scheduleOverlayHostSync(ov, { commit, structuralChange });
+    }
+
+    /**
+     * Render preview on the next animation frame and schedule/flush host & scope synchronization.
+     * Brackets `videoCanvas.onOverlayChange` with `_panelSyncingOverlay` so the panel does not tear down active inputs.
+     * @param {object} ov
+     * @param {{ commit?: boolean, structuralChange?: boolean }} [options]
+     */
+    _scheduleOverlayHostSync(ov, options = {}) {
+        if (!ov) return;
+        const commit = options?.commit !== false;
+        const structuralChange = Boolean(options?.structuralChange);
         const invokeOnOverlayChange = (syncCommit) => {
             if (typeof this.videoCanvas?.onOverlayChange !== 'function') return;
             this._panelSyncingOverlay = true;
@@ -9262,12 +9275,11 @@ class ReelsOverlayPanel {
     /**
      * 渲染自动着色规则列表 UI
      */
-    _commitAutoColorRules() {
+    _commitAutoColorRules(options = {}) {
         const ov = this._selectedOv;
         if (!ov) return;
-        this._syncOverlayStyleToScopeTasks(ov);
-        this.videoCanvas?.render();
-        this.videoCanvas?.onOverlayChange?.(ov);
+        const commit = options?.commit !== false;
+        this._scheduleOverlayHostSync(ov, { commit, structuralChange: false });
     }
 
     _getAutoColorPresets() {
@@ -9407,11 +9419,13 @@ class ReelsOverlayPanel {
                 kwInput.placeholder = '一行一个词或短语；支持逗号分隔\n不要粘贴整段文案，否则整段都会被着色';
                 // Display keywords joined by newlines for better visibility
                 kwInput.value = (rule.keywords || []).join('\n');
-                kwInput.addEventListener('input', () => {
+                const syncKeywords = (commit) => {
                     // Split by newlines, English commas, or Chinese commas
                     rule.keywords = kwInput.value.split(/[\n,，]+/).map(s => s.trim()).filter(s => s);
-                    this._commitAutoColorRules();
-                });
+                    this._commitAutoColorRules({ commit });
+                };
+                kwInput.addEventListener('input', () => syncKeywords(false));
+                kwInput.addEventListener('change', () => syncKeywords(true));
                 ruleDiv.appendChild(kwInput);
                 const kwHint = document.createElement('div');
                 kwHint.textContent = '提示：关键词默认忽略大小写，支持波兰语、法语等变音字母；长短语会按原样整体高亮。';
@@ -9427,17 +9441,13 @@ class ReelsOverlayPanel {
             colorPicker.type = 'color';
             colorPicker.className = 'rop-color';
             colorPicker.style.cssText = 'width:20px;height:20px;padding:0;';
-            colorPicker.value = rule.color || '#ffffff';
-            colorPicker.addEventListener('input', () => {
-                rule.color = colorPicker.value;
-                this._commitAutoColorRules();
-            });
+            colorPicker.value = this._normalizeHexColor(rule.color) || '#ffffff';
             stylesRow.appendChild(document.createTextNode('颜色'));
             stylesRow.appendChild(colorPicker);
-            this._enhanceColorInput(colorPicker, (value) => {
+            this._enhanceColorInput(colorPicker, (value, e) => {
                 rule.color = value || colorPicker.value;
-                this._commitAutoColorRules();
-            });
+                this._commitAutoColorRules({ commit: e?.type === 'change' });
+            }, { syncOverlay: false });
             
             const boldCheck = document.createElement('input');
             boldCheck.type = 'checkbox';

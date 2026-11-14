@@ -8,7 +8,10 @@ if (process.argv.includes('--headless') && !process.argv.includes('--headless-wy
     return;
 }
 
-const { app, BrowserWindow, ipcMain, MessageChannelMain, dialog, powerSaveBlocker, protocol, shell, net, screen, desktopCapturer, nativeTheme, Menu } = require('electron');
+const { app, BrowserWindow, ipcMain, MessageChannelMain, dialog, powerSaveBlocker, protocol, shell, net, screen, desktopCapturer, nativeTheme, Menu, Notification } = require('electron');
+if (process.platform === 'win32' && typeof app?.setAppUserModelId === 'function') {
+    try { app.setAppUserModelId('com.timcode.videokit'); } catch (_) {}
+}
 const path = require('path');
 const fs = require('fs');
 const { spawnSync } = require('child_process');
@@ -52,9 +55,11 @@ const isolatedReelsJobs = new Map();
 let idleCacheMaintenance = null;
 let manualCacheCleaning = false;
 function startIdleCacheMaintenance() {
+    const cleanerPath = path.join(process.resourcesPath || __dirname, 'idle-cache-cleaner.js');
+    if (!fs.existsSync(cleanerPath)) return;
     const {powerMonitor}=require('electron');
     const {execFile}=require('child_process');
-    const {createIdleCacheCleaner}=require(path.join(process.resourcesPath,'idle-cache-cleaner.js'));
+    const {createIdleCacheCleaner}=require(cleanerPath);
     let processCheckAt=0,processBusy=true;
     const canRun=()=>{
         try{return !isQuitting&&!manualCacheCleaning&&isolatedReelsRenderers.size===0&&BrowserWindow.getAllWindows().length>0&&powerMonitor.getSystemIdleTime()>=120;}catch(_){return false;}
@@ -1077,6 +1082,7 @@ function createWindow() {
         minWidth: 900,
         minHeight: 700,
         backgroundColor: '#060d0a',
+        show: false,
         title: app.isPackaged ? 'VideoKit' : 'VideoKit — 源码测试版',
         icon: getResourcePath(process.platform === 'win32' ? 'assets/icon.ico' : (process.platform === 'darwin' ? 'assets/icon.icns' : 'assets/icon.png')),
         webPreferences: {
@@ -1095,6 +1101,18 @@ function createWindow() {
     applyPlatformWindowChrome(windowOptions);
 
     mainWindow = new BrowserWindow(windowOptions);
+    let mainWindowShown = false;
+    const revealMainWindow = () => {
+        if (mainWindowShown || !mainWindow || mainWindow.isDestroyed()) return;
+        mainWindowShown = true;
+        try { mainWindow.show(); } catch (_) {}
+    };
+    mainWindow.once('ready-to-show', revealMainWindow);
+    const revealFallbackTimer = setTimeout(revealMainWindow, 1500);
+    mainWindow.once('closed', () => clearTimeout(revealFallbackTimer));
+    mainWindow.on('focus', () => {
+        try { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.flashFrame(false); } catch (_) {}
+    });
     if (process.platform === 'win32' && windowOptions.icon && fs.existsSync(windowOptions.icon)) {
         try {
             mainWindow.setIcon(windowOptions.icon);
@@ -2007,6 +2025,112 @@ app.whenReady().then(async () => {
             try { results[p] = fs.existsSync(p); } catch (_) { results[p] = false; }
         }
         return results;
+    });
+
+    const getReelsExportJournalPath = () => path.join(app.getPath('userData'), 'reels-export-journal.json');
+
+    handleTrusted('verify-export-outputs', async (_event, filePaths) => {
+        const results = {};
+        for (const p of (Array.isArray(filePaths) ? filePaths : [])) {
+            if (!p || typeof p !== 'string') continue;
+            try {
+                const stat = fs.statSync(p);
+                results[p] = stat.isFile() && stat.size > 4096;
+            } catch (_) {
+                results[p] = false;
+            }
+        }
+        return results;
+    });
+
+    handleTrusted('read-reels-export-journal', async () => {
+        try {
+            const p = getReelsExportJournalPath();
+            if (!fs.existsSync(p)) return null;
+            const raw = fs.readFileSync(p, 'utf8');
+            const parsed = JSON.parse(raw);
+            return parsed && typeof parsed === 'object' ? parsed : null;
+        } catch (_) {
+            return null;
+        }
+    });
+
+    handleTrusted('save-reels-export-journal', async (_event, journal) => {
+        try {
+            if (!journal || typeof journal !== 'object') return { ok: false, error: 'invalid journal' };
+            const p = getReelsExportJournalPath();
+            fs.mkdirSync(path.dirname(p), { recursive: true });
+            const serialized = JSON.stringify(journal);
+            const tmpPath = `${p}.${process.pid}.tmp`;
+            fs.writeFileSync(tmpPath, serialized, 'utf8');
+            try {
+                fs.renameSync(tmpPath, p);
+            } catch (_) {
+                fs.writeFileSync(p, serialized, 'utf8');
+                try { fs.rmSync(tmpPath, { force: true }); } catch (_rm) {}
+            }
+            return { ok: true };
+        } catch (err) {
+            return { ok: false, error: err?.message || String(err) };
+        }
+    });
+
+    handleTrusted('clear-reels-export-journal', async () => {
+        try {
+            fs.rmSync(getReelsExportJournalPath(), { force: true });
+            return { ok: true };
+        } catch (err) {
+            return { ok: false, error: err?.message || String(err) };
+        }
+    });
+
+    handleTrusted('set-export-taskbar-progress', async (_event, progress, options) => {
+        if (!mainWindow || mainWindow.isDestroyed()) return false;
+        const val = typeof progress === 'number' && Number.isFinite(progress) ? progress : -1;
+        try {
+            mainWindow.setProgressBar(val, options && typeof options === 'object' ? options : undefined);
+            return true;
+        } catch (_) {
+            return false;
+        }
+    });
+
+    handleTrusted('notify-export-complete', async (_event, payload = {}) => {
+        const title = String(payload?.title || 'VideoKit 导出完成');
+        const body = String(payload?.body || '');
+        const folderPath = typeof payload?.folderPath === 'string' ? payload.folderPath : '';
+        let shown = false;
+        try {
+            if (Notification && typeof Notification.isSupported === 'function' && Notification.isSupported()) {
+                const iconPath = getResourcePath(process.platform === 'win32' ? 'assets/icon.ico' : 'assets/icon.png');
+                const note = new Notification({
+                    title,
+                    body,
+                    icon: iconPath && fs.existsSync(iconPath) ? iconPath : undefined,
+                    silent: Boolean(payload?.silent),
+                });
+                note.on('click', () => {
+                    try {
+                        if (mainWindow && !mainWindow.isDestroyed()) {
+                            if (mainWindow.isMinimized()) mainWindow.restore();
+                            mainWindow.show();
+                            mainWindow.focus();
+                        }
+                        if (folderPath && fs.existsSync(folderPath)) {
+                            shell.openPath(folderPath).catch(() => {});
+                        }
+                    } catch (_) {}
+                });
+                note.show();
+                shown = true;
+            }
+        } catch (_) {}
+        try {
+            if (mainWindow && !mainWindow.isDestroyed() && !mainWindow.isFocused()) {
+                mainWindow.flashFrame(true);
+            }
+        } catch (_) {}
+        return { ok: true, shown };
     });
 
     handleTrusted('get-downloads-path', async () => {

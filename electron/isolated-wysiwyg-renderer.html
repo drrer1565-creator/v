@@ -136,6 +136,24 @@ let cancelled = false;
 ipcRenderer.on('isolated-wysiwyg-cancel', () => { cancelled = true; });
 ipcRenderer.on('isolated-wysiwyg-run', async (_event, payload = {}) => {
     const requestId = payload.requestId;
+    const cleanupIsolatedRuntime = () => {
+        try { window.ReelsOverlay?.clearRuntimeCaches?.(); } catch (_) {}
+        try {
+            if (window._reelsState) {
+                if (window._reelsState.watermarkImages && typeof window._reelsState.watermarkImages.clear === 'function') {
+                    window._reelsState.watermarkImages.clear();
+                }
+                if (Array.isArray(window._reelsState.activeWatermarks)) {
+                    window._reelsState.activeWatermarks = [];
+                }
+                window._reelsState = null;
+            }
+        } catch (_) {}
+        try {
+            const rc = document.getElementById('render-canvas');
+            if (rc) { rc.width = 0; rc.height = 0; }
+        } catch (_) {}
+    };
     try {
         for (const scriptPath of payload.scriptPaths || []) await loadScript(scriptPath);
         const params = payload.params || {};
@@ -154,8 +172,10 @@ ipcRenderer.on('isolated-wysiwyg-run', async (_event, payload = {}) => {
         }
 
         const result = await window.reelsWysiwygExport(params);
+        cleanupIsolatedRuntime();
         ipcRenderer.send('isolated-wysiwyg-result', { requestId, success: true, result });
     } catch (error) {
+        cleanupIsolatedRuntime();
         ipcRenderer.send('isolated-wysiwyg-result', {
             requestId,
             success: false,

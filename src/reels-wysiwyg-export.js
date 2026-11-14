@@ -87,8 +87,13 @@ function _releaseExportOverlayFrame(ov, clearCycleCache = false) {
         delete ov._frameImageCache;
     }
     if (clearCycleCache && ov._featherCanvas) {
-        ov._featherCanvas.width = 1;
-        ov._featherCanvas.height = 1;
+        if (typeof HTMLCanvasElement !== 'undefined' && ov._featherCanvas instanceof HTMLCanvasElement) {
+            ov._featherCanvas.width = 0;
+            ov._featherCanvas.height = 0;
+        } else {
+            ov._featherCanvas.width = 1;
+            ov._featherCanvas.height = 1;
+        }
         delete ov._featherCanvas;
     }
 }
@@ -1374,8 +1379,10 @@ async function reelsWysiwygExport(params) {
         const result = await window.electronAPI.reelsComposeWysiwyg('finish', { sessionId });
         if (!result || result.error) throw new Error(result?.error || 'FFmpeg 编码完成失败');
 
-        // 释放解码图片和 Canvas 底层像素内存，避免下一个批量任务继续累积。
+        // 释放解码图片、Overlay/Renderer 离屏 Canvas 像素内存，避免长队列/长视频导出持续累积。
         clearBgFrameCache();
+        try { renderer?.dispose?.(); } catch (_) { }
+        try { window.ReelsOverlay?.clearRuntimeCaches?.(); } catch (_) { }
         if (currentBgImg) currentBgImg.src = '';
         if (currentCvImg) currentCvImg.src = '';
         currentBgImg = null;
@@ -1386,7 +1393,7 @@ async function reelsWysiwygExport(params) {
             _releaseExportOverlayFrame(ov, true);
             delete ov._allOverlays;
         }
-        if (canvas) { canvas.width = 1; canvas.height = 1; }
+        if (canvas) { canvas.width = 0; canvas.height = 0; }
         cvSeqFileList = null;
 
         // 清理背景帧（磁盘临时文件）
@@ -1410,6 +1417,8 @@ async function reelsWysiwygExport(params) {
     } catch (e) {
         try { framePipeline?.abort(e); } catch (_) { }
         clearBgFrameCache();
+        try { renderer?.dispose?.(); } catch (_) { }
+        try { window.ReelsOverlay?.clearRuntimeCaches?.(); } catch (_) { }
         if (currentBgImg) currentBgImg.src = '';
         if (currentCvImg) currentCvImg.src = '';
         currentBgImg = null;
@@ -1420,7 +1429,7 @@ async function reelsWysiwygExport(params) {
             _releaseExportOverlayFrame(ov, true);
             delete ov._allOverlays;
         }
-        if (canvas) { canvas.width = 1; canvas.height = 1; }
+        if (canvas) { canvas.width = 0; canvas.height = 0; }
         cvSeqFileList = null;
         try { await window.electronAPI.reelsComposeWysiwyg('abort', { sessionId }); } catch (_) { }
         if (framesDir) {

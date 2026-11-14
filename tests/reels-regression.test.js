@@ -8467,6 +8467,549 @@ test('Scroll card backgrounds auto-follow subtitle box, sync feathering/negative
     assert.strictEqual(renderTaskListCount, 0, 'Color style change must not trigger full _renderTaskList DOM rebuild');
 });
 
+test('ReelsExportScheduler scales memory for long 2-min multi-clip jobs, caps maxActive<=3, and guards low freemem', async () => {
+    const os = require('node:os');
+    const { ReelsExportScheduler, estimateExportBytes } = require('../electron/services/reels-export-scheduler.js');
+
+    const shortBytes = estimateExportBytes({ targetWidth: 1080, targetHeight: 1920, duration: 20, bgClipPool: [] });
+    const longMultiBytes = estimateExportBytes({
+        targetWidth: 1080,
+        targetHeight: 1920,
+        duration: 120,
+        bgClipPool: ['a.mp4', 'b.mp4', 'c.mp4', 'd.mp4', 'e.mp4', 'f.mp4'],
+    });
+    assert.ok(longMultiBytes > shortBytes * 1.4, 'Long duration + multi-clip pool must scale estimated memory bytes');
+
+    const defaultScheduler = new ReelsExportScheduler();
+    assert.ok(defaultScheduler.maxActive <= 3, `Expected maxActive <= 3, got ${defaultScheduler.maxActive}`);
+
+    const origFreemem = os.freemem;
+    let fakeFreeBytes = 700 * 1024 * 1024;
+    os.freemem = () => fakeFreeBytes;
+    try {
+        const scheduler = new ReelsExportScheduler({ maxActive: 3, maxBytes: 4 * 1024 * 1024 * 1024 });
+        const release1 = await scheduler.acquire({ targetWidth: 1080, targetHeight: 1920, duration: 120 });
+        assert.strictEqual(scheduler.active, 1);
+
+        let secondStarted = false;
+        const p2 = scheduler.acquire({ targetWidth: 1080, targetHeight: 1920, duration: 120 }).then((rel) => {
+            secondStarted = true;
+            return rel;
+        });
+        await new Promise((r) => setTimeout(r, 20));
+        assert.strictEqual(secondStarted, false, '2nd job must wait while active >= 1 and freemem < 1200MB');
+
+        fakeFreeBytes = 3 * 1024 * 1024 * 1024;
+        release1();
+        const release2 = await p2;
+        assert.strictEqual(secondStarted, true, '2nd job must start once first releases and freemem recovers');
+        release2();
+    } finally {
+        os.freemem = origFreemem;
+    }
+});
+
+test('ReelsOverlay bypasses card bitmap cache while scrolling/exporting and ReelsCanvasRenderer.dispose shrinks surfaces', () => {
+    class MockCanvasElement {
+        constructor(w = 300, h = 150) {
+            this.width = w;
+            this.height = h;
+            this.style = {};
+            this.dataset = {};
+            this.classList = { add() {}, remove() {}, toggle() {}, contains: () => false };
+        }
+        appendChild() {}
+        addEventListener() {}
+        setAttribute() {}
+        getContext() {
+            return {
+                canvas: this,
+                font: '',
+                globalAlpha: 1,
+                globalCompositeOperation: 'source-over',
+                filter: 'none',
+                shadowColor: 'transparent',
+                shadowBlur: 0,
+                shadowOffsetX: 0,
+                shadowOffsetY: 0,
+                setTransform() {},
+                save() {},
+                restore() {},
+                beginPath() {},
+                closePath() {},
+                moveTo() {},
+                lineTo() {},
+                quadraticCurveTo() {},
+                bezierCurveTo() {},
+                arc() {},
+                arcTo() {},
+                rect() {},
+                roundRect() {},
+                clip() {},
+                fill() {},
+                stroke() {},
+                fillRect() {},
+                strokeRect() {},
+                clearRect() {},
+                fillText() {},
+                strokeText() {},
+                drawImage() {},
+                translate() {},
+                rotate() {},
+                scale() {},
+                setLineDash() {},
+                createPattern: () => ({}),
+                createLinearGradient: () => ({ addColorStop() {} }),
+                createRadialGradient: () => ({ addColorStop() {} }),
+                measureText: (txt) => ({ width: String(txt || '').length * 10 }),
+            };
+        }
+    }
+
+    const createdCanvases = [];
+    const ovCode = fs.readFileSync(path.join(ROOT, 'src/reels-overlay.js'), 'utf8');
+    const crCode = fs.readFileSync(path.join(ROOT, 'src/reels-canvas-renderer.js'), 'utf8');
+    const winObj = {
+        HTMLCanvasElement: MockCanvasElement,
+        devicePixelRatio: 1,
+        ReelsTextDirection: null,
+        ReelsRichText: null,
+    };
+    const docObj = {
+        head: { appendChild() {}, querySelector: () => null },
+        body: { appendChild() {} },
+        createElement: (tag) => {
+            if (tag === 'canvas') {
+                const c = new MockCanvasElement(300, 150);
+                createdCanvases.push(c);
+                return c;
+            }
+            return { style: {}, dataset: {}, classList: { add() {} }, appendChild() {}, addEventListener() {}, setAttribute() {} };
+        },
+        getElementById: () => null,
+        querySelectorAll: () => [],
+    };
+    const vmCtx = vm.createContext({
+        console, Math, Date, Intl, JSON, Array, Object, String, Number, Boolean, RegExp, Error,
+        Map, Set, parseFloat, parseInt, isNaN, isFinite,
+        HTMLCanvasElement: MockCanvasElement,
+        OffscreenCanvas: undefined,
+        performance: { now: () => Date.now() },
+        document: docObj,
+        window: winObj,
+        globalThis: winObj,
+    });
+    winObj.document = docObj;
+    winObj.window = winObj;
+    vm.runInContext(ovCode, vmCtx);
+    vm.runInContext(crCode, vmCtx);
+
+    assert.strictEqual(typeof winObj.ReelsOverlay.clearRuntimeCaches, 'function', 'ReelsOverlay must export clearRuntimeCaches');
+
+    // Simulate exporting 10 scrolling frames with card backdrop: should NOT allocate 10 persistent cached card bitmaps
+    const hostCanvas = new MockCanvasElement(1080, 1920);
+    const hostCtx = hostCanvas.getContext('2d');
+    const countBeforeDraw = createdCanvases.length;
+    const scrollOv = {
+        type: 'scroll',
+        enabled: true,
+        _exporting: true,
+        content: 'Long Christmas scrolling reflection line '.repeat(12),
+        scroll_bg_enabled: true,
+        scroll_bg_color: '#1b1b2f',
+        scroll_bg_alpha: 0.9,
+        scroll_bg_feather: 12,
+        scroll_speed: 80,
+        scroll_start: 0,
+        scroll_end: 120,
+        x: 50, y: 50, w: 80, h: 70,
+        fontSize: 42,
+    };
+    for (let f = 0; f < 10; f++) {
+        winObj.ReelsOverlay.drawOverlay(hostCtx, scrollOv, f * 0.5, 1080, 1920);
+    }
+    const countAfterDraw = createdCanvases.length;
+    assert.ok(countAfterDraw - countBeforeDraw <= 6, `Expected bounded scratch canvases during 10 export frames, created ${countAfterDraw - countBeforeDraw}`);
+
+    const renderer = new winObj.ReelsCanvasRenderer(hostCanvas);
+    const ambient = renderer._getAmbientLightingLayer(1080, 1920);
+    assert.strictEqual(ambient.width, 1080);
+    assert.strictEqual(ambient.height, 1920);
+    renderer._writingCursorMeasureCanvas = new MockCanvasElement(200, 100);
+    renderer.dispose();
+    assert.strictEqual(ambient.width, 0, 'dispose() must zero ambient canvas width');
+    assert.strictEqual(ambient.height, 0, 'dispose() must zero ambient canvas height');
+    assert.strictEqual(renderer._ambientLightingLayer, null);
+    assert.strictEqual(renderer._writingCursorMeasureCanvas, null);
+
+    // Clear caches and ensure scratch canvases are shrunk to 0x0
+    winObj.ReelsOverlay.clearRuntimeCaches();
+    const nonZeroAfterClear = createdCanvases.filter(c => c.width > 0 || c.height > 0);
+    assert.strictEqual(nonZeroAfterClear.length, 0, 'clearRuntimeCaches() must zero dimensions of all cached DOM canvases');
+});
+
+test('Batch export journal, safe concurrency default, completion notify, and startup styling safeguards are wired', () => {
+    const batchSrc = fs.readFileSync(path.join(ROOT, 'src/batch-reels.js'), 'utf8');
+    const htmlSrc = fs.readFileSync(path.join(ROOT, 'src/index.html'), 'utf8');
+    const mainSrc = fs.readFileSync(path.join(ROOT, 'electron/main.js'), 'utf8');
+    const preloadSrc = fs.readFileSync(path.join(ROOT, 'electron/preload.js'), 'utf8');
+    const viteSrc = fs.readFileSync(path.join(ROOT, 'vite.config.js'), 'utf8');
+
+    // Startup unstyled flash protection
+    assert.ok(viteSrc.includes('starry-theme.css') && viteSrc.includes('<link rel="stylesheet" href='), 'vite build must keep synchronous stylesheet links in dist/index.html');
+    assert.ok(mainSrc.includes('show: false') && mainSrc.includes("mainWindow.once('ready-to-show'"), 'mainWindow must defer reveal until ready-to-show');
+    assert.ok(mainSrc.includes('app.setAppUserModelId'), 'Windows notifications require AppUserModelId');
+    assert.ok(mainSrc.includes('verify-export-outputs') && mainSrc.includes('read-reels-export-journal') && mainSrc.includes('notify-export-complete'), 'main process must expose journal, verify, and completion notification IPCs');
+    assert.ok(preloadSrc.includes('verifyExportOutputs:') && preloadSrc.includes('notifyExportComplete:') && preloadSrc.includes('saveReelsExportJournal:'), 'preload must expose new export IPCs');
+    assert.ok(htmlSrc.includes('id="reels-export-recovery-bar"'), 'index.html must include recovery bar element');
+    assert.ok(batchSrc.includes("'reels-export-concurrency': '2'"), 'Default export concurrency must be 2');
+
+    // Evaluate pure helpers & notification pipeline from src/batch-reels.js
+    const startIdx = batchSrc.indexOf('let _reelsActiveExportJournal = null;');
+    const endIdx = batchSrc.indexOf('function _reelsInitJobProgressUI(jobs) {', startIdx);
+    const concurrencyStart = batchSrc.indexOf('function _resolveSafeReelsExportConcurrency(');
+    const concurrencyEnd = batchSrc.indexOf('function _sanitizeReelsExportRecycleEvery(', concurrencyStart);
+    assert.ok(startIdx > 0 && endIdx > startIdx && concurrencyStart > 0 && concurrencyEnd > concurrencyStart);
+
+    const notified = [];
+    const taskbarCalls = [];
+    const toasts = [];
+    const savedIpc = [];
+    const store = new Map();
+    const batchWin = {
+        electronAPI: {
+            saveReelsExportJournal: async (j) => { savedIpc.push(JSON.parse(JSON.stringify(j))); return { ok: true }; },
+            readReelsExportJournal: async () => null,
+            clearReelsExportJournal: async () => { savedIpc.push(null); return { ok: true }; },
+            notifyExportComplete: async (p) => { notified.push(p); return { ok: true }; },
+            setExportTaskbarProgress: async (v, o) => { taskbarCalls.push([v, o]); return true; },
+        },
+        AudioContext: undefined,
+        webkitAudioContext: undefined,
+    };
+    const vmCtx = vm.createContext({
+        console, Math, Date, JSON, Array, Object, String, Number, Boolean, Set, Map, Promise,
+        REELS_EXPORT_RESUME_KEY: 'videokit_reels_export_resume_v1',
+        _reelsState: { tasks: [{ id: 't1', fileName: 'a.mp4' }, { id: 't2', fileName: 'b.mp4' }], isExporting: false },
+        window: batchWin,
+        document: { getElementById: () => null },
+        localStorage: {
+            getItem: (k) => store.get(k) || null,
+            setItem: (k, v) => store.set(k, String(v)),
+            removeItem: (k) => store.delete(k),
+        },
+        showToast: (msg, type) => toasts.push({ msg, type }),
+        setTimeout, clearTimeout,
+    });
+    vmCtx.window.window = vmCtx.window;
+    vm.runInContext(batchSrc.slice(startIdx, endIdx) + '\n' + batchSrc.slice(concurrencyStart, concurrencyEnd), vmCtx);
+
+    assert.strictEqual(vmCtx._resolveSafeReelsExportConcurrency(undefined, 10), 2);
+    assert.strictEqual(vmCtx._resolveSafeReelsExportConcurrency('10', 3), 3);
+    assert.strictEqual(vmCtx._resolveSafeReelsExportConcurrency('4', 30), 4);
+
+    const journal = {
+        jobs: [
+            { index: 0, taskId: 't1', fileName: 'a.mp4', status: 'success', outputPath: 'C:/out/a.mp4', finalOutputPath: 'C:/out/a.mp4' },
+            { index: 1, taskId: 't2', fileName: 'b.mp4', status: 'failed', outputPath: 'C:/out/b.mp4', finalOutputPath: 'C:/out/b.mp4' },
+            { index: 2, taskId: 't3', fileName: 'c.mp4', status: 'success', outputPath: 'C:/out/c.mp4', finalOutputPath: 'C:/out/c_final.mp4' },
+        ],
+    };
+    // Disk check shows a.mp4 exists, b.mp4 missing, c_final.mp4 missing (e.g. stale status)
+    const classified = vmCtx._classifyReelsJournalJobs(journal, {
+        'C:/out/a.mp4': true,
+        'C:/out/b.mp4': false,
+        'C:/out/c_final.mp4': false,
+        'C:/out/c.mp4': false,
+    });
+    assert.strictEqual(classified.verifiedSuccessCount, 1);
+    assert.deepStrictEqual([...classified.unfinishedIndices], [1, 2]);
+    assert.deepStrictEqual([...classified.failedIndices], [1, 2]);
+
+    const matched = vmCtx._matchJournalJobsToTasks(journal, [{ id: 't1', fileName: 'a.mp4' }, { id: 't2', fileName: 'b.mp4' }]);
+    assert.deepStrictEqual([...matched.matchedTaskIndices], [0, 1]);
+
+    return vmCtx._reelsNotifyExportFinished({
+        okCount: 29,
+        failCount: 1,
+        totalJobs: 30,
+        canceled: false,
+        outputDir: 'C:/out',
+        latestPath: 'C:/out/a.mp4',
+    }).then(() => {
+        assert.strictEqual(notified.length, 1, 'Export finish must trigger native notification IPC');
+        assert.ok(notified[0].title.includes('29/30'));
+        assert.strictEqual(taskbarCalls.length >= 1, true);
+        assert.strictEqual(toasts.length, 1);
+    });
+});
+
+test('Auto-color rule color picker, hex input, and keyword textarea preserve DOM nodes without jumping or rebuilding rules', () => {
+    const panelSrc = fs.readFileSync(path.join(ROOT, 'src/reels-overlay-panel.js'), 'utf8');
+    let nextId = 1;
+    let rafQueue = [];
+    const timers = [];
+
+    const makeEl = (tagName = 'div') => {
+        const listeners = {};
+        let _innerHTML = '';
+        const classes = new Set();
+        const node = {
+            tagName: String(tagName).toUpperCase(),
+            nodeType: 1,
+            id: '',
+            type: '',
+            value: '',
+            className: '',
+            checked: false,
+            dataset: {},
+            style: { cssText: '', display: '', setProperty() {}, removeProperty() {} },
+            parentNode: null,
+            children: [],
+            classList: {
+                add: (...cls) => cls.forEach((c) => classes.add(c)),
+                remove: (...cls) => cls.forEach((c) => classes.delete(c)),
+                contains: (c) => classes.has(c),
+            },
+            set innerHTML(val) {
+                _innerHTML = String(val);
+                this.children.forEach((c) => {
+                    if (c && typeof c === 'object') c.parentNode = null;
+                });
+                this.children = [];
+            },
+            get innerHTML() {
+                return _innerHTML;
+            },
+            appendChild(child) {
+                if (child && typeof child === 'object') {
+                    if (child.parentNode && Array.isArray(child.parentNode.children)) {
+                        const oldIdx = child.parentNode.children.indexOf(child);
+                        if (oldIdx >= 0) child.parentNode.children.splice(oldIdx, 1);
+                    }
+                    child.parentNode = this;
+                    this.children.push(child);
+                }
+                return child;
+            },
+            insertBefore(newNode, refNode) {
+                if (!newNode || typeof newNode !== 'object') return newNode;
+                if (newNode.parentNode && Array.isArray(newNode.parentNode.children)) {
+                    const oldIdx = newNode.parentNode.children.indexOf(newNode);
+                    if (oldIdx >= 0) newNode.parentNode.children.splice(oldIdx, 1);
+                }
+                newNode.parentNode = this;
+                const refIdx = refNode ? this.children.indexOf(refNode) : -1;
+                if (refIdx >= 0) this.children.splice(refIdx, 0, newNode);
+                else this.children.push(newNode);
+                return newNode;
+            },
+            contains(target) {
+                let cur = target;
+                while (cur) {
+                    if (cur === this) return true;
+                    cur = cur.parentNode;
+                }
+                return false;
+            },
+            addEventListener(evt, fn) {
+                (listeners[evt] ||= []).push(fn);
+            },
+            dispatch(evt) {
+                (listeners[evt] || []).forEach((fn) => fn({ type: evt, target: this }));
+            },
+        };
+        return node;
+    };
+
+    const findNodes = (root, predicate, out = []) => {
+        if (!root || typeof root !== 'object') return out;
+        if (predicate(root)) out.push(root);
+        if (Array.isArray(root.children)) {
+            root.children.forEach((c) => findNodes(c, predicate, out));
+        }
+        return out;
+    };
+
+    const flushRaf = () => {
+        const current = rafQueue;
+        rafQueue = [];
+        for (const entry of current) {
+            if (!entry.cancelled) entry.fn();
+        }
+    };
+
+    const autoColorProps = makeEl('div');
+    autoColorProps.id = 'rop-autocolor-props';
+    const rulesContainer = makeEl('div');
+    rulesContainer.id = 'rop-autocolor-rules';
+    autoColorProps.appendChild(rulesContainer);
+    const scopeEl = makeEl('select');
+    scopeEl.id = 'rop-style-scope';
+    scopeEl.value = 'folder';
+    const scrollColorEl = makeEl('input');
+    scrollColorEl.id = 'rop-scroll-color';
+    scrollColorEl.value = '#ffffff';
+    const scrollApplyAllEl = makeEl('input');
+    scrollApplyAllEl.id = 'rop-scroll-apply-all';
+    scrollApplyAllEl.type = 'checkbox';
+    scrollApplyAllEl.checked = true;
+
+    const tasks = [
+        {
+            id: 't1',
+            overlays: [
+                {
+                    id: 'ov1',
+                    type: 'scroll',
+                    color: '#ffffff',
+                    auto_color_rules: [{ type: 'keyword', keywords: ['Jesus', 'God'], color: '#d3cf5a', bold: true }],
+                },
+            ],
+        },
+        {
+            id: 't2',
+            overlays: [{ id: 'ov2', type: 'scroll', color: '#ffffff', auto_color_rules: [] }],
+        },
+    ];
+
+    const sandbox = {
+        window: {
+            ReelsGradientPicker: null,
+            ReelsPreviewV2: { isOpen: () => false, requestRender() {}, render() {} },
+            ReelsOverlay: { measureScrollMotion: () => null },
+            _reelsState: { tasks, selectedIdx: 0 },
+        },
+        document: {
+            head: makeEl('head'),
+            body: makeEl('body'),
+            getElementById: (id) => (id === 'rop-style-scope' ? scopeEl : null),
+            createElement: (tag) => makeEl(tag),
+            createTextNode: (text) => ({ nodeType: 3, textContent: text, parentNode: null }),
+        },
+        localStorage: { getItem: () => null, setItem() {} },
+        Option: function (text, value) { this.text = text; this.value = value; },
+        setTimeout: (fn, ms) => { const id = nextId++; timers.push({ id, fn, ms, cleared: false }); return id; },
+        clearTimeout: (id) => { const t = timers.find((x) => x.id === id); if (t) t.cleared = true; },
+        requestAnimationFrame: (fn) => { const id = nextId++; rafQueue.push({ id, fn, cancelled: false }); return id; },
+        cancelAnimationFrame: (id) => { const r = rafQueue.find((x) => x.id === id); if (r) r.cancelled = true; },
+        _syncCurrentOverlayEditorToSelectedTask: () => {},
+    };
+    sandbox.window.window = sandbox.window;
+    vm.createContext(sandbox);
+    vm.runInContext(`${panelSrc}\nwindow.ReelsOverlayPanel = ReelsOverlayPanel;`, sandbox);
+
+    const panel = Object.create(sandbox.window.ReelsOverlayPanel.prototype);
+    const elMap = {
+        '#rop-autocolor-props': autoColorProps,
+        '#rop-autocolor-rules': rulesContainer,
+        '#rop-style-scope': scopeEl,
+        '#rop-scroll-color': scrollColorEl,
+        '#rop-scroll-apply-all': scrollApplyAllEl,
+    };
+    panel.container = {
+        querySelector: (sel) => elMap[sel] || null,
+        querySelectorAll: () => [],
+    };
+    panel._selectedOv = tasks[0].overlays[0];
+    panel._val = (id, v) => { const el = elMap['#' + id]; if (el) el.value = v; };
+    panel._get = (id) => {
+        if (id === 'rop-scroll-apply-all') return true;
+        if (id === 'rop-scroll-color') return scrollColorEl.value;
+        return '';
+    };
+    panel._updateAnimStartRef = () => {};
+    panel._updateScrollAccordionBadges = () => {};
+
+    let renderCount = 0;
+    let onOverlayChangeCalls = 0;
+    let syncFromOverlayCalls = 0;
+    // Reproduce the real ReelsOverlayPanel videoCanvas.onOverlayChange wrapper (lines ~4444-4453)
+    panel.videoCanvas = {
+        render: () => { renderCount++; },
+        onOverlayChange: (ov) => {
+            onOverlayChangeCalls++;
+            if (!ov || typeof ov !== 'object' || panel._panelSyncingOverlay) return;
+            syncFromOverlayCalls++;
+            panel._renderAutoColorRules();
+        },
+    };
+
+    let renderAutoColorCount = 0;
+    const origRenderAutoColor = sandbox.window.ReelsOverlayPanel.prototype._renderAutoColorRules;
+    panel._renderAutoColorRules = function () {
+        renderAutoColorCount++;
+        return origRenderAutoColor.call(this);
+    };
+
+    panel._renderAutoColorRules();
+    const colorPicker = findNodes(rulesContainer, (n) => n.tagName === 'INPUT' && n.type === 'color')[0];
+    const hexInput = findNodes(rulesContainer, (n) => n.tagName === 'INPUT' && n.className === 'rop-color-hex')[0];
+    const kwInput = findNodes(rulesContainer, (n) => n.tagName === 'TEXTAREA')[0];
+    assert.ok(colorPicker && hexInput && kwInput, 'Auto-color rule controls must render');
+    assert.strictEqual(hexInput.value, '#d3cf5a');
+
+    // Reset counters after initial render
+    renderAutoColorCount = 0;
+    syncFromOverlayCalls = 0;
+    renderCount = 0;
+    onOverlayChangeCalls = 0;
+
+    // 1. Continuous <input type="color"> drags must keep DOM nodes mounted & popup alive
+    for (const hex of ['#e0b020', '#ff1122', '#33aa44']) {
+        colorPicker.value = hex;
+        colorPicker.dispatch('input');
+    }
+    assert.strictEqual(rulesContainer.contains(colorPicker), true, 'colorPicker must remain in DOM during input drag');
+    assert.strictEqual(rulesContainer.contains(hexInput), true, 'hexInput must remain in DOM during input drag');
+    assert.strictEqual(renderAutoColorCount, 0, 'Color input events must not rebuild #rop-autocolor-rules');
+    assert.strictEqual(syncFromOverlayCalls, 0, 'Panel-initiated color changes must not re-enter _syncFromOverlay');
+    assert.strictEqual(tasks[0].overlays[0].auto_color_rules[0].color, '#33aa44');
+    assert.strictEqual(hexInput.value, '#33aa44');
+
+    flushRaf();
+    assert.strictEqual(renderCount, 1, 'Continuous color drag in a frame must coalesce to 1 render');
+
+    // 2. Final change event commits cleanly without rebuilding rule DOM
+    colorPicker.value = '#12ab34';
+    colorPicker.dispatch('change');
+    flushRaf();
+    assert.strictEqual(rulesContainer.contains(colorPicker), true, 'colorPicker must remain in DOM on change commit');
+    assert.strictEqual(renderAutoColorCount, 0);
+    assert.strictEqual(syncFromOverlayCalls, 0);
+    assert.strictEqual(onOverlayChangeCalls, 1);
+    assert.strictEqual(tasks[0].overlays[0].auto_color_rules[0].color, '#12ab34');
+    assert.strictEqual(tasks[1].overlays[0].auto_color_rules[0].color, '#12ab34');
+
+    // 3. Editing hex input preserves DOM and syncs picker + rule + scoped tasks
+    hexInput.value = '#aa55ff';
+    hexInput.dispatch('input');
+    hexInput.dispatch('change');
+    flushRaf();
+    assert.strictEqual(rulesContainer.contains(hexInput), true);
+    assert.strictEqual(renderAutoColorCount, 0);
+    assert.strictEqual(syncFromOverlayCalls, 0);
+    assert.strictEqual(colorPicker.value, '#aa55ff');
+    assert.strictEqual(tasks[0].overlays[0].auto_color_rules[0].color, '#aa55ff');
+    assert.strictEqual(onOverlayChangeCalls, 2);
+
+    // 4. Editing keyword textarea preserves DOM and commits without rebuilding rules
+    kwInput.value = 'Jesus\nGrace';
+    kwInput.dispatch('input');
+    kwInput.dispatch('change');
+    flushRaf();
+    assert.strictEqual(rulesContainer.contains(kwInput), true);
+    assert.strictEqual(renderAutoColorCount, 0);
+    assert.strictEqual(syncFromOverlayCalls, 0);
+    assert.deepStrictEqual([...tasks[0].overlays[0].auto_color_rules[0].keywords], ['Jesus', 'Grace']);
+    assert.strictEqual(onOverlayChangeCalls, 3);
+
+    // 5. Generic _syncToOverlay must not wipe #rop-autocolor-rules DOM either
+    panel._syncToOverlay({ commit: false });
+    assert.strictEqual(rulesContainer.contains(colorPicker), true);
+    assert.strictEqual(renderAutoColorCount, 0);
+});
+
 
 
 
