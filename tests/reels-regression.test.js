@@ -6085,9 +6085,13 @@ test('Tab small-groups, grouped batch packaging subfolders, and multi-group rest
             dataset: {},
             options: [],
             classList: { add() {}, remove() {}, toggle() {}, contains: () => false },
+            append() {},
+            prepend() {},
             appendChild() {},
             removeChild() {},
+            replaceChildren() {},
             remove() {},
+            scrollIntoView() {},
             contains: () => false,
             addEventListener() {},
             setAttribute() {},
@@ -9009,6 +9013,257 @@ test('Auto-color rule color picker, hex input, and keyword textarea preserve DOM
     assert.strictEqual(rulesContainer.contains(colorPicker), true);
     assert.strictEqual(renderAutoColorCount, 0);
 });
+
+test('End-to-end reelsStartExport persists Array resolvedBaseNames and reelsResumeExportFromJournal retries only failed jobs', async () => {
+    const os = require('node:os');
+    const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'vk-export-e2e-'));
+    try {
+        const srcMedia = path.join(tmpRoot, 'media');
+        const outDir = path.join(tmpRoot, 'out');
+        fs.mkdirSync(srcMedia, { recursive: true });
+        fs.mkdirSync(outDir, { recursive: true });
+
+        const bg1 = path.join(srcMedia, 'bg1.mp4');
+        const bg2 = path.join(srcMedia, 'bg2.mp4');
+        const v1 = path.join(srcMedia, 'v1.mp3');
+        const v2 = path.join(srcMedia, 'v2.mp3');
+        for (const f of [bg1, bg2, v1, v2]) fs.writeFileSync(f, Buffer.alloc(512, 7));
+
+        const makeEl = (overrides = {}) => ({
+            value: '',
+            checked: false,
+            disabled: false,
+            textContent: '',
+            innerHTML: '',
+            style: {},
+            dataset: {},
+            options: [],
+            classList: { add() {}, remove() {}, toggle() {}, contains: () => false },
+            append() {},
+            prepend() {},
+            appendChild() {},
+            removeChild() {},
+            replaceChildren() {},
+            remove() {},
+            scrollIntoView() {},
+            contains: () => false,
+            addEventListener() {},
+            setAttribute() {},
+            focus() {},
+            click() {},
+            querySelector: () => null,
+            querySelectorAll: () => [],
+            getBoundingClientRect: () => ({ width: 800, height: 600, top: 0, left: 0 }),
+            getContext: () => ({
+                font: '', globalAlpha: 1, save() {}, restore() {}, beginPath() {}, closePath() {},
+                moveTo() {}, lineTo() {}, quadraticCurveTo() {}, bezierCurveTo() {}, arc() {}, arcTo() {},
+                rect() {}, clip() {}, fill() {}, stroke() {}, fillRect() {}, strokeRect() {}, clearRect() {},
+                fillText() {}, strokeText() {}, translate() {}, rotate() {}, scale() {}, setLineDash() {},
+                createPattern: () => ({}), createLinearGradient: () => ({ addColorStop() {} }),
+                createRadialGradient: () => ({ addColorStop() {} }),
+                measureText: (txt) => ({ width: String(txt || '').length * 10 }),
+            }),
+            ...overrides,
+        });
+
+        const domElements = new Map([
+            ['reels-output-dir', makeEl({ value: outDir })],
+            ['reels-quality', makeEl({ value: 'medium' })],
+            ['reels-export-engine', makeEl({ value: 'precise' })],
+            ['reels-suffix', makeEl({ value: '' })],
+            ['reels-export-naming-mode-outer', makeEl({ value: 'text' })],
+            ['reels-naming-mode', makeEl({ value: 'text' })],
+            ['reels-download-mode', makeEl({ value: 'all' })],
+            ['reels-download-range', makeEl({ value: '' })],
+            ['reels-export-format', makeEl({ value: 'mp4' })],
+            ['reels-export-concurrency', makeEl({ value: '1' })],
+            ['reels-export-btn', makeEl({ textContent: '开始导出' })],
+            ['reels-export-status', makeEl()],
+            ['reels-export-progress', makeEl()],
+            ['reels-export-recovery-bar', makeEl({ style: { display: 'none' } })],
+            ['reels-export-job-progress-list', makeEl()],
+        ]);
+        const documentStub = {
+            head: makeEl(),
+            body: makeEl(),
+            createElement: () => makeEl(),
+            getElementById: (id) => domElements.get(id) || null,
+            querySelector: () => null,
+            querySelectorAll: () => [],
+            addEventListener() {},
+            removeEventListener() {},
+        };
+
+        const exportErrors = [];
+        const notifications = [];
+        const isolatedCalls = [];
+        let ipcJournalState = null;
+        let failSecondJob = true;
+
+        const sandbox = loadBrowserScript('src/reels-project.js', {
+            window: {
+                innerWidth: 1280,
+                innerHeight: 800,
+                location: { hash: '' },
+                addEventListener() {},
+                removeEventListener() {},
+                AudioContext: undefined,
+                webkitAudioContext: undefined,
+                reelsWysiwygExport: async (params) => {
+                    const outPath = params?.outputPath || params?.output_path;
+                    if (failSecondJob && (!outPath || String(outPath).includes('bg2'))) {
+                        throw new Error('simulated fallback failure on job 1');
+                    }
+                    fs.mkdirSync(path.dirname(outPath), { recursive: true });
+                    fs.writeFileSync(outPath, Buffer.alloc(8192, 0x55));
+                    return { success: true, output_path: outPath };
+                },
+                electronAPI: {
+                    toFileUrl: (p) => 'file:///' + String(p || '').replace(/\\/g, '/'),
+                    ensureDirectory: async (dir) => {
+                        fs.mkdirSync(dir, { recursive: true });
+                        return { ok: true };
+                    },
+                    getMediaDuration: async () => 5,
+                    getMediaDurationDetail: async () => ({ duration: 5 }),
+                    checkFilesExist: async (paths = []) => {
+                        const res = {};
+                        for (const p of paths) res[p] = fs.existsSync(p);
+                        return res;
+                    },
+                    verifyExportOutputs: async (paths = []) => {
+                        const res = {};
+                        for (const p of (Array.isArray(paths) ? paths : [])) {
+                            try {
+                                const st = fs.statSync(p);
+                                res[p] = st.isFile() && st.size > 4096;
+                            } catch (_) {
+                                res[p] = false;
+                            }
+                        }
+                        return res;
+                    },
+                    onIsolatedWysiwygProgress: () => () => {},
+                    cancelIsolatedWysiwygExport: async () => ({ cancelled: true }),
+                    reelsComposeWysiwyg: async () => ({ success: true }),
+                    isolatedWysiwygExport: async (opts) => {
+                        const p = opts?.params || {};
+                        const outPath = p.outputPath || p.output_path || opts?.outputPath || opts?.output_path;
+                        isolatedCalls.push({ requestId: opts?.requestId, outPath });
+                        if (failSecondJob && String(outPath).includes('bg2')) {
+                            throw new Error('simulated failure on job 1');
+                        }
+                        fs.mkdirSync(path.dirname(outPath), { recursive: true });
+                        fs.writeFileSync(outPath, Buffer.alloc(8192, 0x55));
+                        return { success: true, output_path: outPath };
+                    },
+                    saveReelsExportJournal: async (j) => {
+                        ipcJournalState = JSON.parse(JSON.stringify(j));
+                        return { ok: true };
+                    },
+                    readReelsExportJournal: async () => (ipcJournalState ? JSON.parse(JSON.stringify(ipcJournalState)) : null),
+                    clearReelsExportJournal: async () => {
+                        ipcJournalState = null;
+                        return { ok: true };
+                    },
+                    setExportTaskbarProgress: async () => true,
+                    notifyExportComplete: async (payload) => {
+                        notifications.push(payload);
+                        return { ok: true };
+                    },
+                    showReelsExportError: async (payload) => {
+                        exportErrors.push(payload);
+                        return { ok: true };
+                    },
+                    getDefaultProjectDir: () => tmpRoot,
+                    saveBatchWorkspace: () => true,
+                    readBatchWorkspace: () => '',
+                },
+            },
+            document: documentStub,
+            setTimeout,
+            clearTimeout,
+            setInterval,
+            clearInterval,
+            requestAnimationFrame: (cb) => { if (typeof cb === 'function') cb(0); return 0; },
+            getComputedStyle: () => ({ display: 'none', height: '0px' }),
+            getWritingVisualStyle: (s) => s,
+            reelsRefreshWritingTitleEditor: () => {},
+            reelsRefreshSpeechWritingImageUI: () => {},
+            showToast: () => {},
+            alert: (msg) => exportErrors.push({ alert: msg }),
+            confirm: () => true,
+        });
+        sandbox.localStorage.setItem('reelsQualityReminderShown', 'true');
+        vm.runInContext(fs.readFileSync(path.join(ROOT, 'src/reels-render-plan.js'), 'utf8'), sandbox, { filename: 'src/reels-render-plan.js' });
+        vm.runInContext(fs.readFileSync(path.join(ROOT, 'src/reels-batch-table.js'), 'utf8'), sandbox, { filename: 'src/reels-batch-table.js' });
+        vm.runInContext(fs.readFileSync(path.join(ROOT, 'src/batch-reels.js'), 'utf8'), sandbox, { filename: 'src/batch-reels.js' });
+
+        // 1. _resolveReelsJobBaseNames must return a real Array (supports .slice()) and _normalizeReelsResolvedBaseNames normalizes legacy objects
+        const dedupCheck = JSON.parse(vm.runInContext(`JSON.stringify((() => {
+            const arr = _resolveReelsJobBaseNames([
+                { task: { baseName: 'same_name' } },
+                { task: { baseName: 'same_name' } },
+                { task: { baseName: 'unique_name' } },
+            ], 'text');
+            const normalizedLegacy = _normalizeReelsResolvedBaseNames({ 0: 'legacy_0', 1: 'legacy_1' }, 2);
+            return {
+                isArray: Array.isArray(arr),
+                sliced: typeof arr.slice === 'function' ? arr.slice() : null,
+                legacyIsArray: Array.isArray(normalizedLegacy),
+                legacySliced: typeof normalizedLegacy.slice === 'function' ? normalizedLegacy.slice() : null,
+            };
+        })())`, sandbox));
+        assert.strictEqual(dedupCheck.isArray, true, '_resolveReelsJobBaseNames must return an Array');
+        assert.deepStrictEqual(dedupCheck.sliced, ['001_same_name', '002_same_name', '003_unique_name']);
+        assert.strictEqual(dedupCheck.legacyIsArray, true, '_normalizeReelsResolvedBaseNames must return an Array for legacy objects');
+        assert.deepStrictEqual(dedupCheck.legacySliced, ['legacy_0', 'legacy_1']);
+
+        // 2. Real reelsStartExport() with 2 tasks: job 0 succeeds, job 1 fails
+        vm.runInContext(`
+            _reelsState.tasks = [
+                { id: 'task_a', baseName: 'alpha_clip', fileName: 'alpha_clip', rowNumber: 1, bgPath: ${JSON.stringify(bg1)}, videoPath: ${JSON.stringify(bg1)}, audioPath: ${JSON.stringify(v1)}, _exportSelected: true, overlays: [] },
+                { id: 'task_b', baseName: 'beta_clip', fileName: 'beta_clip', rowNumber: 2, bgPath: ${JSON.stringify(bg2)}, videoPath: ${JSON.stringify(bg2)}, audioPath: ${JSON.stringify(v2)}, _exportSelected: true, overlays: [] },
+            ];
+            _reelsState.selectedIndices = new Set([0, 1]);
+            _reelsState.targetWidth = 1080;
+            _reelsState.targetHeight = 1920;
+            _reelsState.fps = 30;
+            _reelsState.watermarks = [];
+        `, sandbox);
+
+        await sandbox.reelsStartExport();
+
+        assert.deepStrictEqual(exportErrors, [], 'reelsStartExport must not hit _exportResolvedNames.slice or showReelsExportError');
+        assert.strictEqual(isolatedCalls.length, 2, 'Initial batch export must attempt both job 0 and job 1');
+
+        const storedRaw = sandbox.localStorage.getItem('videokit_reels_export_resume_v1');
+        assert.ok(storedRaw, 'Partial failure must persist export resume journal to localStorage');
+        const savedJournal = JSON.parse(storedRaw);
+        assert.strictEqual(Array.isArray(savedJournal.resolvedBaseNames), true, 'journal.resolvedBaseNames must serialize as an Array');
+        assert.strictEqual(savedJournal.resolvedBaseNames.length, 2);
+        assert.strictEqual(savedJournal.jobs[0].status, 'success');
+        assert.strictEqual(savedJournal.jobs[1].status, 'failed');
+        assert.ok(ipcJournalState && Array.isArray(ipcJournalState.resolvedBaseNames));
+
+        // 3. Resume failed-only via real reelsResumeExportFromJournal('failed-only'): runs ONLY job 1
+        failSecondJob = false;
+        notifications.length = 0;
+        await sandbox.reelsResumeExportFromJournal('failed-only');
+
+        assert.deepStrictEqual(exportErrors, [], 'Resumed export must not raise export errors');
+        assert.strictEqual(isolatedCalls.length, 3, 'Resume failed-only must invoke isolatedWysiwygExport only once for failed job 1');
+        assert.ok(String(isolatedCalls[2].outPath).includes('bg2'), 'Resumed call must target failed job 1 output');
+        assert.strictEqual(sandbox.localStorage.getItem('videokit_reels_export_resume_v1'), null, 'Completed resume must clear localStorage export journal');
+        assert.strictEqual(ipcJournalState, null, 'Completed resume must clear IPC export journal');
+        assert.ok(notifications.length >= 1, 'Completed export must fire notification');
+        assert.ok(fs.statSync(isolatedCalls[0].outPath).size > 4096);
+        assert.ok(fs.statSync(isolatedCalls[2].outPath).size > 4096);
+    } finally {
+        fs.rmSync(tmpRoot, { recursive: true, force: true });
+    }
+});
+
 
 
 

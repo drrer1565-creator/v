@@ -14004,7 +14004,7 @@ function _resolveReelsJobBaseNames(jobs, namingMode = 'text', options = {}) {
         freq[key] = (freq[key] || 0) + 1;
     });
     const counter = {};
-    const resolved = {};
+    const resolved = [];
     namedWithRow.forEach((name, idx) => {
         const key = sanitizeOutput ? String(name).toLowerCase() : name;
         if (freq[key] > 1) {
@@ -14015,6 +14015,12 @@ function _resolveReelsJobBaseNames(jobs, namingMode = 'text', options = {}) {
         }
     });
     return resolved;
+}
+
+function _normalizeReelsResolvedBaseNames(resolvedNames, expectedCount) {
+    if (Array.isArray(resolvedNames)) return resolvedNames.slice();
+    const count = Math.max(0, Number(expectedCount) || 0);
+    return Array.from({ length: count }, (_, idx) => (resolvedNames && resolvedNames[idx]) || '');
 }
 
 function _collectReelsTaskMediaAssets(task) {
@@ -14988,7 +14994,7 @@ async function _reelsStartExportImpl(options = {}) {
                 try { window.ReelsBatchTable.render(); } catch (_) { }
             }
         }
-        _exportResolvedNames = _resolveReelsJobBaseNames(exportJobs, namingMode);
+        _exportResolvedNames = _normalizeReelsResolvedBaseNames(_resolveReelsJobBaseNames(exportJobs, namingMode), totalJobs);
     }
 
     const startIdx = resumeState ? Math.max(0, Math.min(totalJobs, Number(resumeState.nextIndex) || 0)) : 0;
@@ -15090,7 +15096,7 @@ async function _reelsStartExportImpl(options = {}) {
             fileName: t?.fileName || t?.baseName || '',
             audioPath: t?.audioPath || '',
         })),
-        resolvedBaseNames: _exportResolvedNames.slice(),
+        resolvedBaseNames: _normalizeReelsResolvedBaseNames(_exportResolvedNames, totalJobs),
         totalJobs,
         jobKeys: exportJobKeys,
         jobs: initialJobs,

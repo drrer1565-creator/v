@@ -1,8 +1,12 @@
-# VideoKit 4.6.2-beta (测试版)
+# VideoKit 4.6.2-beta.2 (测试版)
 
 > 🧪 **测试版说明**：面向内测与早期验证发布，如需稳定生产环境可随时切换回正式版通道。
 
-## 本次 4.6.2-beta 核心更新
+## 本次 4.6.2-beta.2 核心更新
+
+### 0. 🐛 修复批量导出 `_exportResolvedNames.slice is not a function` 报错
+- 修复 `_resolveReelsJobBaseNames` 返回普通对象导致全新启动批量导出时序列化 `resolvedBaseNames` 抛出 `_exportResolvedNames.slice is not a function` 的问题，并在命名解析与导出断点清单写入阶段统一归一化为数组。
+- 补充端到端回归测试覆盖 `reelsStartExport()` 与 `reelsResumeExportFromJournal('failed-only')`。
 
 ### 1. 🎨 自动着色关键词选色弹窗稳定修复
 - 修复 **🎨 自动着色**（自定义关键词等规则）中点击/拖动取色器 `<input type="color">`、编辑 Hex 色值或修改关键词时弹窗跳关、失焦的问题：
@@ -23,8 +27,8 @@
 ---
 
 ### 安装包说明
-- Windows 安装版: `VideoKit-Setup-4.6.2-beta.exe`（自动检测覆盖升级并保留全部本地设置与工程数据）
-- Windows 压缩包: `VideoKit-Setup-4.6.2-beta.zip`
-- macOS Apple Silicon (M系列): `VideoKit-4.6.2-beta-macOS-arm64.dmg`
-- macOS Intel (x64): `VideoKit-4.6.2-beta-macOS-x64.dmg`
-- Linux AppImage: `VideoKit-4.6.2-beta-Linux-x86_64.AppImage`
+- Windows 安装版: `VideoKit-Setup-4.6.2-beta.2.exe`（自动检测覆盖升级并保留全部本地设置与工程数据）
+- Windows 压缩包: `VideoKit-Setup-4.6.2-beta.2.zip`
+- macOS Apple Silicon (M系列): `VideoKit-4.6.2-beta.2-macOS-arm64.dmg`
+- macOS Intel (x64): `VideoKit-4.6.2-beta.2-macOS-x64.dmg`
+- Linux AppImage: `VideoKit-4.6.2-beta.2-Linux-x86_64.AppImage`
