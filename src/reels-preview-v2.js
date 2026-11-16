@@ -341,36 +341,22 @@
         root.querySelector('[data-action="zoom-out"]').addEventListener('click', () => zoomView(0.8));
         root.querySelector('[data-action="zoom-reset"]').addEventListener('click', resetZoomOneToOne);
         root.querySelector('[data-action="play"]').addEventListener('click', togglePlay);
-        const subtitleToggle = root.querySelector('[data-role="subs"]');
-        const exportSubtitleToggle = document.getElementById('reels-subtitle-toggle');
-        if (subtitleToggle && exportSubtitleToggle) subtitleToggle.checked = exportSubtitleToggle.checked;
-        subtitleToggle?.addEventListener('change', () => {
-            if (exportSubtitleToggle) exportSubtitleToggle.checked = subtitleToggle.checked;
-            if (typeof window.reelsOnSubtitleToggleChange === 'function') {
-                window.reelsOnSubtitleToggleChange(exportSubtitleToggle || subtitleToggle);
-            }
-            render();
-        });
-        const overlayToggle = root.querySelector('[data-role="overlays"]');
-        const exportOverlayToggle = document.getElementById('reels-overlay-toggle');
-        if (overlayToggle && exportOverlayToggle) overlayToggle.checked = exportOverlayToggle.checked;
-        overlayToggle?.addEventListener('change', () => {
-            if (exportOverlayToggle) exportOverlayToggle.checked = overlayToggle.checked;
-            if (typeof window.reelsOnOverlayToggleChange === 'function') {
-                window.reelsOnOverlayToggleChange(exportOverlayToggle || overlayToggle);
-            }
-            render();
-        });
-        const decorToggle = root.querySelector('[data-role="decor"]');
-        const exportDecorToggle = document.getElementById('reels-decor-toggle');
-        if (decorToggle && exportDecorToggle) decorToggle.checked = exportDecorToggle.checked;
-        decorToggle?.addEventListener('change', () => {
-            if (exportDecorToggle) exportDecorToggle.checked = decorToggle.checked;
-            if (typeof window.reelsOnDecorToggleChange === 'function') {
-                window.reelsOnDecorToggleChange(exportDecorToggle || decorToggle);
-            }
-            render();
-        });
+        for (const [role, exportId, handlerName] of [
+            ['subs', 'reels-subtitle-toggle', 'reelsOnSubtitleToggleChange'],
+            ['overlays', 'reels-overlay-toggle', 'reelsOnOverlayToggleChange'],
+            ['decor', 'reels-decor-toggle', 'reelsOnDecorToggleChange'],
+        ]) {
+            const toggleEl = root.querySelector(`[data-role="${role}"]`);
+            const exportToggle = document.getElementById(exportId);
+            if (toggleEl && exportToggle) toggleEl.checked = exportToggle.checked;
+            toggleEl?.addEventListener('change', () => {
+                if (exportToggle) exportToggle.checked = toggleEl.checked;
+                if (typeof window[handlerName] === 'function') {
+                    window[handlerName](exportToggle || toggleEl);
+                }
+                requestRender();
+            });
+        }
         root.querySelector('[data-role="seek"]').addEventListener('input', onSeekInput);
         root.querySelector('[data-role="seek"]').addEventListener('pointerdown', () => { state.dragSeek = true; });
         root.querySelector('[data-role="seek"]').addEventListener('pointerup', () => { state.dragSeek = false; });

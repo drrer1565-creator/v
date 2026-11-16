@@ -1,17 +1,8 @@
 /**
- * reels-templates.js — 视频模板库 UI + 逻辑
- * 
- * 功能：
- *   - 模板库面板（网格缩略图列表）
- *   - 保存当前工程为模板
- *   - 打开模板 → 独立编辑器窗口
- *   - 删除/重命名模板
- *   - 启动时检测 URL hash 自动加载模板
+ * reels-templates.js — 双轨工程与模板管理系统：
+ *   1. 📂 模板库 (openTemplateLibrary): 封存工程快照保存、独立副本载入，不自动覆写原模板；支持多级分类、导入导出与独立窗口编辑
+ *   2. 🗂️ 工程项目 (openProjectLibrary): 实时读取与实时自动保存的活工程工作台，支持多级文件夹、新建空白标签、拖拽整理与批量表格双向同步
  */
-
-// ═══════════════════════════════════════════════════════
-// 1. 模板库 Modal UI
-// ═══════════════════════════════════════════════════════
 
 function _tplEscapeHtml(value) {
     return String(value ?? '').replace(/[&<>"']/g, (ch) => ({
@@ -19,9 +10,94 @@ function _tplEscapeHtml(value) {
     }[ch]));
 }
 
-let _tplSearchTerm = '';
-let _tplSearchTimer = null;
-function _getTemplateFolderChain(folderId, folders = _tplFolderData.folders || []) {
+const TEMPLATE_CARD_SIZE_KEY = 'videokit_template_card_size';
+
+const _LIB_CONFIGS = {
+    template: {
+        mode: 'template',
+        apiBase: 'templates',
+        modalId: 'template-library-modal',
+        prefix: 'tpl',
+        icon: '📂',
+        title: '视频模板库',
+        pickerTitle: '选择视频模板',
+        homeLabel: '主模板库',
+        itemNoun: '模板',
+        searchPlaceholder: '搜索模板名称或关键词（支持跨文件夹）',
+        sortKey: 'videokit_template_sort',
+        sortDirKey: 'videokit_template_sort_direction',
+        zoomKey: 'videokit_template_zoom_percent',
+        sizeKey: TEMPLATE_CARD_SIZE_KEY,
+        winSizeKey: 'videokit_template_window_size',
+    },
+    liveProject: {
+        mode: 'liveProject',
+        apiBase: 'live-projects',
+        modalId: 'live-project-library-modal',
+        prefix: 'lpl',
+        icon: '🗂️',
+        title: '工程项目（实时读取 · 自动保存）',
+        pickerTitle: '选择工程项目',
+        homeLabel: '主工程区',
+        itemNoun: '工程',
+        searchPlaceholder: '搜索工程/文件夹名称或关键词（支持跨文件夹）',
+        sortKey: 'videokit_live_project_sort',
+        sortDirKey: 'videokit_live_project_sort_direction',
+        zoomKey: 'videokit_live_project_zoom_percent',
+        sizeKey: 'videokit_live_project_card_size',
+        winSizeKey: 'videokit_live_project_window_size',
+    },
+};
+
+function _createLibState(mode) {
+    return {
+        mode,
+        cfg: _LIB_CONFIGS[mode],
+        folderId: '',
+        folderData: { folders: [], assignments: {}, folderOrders: {} },
+        searchTerm: '',
+        searchTimer: null,
+        folderHistory: [{ id: '', scrollTop: 0 }],
+        folderHistoryIndex: 0,
+        lastNavigation: { direction: '', time: 0 },
+        dismissedBannerSig: '',
+        archivingInProgress: false,
+    };
+}
+
+const _libStates = {
+    template: _createLibState('template'),
+    liveProject: _createLibState('liveProject'),
+};
+let _activeLibraryMode = 'liveProject';
+
+function _getLibState(mode = _activeLibraryMode) {
+    return mode === 'template' ? _libStates.template : _libStates.liveProject;
+}
+
+function _getVisibleLibraryState() {
+    for (const mode of ['liveProject', 'template']) {
+        const st = _libStates[mode];
+        const modal = typeof document !== 'undefined' ? document.getElementById(st.cfg.modalId) : null;
+        if (modal && getComputedStyle(modal).display !== 'none') return st;
+    }
+    return null;
+}
+
+let _currentTemplateContext = {
+    id: '',
+    name: '',
+};
+
+function _setCurrentTemplateContext(id, name) {
+    _currentTemplateContext = {
+        id: id || '',
+        name: name || '',
+    };
+    _updateLibraryHeaderContext(_libStates.template);
+}
+
+function _getTemplateFolderChain(folderId, folders = [], homeLabel = '主目录') {
     const map = new Map((folders || []).filter(Boolean).map(f => [String(f.id), f]));
     const chain = [];
     const seen = new Set();
@@ -35,12 +111,15 @@ function _getTemplateFolderChain(folderId, folders = _tplFolderData.folders || [
     return chain;
 }
 
-function _buildTemplateFolderPathText(folderId, folders = _tplFolderData.folders || []) {
-    const chain = _getTemplateFolderChain(folderId, folders);
-    return chain.length ? chain.map(f => f.name).join(' / ') : '主工程库';
+function _buildTemplateFolderPathText(folderId, folders = null, homeLabel = null) {
+    const fallbackSt = _getLibState('liveProject');
+    const list = Array.isArray(folders) ? folders : (fallbackSt.folderData.folders || []);
+    const rootTitle = homeLabel || fallbackSt.cfg.homeLabel;
+    const chain = _getTemplateFolderChain(folderId, list, rootTitle);
+    return chain.length ? chain.map(f => f.name).join(' / ') : rootTitle;
 }
 
-function _collectTplDescendantFolderIds(rootFolderId, folders = _tplFolderData.folders || []) {
+function _collectTplDescendantFolderIds(rootFolderId, folders = []) {
     const root = String(rootFolderId || '').trim();
     const out = new Set();
     if (!root) return out;
@@ -59,263 +138,433 @@ function _collectTplDescendantFolderIds(rootFolderId, folders = _tplFolderData.f
     return out;
 }
 
-function _templateMatchesSearch(template, query, folderPathText = '') {
+function _templateMatchesSearch(item, query, folderPathText = '') {
     const tokens = String(query || '').trim().toLocaleLowerCase().split(/\s+/u).filter(Boolean);
     if (!tokens.length) return true;
-    const searchable = [template?.name, template?.templateType, template?.id, folderPathText].map(value => String(value ?? '').toLocaleLowerCase()).join(' ');
+    const searchable = [item?.name, item?.templateType, item?.id, folderPathText]
+        .map(value => String(value ?? '').toLocaleLowerCase())
+        .join(' ');
     return tokens.every(token => searchable.includes(token));
 }
-function _templateSearchChanged(value) {
-    _tplSearchTerm = String(value || '');
-    const clear = document.getElementById('tpl-search-clear');
-    if (clear) clear.style.display = _tplSearchTerm ? '' : 'none';
-    clearTimeout(_tplSearchTimer);
-    _tplSearchTimer = setTimeout(() => _refreshTemplateList(), 180);
-}
-function _clearTemplateSearch() {
-    _tplSearchTerm = '';
-    clearTimeout(_tplSearchTimer);
-    const input = document.getElementById('tpl-search-input');
-    if (input) { input.value = ''; input.focus(); }
-    const clear = document.getElementById('tpl-search-clear');
-    if (clear) clear.style.display = 'none';
-    _refreshTemplateList();
-}
-let _tplFolderId = '';
-let _tplFolderData = {folders:[],assignments:{},folderOrders:{}};
 
-let _currentTemplateContext = {
-    id: '',
-    name: '',
-};
-
-const TEMPLATE_CARD_SIZE_KEY = 'videokit_template_card_size';
-
-function _getTemplateZoom() {
-    const saved=Number(localStorage.getItem('videokit_template_zoom_percent'));
-    if(saved>0)return Math.max(10,Math.min(200,Math.round(saved)));
-    const pixels=parseInt(localStorage.getItem(TEMPLATE_CARD_SIZE_KEY) || '240',10);
-    return Math.max(10,Math.min(200,Math.round((Number.isFinite(pixels)?pixels:240)/240*100)));
-}
-function _getTemplateCardSize(){return Math.round(240*_getTemplateZoom()/100);}
-function _setTemplateCardSize(value){_setTemplateZoom(Number(value)/240*100);}
-function _setTemplateZoom(value){
-    const zoom=Math.max(10,Math.min(200,Math.round(Number(value)||100)));
-    localStorage.setItem('videokit_template_zoom_percent',String(zoom));
-    localStorage.setItem(TEMPLATE_CARD_SIZE_KEY,String(Math.round(240*zoom/100)));
-    const slider=document.getElementById('tpl-card-size-slider'),label=document.getElementById('tpl-card-size-value'),grid=document.getElementById('tpl-card-grid');
-    if(slider)slider.value=String(zoom);if(label)label.textContent=zoom+'%';
-    if(grid){grid.style.setProperty('--tpl-card-size',_getTemplateCardSize()+'px');grid.style.setProperty('--tpl-scale',String(zoom/100));grid.style.columnGap=Math.max(2,Math.round(12*zoom/100))+'px';_layoutTemplateMixedGrid(grid);}
+function _getLibZoom(st) {
+    const saved = Number(localStorage.getItem(st.cfg.zoomKey));
+    if (saved > 0) return Math.max(10, Math.min(200, Math.round(saved)));
+    const pixels = parseInt(localStorage.getItem(st.cfg.sizeKey) || '240', 10);
+    return Math.max(10, Math.min(200, Math.round((Number.isFinite(pixels) ? pixels : 240) / 240 * 100)));
 }
 
-function _setCurrentTemplateContext(id, name) {
-    _currentTemplateContext = {
-        id: id || '',
-        name: name || '',
-    };
-    _updateCurrentTemplateButton();
+function _getLibCardSize(st) {
+    return Math.round(240 * _getLibZoom(st) / 100);
 }
 
-function _updateCurrentTemplateButton() {
-    const btn = document.getElementById('tpl-update-current-btn');
-    const label = document.getElementById('tpl-current-template-label');
+function _setLibZoom(st, value) {
+    const zoom = Math.max(10, Math.min(200, Math.round(Number(value) || 100)));
+    localStorage.setItem(st.cfg.zoomKey, String(zoom));
+    localStorage.setItem(st.cfg.sizeKey, String(Math.round(240 * zoom / 100)));
+    const modal = document.getElementById(st.cfg.modalId);
+    if (!modal) return;
+    const slider = modal.querySelector('[data-role="card-size-slider"]');
+    const label = modal.querySelector('[data-role="card-size-value"]');
+    const grid = modal.querySelector(`.${st.cfg.prefix}-card-grid`);
+    if (slider) slider.value = String(zoom);
+    if (label) label.textContent = zoom + '%';
+    if (grid) {
+        grid.style.setProperty('--tpl-card-size', _getLibCardSize(st) + 'px');
+        grid.style.setProperty('--tpl-scale', String(zoom / 100));
+        grid.style.columnGap = Math.max(2, Math.round(12 * zoom / 100)) + 'px';
+        _layoutLibraryMixedGrid(st, grid);
+    }
+}
+
+function _updateLibraryHeaderContext(st) {
+    const modal = document.getElementById(st.cfg.modalId);
+    if (!modal) return;
+    if (st.mode === 'template') {
+        const btn = modal.querySelector('#tpl-update-current-btn');
+        const label = modal.querySelector('[data-role="current-label"]');
+        if (btn) {
+            btn.disabled = !_currentTemplateContext.id;
+            btn.style.opacity = _currentTemplateContext.id ? '1' : '0.45';
+            btn.style.cursor = _currentTemplateContext.id ? 'pointer' : 'not-allowed';
+            btn.title = _currentTemplateContext.id
+                ? `手动覆盖更新封存模板「${_currentTemplateContext.name || _currentTemplateContext.id}」`
+                : '请先从模板库载入模板（平时修改工作区不会自动覆盖任何模板）';
+        }
+        if (label) {
+            label.textContent = _currentTemplateContext.id
+                ? `已载入模板: ${_currentTemplateContext.name || _currentTemplateContext.id}`
+                : '封存模式：不自动覆盖模板';
+            label.title = _currentTemplateContext.name || '模板库以封存快照保存，只有点击「保存」或「更新当前模板」才会写入';
+        }
+        return;
+    }
+
+    const label = modal.querySelector('[data-role="current-label"]');
     const wsStatus = typeof window.reelsGetWorkspaceLibraryStatus === 'function'
         ? window.reelsGetWorkspaceLibraryStatus()
         : null;
-    const modal = document.getElementById('template-library-modal');
-    const allIds = modal?._allTemplateSummaries
-        ? new Set(modal._allTemplateSummaries.map(t => String(t.id)))
-        : null;
-    const candInfo = (! _currentTemplateContext.id && !wsStatus?.folderId && typeof window.reelsGetWorkspaceSaveCandidateInfo === 'function')
-        ? window.reelsGetWorkspaceSaveCandidateInfo(allIds)
-        : null;
-    if (btn) {
-        btn.disabled = !_currentTemplateContext.id;
-        btn.style.opacity = _currentTemplateContext.id ? '1' : '0.45';
-        btn.style.cursor = _currentTemplateContext.id ? 'pointer' : 'not-allowed';
-        btn.title = _currentTemplateContext.id
-            ? `用当前工程覆盖库内工程「${_currentTemplateContext.name || _currentTemplateContext.id}」`
-            : '请先载入单个工程卡片以单独更新，或直接用「保存当前工程」整体归档';
-    }
     if (label) {
-        if (_currentTemplateContext.id) {
-            label.textContent = `当前: ${_currentTemplateContext.name || _currentTemplateContext.id}`;
-            label.title = _currentTemplateContext.name || _currentTemplateContext.id || '';
-        } else if (wsStatus?.folderId) {
+        if (wsStatus?.folderId) {
             const folderShort = String(wsStatus.folderPath || '已绑定文件夹').split(' / ').pop();
             const countText = wsStatus.folderTotalCount > 0
                 ? `${wsStatus.openTabCount}/${wsStatus.folderTotalCount}`
                 : `${wsStatus.openTabCount}`;
-            label.textContent = `已绑定: ${folderShort} (${countText})`;
-            label.title = `${wsStatus.folderPath} · 已打开 ${wsStatus.openTabCount} 个标签`;
-        } else if (candInfo && candInfo.totalGroups > 0) {
-            label.textContent = `工作区: ${candInfo.totalGroups} 个标签(未归档)`;
-            label.title = `工作区当前有 ${candInfo.totalGroups} 个标签（${candInfo.totalTasks} 条任务），可点击上方一键自动保存并管理`;
+            label.textContent = `🟢 同步目录: ${folderShort} (${countText})`;
+            label.title = `${wsStatus.folderPath} · 已打开 ${wsStatus.openTabCount} 个标签（实时自动保存）`;
         } else {
-            label.textContent = '当前: 未载入工程';
-            label.title = '';
+            label.textContent = wsStatus?.openTabCount
+                ? `🟢 实时工程模式 · 工作区 ${wsStatus.openTabCount} 个打开标签`
+                : '🟢 实时读取 · 新建标签即工程';
+            label.title = '工作区新建或修改标签会实时保存到「工程项目」磁盘目录';
         }
     }
 }
 
-function openTemplateLibrary(onSelectCallback = null, opts = {}) {
+async function _libFolderRequest(st, action, data = {}) {
+    const resp = await apiFetch(`${API_BASE}/${st.cfg.apiBase}/folders/${action}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+    });
+    const parsed = await resp.json();
+    const result = parsed.data || parsed;
+    if (parsed.error || result.error || result.success === false) {
+        throw new Error(parsed.error || result.error || '文件夹操作失败');
+    }
+    return result;
+}
+
+async function _libApiRequest(st, action, data = {}) {
+    const resp = await apiFetch(`${API_BASE}/${st.cfg.apiBase}/${action}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+    });
+    const parsed = await resp.json();
+    if (parsed.error) throw new Error(parsed.error);
+    const result = parsed.data !== undefined ? parsed.data : parsed;
+    if (result && result.error) throw new Error(result.error);
+    return result;
+}
+
+function _getOtherModal(mode) {
+    const otherMode = mode === 'template' ? 'liveProject' : 'template';
+    return document.getElementById(_LIB_CONFIGS[otherMode].modalId);
+}
+
+// ═══════════════════════════════════════════════════════
+// 1. 统一库浏览器弹窗：openTemplateLibrary（📂 模板库） & openProjectLibrary（🗂️ 工程项目）
+// ═══════════════════════════════════════════════════════
+
+function _openLibraryModal(mode, onSelectCallback = null, opts = {}) {
+    const st = _getLibState(mode);
+    _activeLibraryMode = mode;
     const isPicker = !!onSelectCallback;
-    let modal = document.getElementById('template-library-modal');
+
+    // 关闭另一模态框，避免两层遮罩叠加
+    const otherModal = _getOtherModal(mode);
+    if (otherModal) otherModal.style.display = 'none';
+
     if (typeof opts?.folderId === 'string') {
-        _tplFolderId = opts.folderId;
-    } else if (!isPicker && opts?.preserveRoot !== true && !_tplFolderId) {
+        st.folderId = opts.folderId;
+    } else if (mode === 'liveProject' && !isPicker && opts?.preserveRoot !== true && !st.folderId) {
         const activeFolder = window.reelsGetWorkspaceLibraryStatus?.().folderId || '';
-        if (activeFolder) _tplFolderId = activeFolder;
+        if (activeFolder) st.folderId = activeFolder;
     }
 
+    const flushAndRefreshLive = () => {
+        _refreshLibraryView(st);
+        if (mode === 'liveProject' && !isPicker && typeof window.reelsSyncWorkspaceTabsBackToLibraryFolder === 'function') {
+            window.reelsSyncWorkspaceTabsBackToLibraryFolder({ silent: true, onlyDirty: true, autoCreateNew: true, allowEmptyTabs: true, flushWorkspace: true })
+                .then(res => { if (res && (res.updated || res.created)) _refreshLibraryView(st); })
+                .catch(() => {});
+        }
+    };
+
+    let modal = document.getElementById(st.cfg.modalId);
     if (modal && modal._wasPicker === isPicker) {
         modal.style.display = 'flex';
         modal._onSelectCallback = onSelectCallback;
         modal._pickerDisabledIds = new Set(opts.disabledIds || []);
-        _updateCurrentTemplateButton();
-        _refreshTemplateList();
-        if (!isPicker && typeof window.reelsSyncWorkspaceTabsBackToLibraryFolder === 'function') {
-            window.reelsSyncWorkspaceTabsBackToLibraryFolder({ silent: true, onlyDirty: true, autoCreateNew: !!window.reelsGetWorkspaceLibraryStatus?.().folderId })
-                .then(res => { if (res && (res.updated || res.created)) _refreshTemplateList(); })
-                .catch(() => {});
-        }
+        _updateLibraryHeaderContext(st);
+        flushAndRefreshLive();
         return;
     }
     if (modal) modal.remove();
 
+    const p = st.cfg.prefix;
     modal = document.createElement('div');
-    modal.id = 'template-library-modal';
+    modal.id = st.cfg.modalId;
+    modal._libMode = mode;
     modal._wasPicker = isPicker;
     modal._onSelectCallback = onSelectCallback;
     modal._pickerDisabledIds = new Set(opts.disabledIds || []);
-    modal._selectedTemplateIds = new Set();
-    modal.style.cssText = 'display:flex;align-items:center;justify-content:center;z-index:400000;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.6);backdrop-filter:blur(4px);';
-    
+    modal._selectedItemIds = new Set();
+    modal._selectedFolderIds = new Set();
+    modal._visibleFolderIds = [];
+    modal._multiSelectMode = false;
+    modal._selectionAnchorKey = '';
+    modal.style.cssText = 'display:flex;align-items:center;justify-content:center;z-index:400000;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.62);backdrop-filter:blur(4px);';
+
+    const headerActionsHtml = isPicker ? '' : (mode === 'template' ? `
+        <button data-act="save-template" style="padding:5px 12px;font-size:11px;font-weight:600;background:linear-gradient(135deg,#6366f1,#8b5cf6);color:#fff;border:none;border-radius:8px;cursor:pointer;" title="将当前工程封存保存为独立模板（后续修改工作区不会自动覆盖）">💾 保存当前工程为模板</button>
+        <button id="tpl-update-current-btn" data-act="update-template" style="padding:5px 12px;font-size:11px;font-weight:600;background:rgba(245,158,11,0.16);color:#fbbf24;border:1px solid rgba(245,158,11,0.35);border-radius:8px;cursor:pointer;">♻️ 更新当前模板</button>
+        <button data-act="new-folder" style="padding:5px 11px;font-size:11px;font-weight:600;background:rgba(139,92,246,0.18);color:#ddd6fe;border:1px solid rgba(167,139,250,0.38);border-radius:8px;cursor:pointer;">📁 新建文件夹</button>
+        <button id="tpl-repair-thumbnails-btn" data-act="repair-thumbs" style="padding:5px 12px;font-size:11px;font-weight:600;background:rgba(14,165,233,0.15);color:#7dd3fc;border:1px solid rgba(14,165,233,0.35);border-radius:8px;cursor:pointer;">📸 修复重复封面</button>
+        <button data-act="import" style="padding:5px 12px;font-size:11px;font-weight:600;background:rgba(16,185,129,0.15);color:#10b981;border:1px solid rgba(16,185,129,0.3);border-radius:8px;cursor:pointer;">📥 导入</button>
+        <button data-act="export-all" style="padding:5px 12px;font-size:11px;font-weight:600;background:rgba(236,72,153,0.15);color:#ec4899;border:1px solid rgba(236,72,153,0.3);border-radius:8px;cursor:pointer;">📤 导出全部</button>
+        <span data-role="current-label" style="max-width:170px;font-size:10px;color:#94a3b8;white-space:normal;overflow:hidden;overflow-wrap:anywhere;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;line-height:1.45;min-height:2.9em;"></span>
+    ` : `
+        <button id="lpl-new-folder-btn" data-act="new-folder" style="padding:5px 11px;font-size:11px;font-weight:600;background:rgba(139,92,246,0.18);color:#ddd6fe;border:1px solid rgba(167,139,250,0.38);border-radius:8px;cursor:pointer;" title="在当前目录新建多级工程文件夹">📁 新建文件夹</button>
+        <button id="lpl-new-blank-btn" data-act="new-blank-tab" style="padding:5px 12px;font-size:11px;font-weight:700;background:linear-gradient(135deg,#0ea5e9,#2563eb);color:#fff;border:none;border-radius:8px;cursor:pointer;" title="在当前文件夹新建空白工程标签并立即实时保存">📄 新建空白标签</button>
+        <button id="tpl-apply-folder-btn" data-act="apply-folder" style="padding:5px 12px;font-size:11px;font-weight:600;background:rgba(99,102,241,0.22);color:#e0e7ff;border:1px solid rgba(129,140,248,0.42);border-radius:8px;cursor:pointer;" title="打开本文件夹直属全部实时工程到工作区">📂 打开本文件夹</button>
+        <button id="lpl-capture-workspace-btn" data-act="archive-workspace" style="padding:5px 12px;font-size:11px;font-weight:600;background:rgba(245,158,11,0.16);color:#fde68a;border:1px solid rgba(245,158,11,0.36);border-radius:8px;cursor:pointer;" title="把当前工作区未归类标签实时收录到此文件夹">💾 纳入当前工作区</button>
+        <button id="lpl-import-from-tpl-btn" data-act="import-from-templates" style="padding:5px 11px;font-size:11px;font-weight:600;background:rgba(16,185,129,0.16);color:#6ee7b7;border:1px solid rgba(16,185,129,0.34);border-radius:8px;cursor:pointer;" title="从封存模板库复制文件夹或工程过来（不影响原封存模板）">📥 从模板库导入</button>
+        <button id="lpl-import-file-btn" data-act="import" style="padding:5px 10px;font-size:11px;font-weight:600;background:rgba(255,255,255,0.06);color:#cbd5e1;border:1px solid rgba(255,255,255,0.14);border-radius:8px;cursor:pointer;">📂 导入文件</button>
+        <span data-role="current-label" style="max-width:190px;font-size:10px;color:#6ee7b7;white-space:normal;overflow:hidden;overflow-wrap:anywhere;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;line-height:1.45;min-height:2.9em;"></span>
+    `);
+
+    const selectionBarHtml = isPicker ? '' : `
+        <div class="vk-selection-bar" data-role="selection-bar" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;padding:8px 24px;border-bottom:1px solid rgba(255,255,255,0.06);background:rgba(15,23,42,0.58);">
+            <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
+                <button id="${mode === 'template' ? 'tpl-select-all-btn' : 'lpl-select-all-btn'}" data-act="select-all" class="vk-sel-btn" title="全选/取消全选当前页面（快捷键 Ctrl+A）" style="padding:5px 12px;font-size:11.5px;font-weight:700;background:rgba(59,130,246,0.2);color:#93c5fd;border:1px solid rgba(96,165,250,0.45);border-radius:7px;cursor:pointer;">☑ 全选</button>
+                <button data-act="invert-selection" class="vk-sel-btn" title="反选当前页面所有卡片与文件夹" style="padding:5px 10px;font-size:11.5px;font-weight:600;background:rgba(255,255,255,0.06);color:#cbd5e1;border:1px solid rgba(255,255,255,0.16);border-radius:7px;cursor:pointer;">🔁 反选</button>
+                <button data-act="clear-selection" class="vk-sel-btn" title="取消所有已选项（Esc）" style="padding:5px 10px;font-size:11.5px;font-weight:600;background:rgba(255,255,255,0.04);color:#94a3b8;border:1px solid rgba(255,255,255,0.12);border-radius:7px;cursor:pointer;">☐ 清空</button>
+                <button data-act="toggle-multi-mode" aria-pressed="false" class="vk-sel-btn" title="开启后直接单击任意卡片或文件夹即可连续勾选（无需按住 Ctrl）" style="padding:5px 11px;font-size:11.5px;font-weight:600;background:rgba(16,185,129,0.12);color:#6ee7b7;border:1px solid rgba(16,185,129,0.34);border-radius:7px;cursor:pointer;">☑️ 多选模式: 关</button>
+                <span data-role="selected-count" style="font-size:11.5px;color:#94a3b8;margin-left:4px;white-space:nowrap;">未选择（可点左上复选框 / Shift连选 / 框选）</span>
+            </div>
+            <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
+                ${mode === 'liveProject' ? `
+                    <button id="tpl-apply-selected-btn" data-act="apply-selected" style="padding:5px 12px;font-size:11.5px;font-weight:700;background:linear-gradient(135deg,#10b981,#059669);color:#fff;border:none;border-radius:7px;cursor:pointer;" title="打开勾选的实时工程标签到工作区与批量表格">✅ 打开所选工程</button>
+                    <button id="lpl-append-selected-btn" data-act="append-selected" style="padding:5px 10px;font-size:11.5px;font-weight:600;background:rgba(14,165,233,0.16);color:#7dd3fc;border:1px solid rgba(14,165,233,0.38);border-radius:7px;cursor:pointer;" title="将所选实时工程追加到当前工作区标签页后面">📥 追加打开</button>
+                    <button id="lpl-move-selected-btn" data-act="batch-move" style="padding:5px 10px;font-size:11.5px;font-weight:600;background:rgba(99,102,241,0.18);color:#c7d2fe;border:1px solid rgba(129,140,248,0.38);border-radius:7px;cursor:pointer;" title="把勾选的工程或文件夹批量移动到指定文件夹">📦 批量移动</button>
+                    <button id="lpl-seal-to-tpl-btn" data-act="seal-selected" style="padding:5px 10px;font-size:11.5px;font-weight:600;background:rgba(168,85,247,0.16);color:#e9d5ff;border:1px solid rgba(168,85,247,0.38);border-radius:7px;cursor:pointer;" title="把选中的实时工程另存封存一份到「模板库」">🔒 封存到模板库</button>
+                    <button id="lpl-delete-selected-btn" data-act="batch-delete" style="padding:5px 10px;font-size:11.5px;font-weight:600;background:rgba(239,68,68,0.16);color:#fca5a5;border:1px solid rgba(239,68,68,0.38);border-radius:7px;cursor:pointer;" title="批量删除所选工程或空文件夹（快捷键 Delete）">🗑️ 批量删除</button>
+                ` : `
+                    <button id="tpl-copy-selected-to-live-btn" data-act="copy-to-live" style="padding:5px 11px;font-size:11.5px;font-weight:600;background:rgba(14,165,233,0.16);color:#7dd3fc;border:1px solid rgba(14,165,233,0.38);border-radius:7px;cursor:pointer;" title="复制一份所选模板到「🗂️ 工程项目」（不影响原封存模板）">📤 复制到工程项目</button>
+                    <button id="tpl-save-selected-presets-btn" data-act="save-presets" style="padding:5px 11px;font-size:11.5px;font-weight:600;background:rgba(16,185,129,0.16);color:#6ee7b7;border:1px solid rgba(16,185,129,0.36);border-radius:7px;cursor:pointer;">💾 保存所选预设</button>
+                    <button id="tpl-move-selected-btn" data-act="batch-move" style="padding:5px 10px;font-size:11.5px;font-weight:600;background:rgba(99,102,241,0.18);color:#c7d2fe;border:1px solid rgba(129,140,248,0.38);border-radius:7px;cursor:pointer;" title="把勾选的模板或文件夹批量移动到指定文件夹">📦 批量移动</button>
+                    <button id="tpl-delete-selected-btn" data-act="batch-delete" style="padding:5px 10px;font-size:11.5px;font-weight:600;background:rgba(239,68,68,0.16);color:#fca5a5;border:1px solid rgba(239,68,68,0.38);border-radius:7px;cursor:pointer;" title="批量删除所选模板或空文件夹（快捷键 Delete）">🗑️ 批量删除</button>
+                `}
+            </div>
+        </div>
+    `;
+
+    const subHint = mode === 'template'
+        ? '🔒 封存模板模式：载入工作区后会生成独立副本，编辑工作区不会自动覆盖原模板'
+        : '🟢 实时同步模式：每次新建空白标签与修改均实时写入磁盘，拖拽卡片/文件夹即可整理排序与分类';
+
     modal.innerHTML = `
-        <div class="modal-content" style="width:90vw;max-width:96vw;min-width:min(640px,96vw);height:80vh;max-height:96vh;min-height:min(360px,96vh);resize:both;display:flex;flex-direction:column;background:var(--bg-secondary,#1a1a2e);border-radius:16px;overflow:hidden;border:1px solid rgba(255,255,255,0.08);">
-            <div class="tpl-library-header" style="display:flex;align-items:center;justify-content:space-between;padding:14px 54px 14px 20px;border-bottom:1px solid rgba(255,255,255,0.06);">
-                <div style="display:flex;align-items:center;gap:12px;">
-                    <span style="font-size:22px;">🗂️</span>
-                    <h2 id="tpl-lib-title" style="margin:0;font-size:18px;font-weight:700;color:#fff;">${isPicker ? '选择工程模板' : '工程管理库'}</h2>
-                    <span id="tpl-count-badge" style="font-size:11px;padding:2px 8px;background:rgba(110,231,183,0.15);color:#6ee7b7;border-radius:10px;"></span>
+        <div class="modal-content vk-lib-panel" style="width:90vw;max-width:96vw;min-width:min(640px,96vw);height:80vh;max-height:96vh;min-height:min(360px,96vh);resize:both;display:flex;flex-direction:column;background:var(--bg-secondary,#1a1a2e);border-radius:16px;overflow:hidden;border:1px solid rgba(255,255,255,0.08);">
+            <div class="tpl-library-header vk-lib-header" style="display:flex;align-items:center;justify-content:space-between;padding:14px 54px 14px 20px;border-bottom:1px solid rgba(255,255,255,0.06);">
+                <div style="display:flex;align-items:center;gap:10px;">
+                    <span style="font-size:21px;">${st.cfg.icon}</span>
+                    <h2 data-role="lib-title" style="margin:0;font-size:17px;font-weight:700;color:#fff;">${isPicker ? st.cfg.pickerTitle : st.cfg.title}</h2>
+                    <span data-role="count-badge" style="font-size:11px;padding:2px 8px;background:rgba(110,231,183,0.15);color:#6ee7b7;border-radius:10px;"></span>
                 </div>
-                <div class="tpl-library-actions" style="display:flex;gap:6px;align-items:center;">
-                    ${isPicker ? '' : `
-                    <button id="tpl-new-folder-btn" onclick="_newTemplateFolder()" style="padding:5px 11px;font-size:11px;font-weight:600;background:rgba(139,92,246,0.18);color:#ddd6fe;border:1px solid rgba(167,139,250,0.38);border-radius:8px;cursor:pointer;" title="在当前所在文件夹下新建文件夹（支持多级目录）">📁 新建文件夹</button>
-                    <button id="tpl-apply-selected-btn" onclick="tplApplySelectedProjects()" style="padding:5px 12px;font-size:11px;font-weight:600;background:linear-gradient(135deg,#10b981,#059669);color:#fff;border:none;border-radius:8px;cursor:pointer;" title="将多选勾选的工程卡片应用为工作区标签（批量表格与工作面板仅同步当前所选）">✅ 应用所选标签</button>
-                    <button id="tpl-apply-folder-btn" onclick="tplApplyCurrentFolderProjects()" style="padding:5px 12px;font-size:11px;font-weight:600;background:rgba(99,102,241,0.22);color:#e0e7ff;border:1px solid rgba(129,140,248,0.42);border-radius:8px;cursor:pointer;" title="一键载入当前文件夹直属全部标签到工作面板与批量表格（不识别其他层文件夹）">📂 应用本文件夹</button>
-                    <button onclick="saveCurrentAsTemplate()" style="padding:5px 12px;font-size:11px;font-weight:600;background:linear-gradient(135deg,#6366f1,#8b5cf6);color:#fff;border:none;border-radius:8px;cursor:pointer;" title="自动识别工作区全部标签页（含后台保留标签与小分组）并保存到工程管理库文件夹">💾 保存当前工程</button>
-                    <button id="tpl-update-current-btn" onclick="updateCurrentTemplate()" style="padding:5px 12px;font-size:11px;font-weight:600;background:rgba(245,158,11,0.16);color:#fbbf24;border:1px solid rgba(245,158,11,0.35);border-radius:8px;cursor:pointer;">♻️ 更新当前工程</button>
-                    <button id="tpl-repair-thumbnails-btn" onclick="repairDuplicateTemplateThumbnails()" style="padding:5px 12px;font-size:11px;font-weight:600;background:rgba(14,165,233,0.15);color:#7dd3fc;border:1px solid rgba(14,165,233,0.35);border-radius:8px;cursor:pointer;">📸 修复重复封面</button>
-                    <button onclick="_importTemplate()" style="padding:5px 12px;font-size:11px;font-weight:600;background:rgba(16,185,129,0.15);color:#10b981;border:1px solid rgba(16,185,129,0.3);border-radius:8px;cursor:pointer;">📥 导入</button>
-                    <button onclick="_exportAllTemplates()" style="padding:5px 12px;font-size:11px;font-weight:600;background:rgba(236,72,153,0.15);color:#ec4899;border:1px solid rgba(236,72,153,0.3);border-radius:8px;cursor:pointer;">📤 导出全部</button>
-                    <button id="tpl-select-all-btn" onclick="tplSelectAllTemplates()" style="padding:5px 12px;font-size:11px;font-weight:600;background:rgba(59,130,246,0.14);color:#93c5fd;border:1px solid rgba(59,130,246,0.34);border-radius:8px;cursor:pointer;">☑ 全选</button>
-                    <button id="tpl-save-selected-presets-btn" onclick="tplSaveSelectedPresets()" style="padding:5px 12px;font-size:11px;font-weight:600;background:rgba(16,185,129,0.16);color:#6ee7b7;border:1px solid rgba(16,185,129,0.36);border-radius:8px;cursor:pointer;">💾 保存所选预设</button>
-                    <span id="tpl-selected-count" style="font-size:10px;color:#94a3b8;white-space:nowrap;">未选择</span>
-                    <span id="tpl-current-template-label" style="max-width:170px;font-size:10px;color:#777;white-space:normal;overflow:hidden;overflow-wrap:anywhere;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;line-height:1.45;min-height:2.9em;"></span>
-                    `}
-                    <button id="tpl-library-close" aria-label="关闭工程管理库" onclick="document.getElementById('template-library-modal').style.display='none'" style="background:none;border:none;color:#888;font-size:20px;cursor:pointer;padding:4px 8px;position:absolute;right:12px;top:12px;">✕</button>
+                <div class="tpl-library-actions vk-lib-actions" style="display:flex;gap:6px;align-items:center;">
+                    ${headerActionsHtml}
+                    <button id="${p}-library-close" data-act="close" aria-label="关闭窗口" style="background:none;border:none;color:#888;font-size:20px;cursor:pointer;padding:4px 8px;position:absolute;right:12px;top:12px;">✕</button>
                 </div>
             </div>
             <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:10px 24px;border-bottom:1px solid rgba(255,255,255,.06);">
-                <div style="position:relative;flex:1 1 260px;max-width:530px;min-width:180px;">
+                <div style="position:relative;flex:1 1 260px;max-width:500px;min-width:180px;">
                     <span aria-hidden="true" style="position:absolute;left:12px;top:50%;transform:translateY(-50%);color:#94a3b8;font-size:15px;">⌕</span>
-                    <input id="tpl-search-input" type="search" autocomplete="off" aria-label="搜索工程或文件夹" placeholder="搜索工程/文件夹名称或关键词（支持跨文件夹）" oninput="_templateSearchChanged(this.value)" onkeydown="if(event.key==='Escape'){event.stopPropagation();_clearTemplateSearch();}" style="box-sizing:border-box;width:100%;padding:9px 37px 9px 36px;background:#111827;color:#f8fafc;border:1px solid #475569;border-radius:9px;outline:none;font-size:13px;" />
-                    <button id="tpl-search-clear" onclick="_clearTemplateSearch()" title="清空搜索" aria-label="清空工程搜索" style="display:none;position:absolute;right:9px;top:50%;transform:translateY(-50%);border:0;background:transparent;color:#cbd5e1;cursor:pointer;font-size:18px;">×</button>
+                    <input data-role="search-input" type="search" autocomplete="off" aria-label="搜索名称" placeholder="${st.cfg.searchPlaceholder}" style="box-sizing:border-box;width:100%;padding:9px 37px 9px 36px;background:#111827;color:#f8fafc;border:1px solid #475569;border-radius:9px;outline:none;font-size:13px;" />
+                    <button data-role="search-clear" title="清空搜索" aria-label="清空搜索" style="display:none;position:absolute;right:9px;top:50%;transform:translateY(-50%);border:0;background:transparent;color:#cbd5e1;cursor:pointer;font-size:18px;">×</button>
                 </div>
-                <span id="tpl-search-result" aria-live="polite" style="font-size:12px;color:#94a3b8;white-space:nowrap;"></span>
-                <span style="margin-left:auto;font-size:11px;color:#64748b;">💡 勾选多张工程标签卡片点「应用所选标签」或点「应用本文件夹」，工作面板与批量表格仅同步当前文件夹本级标签</span>
+                <span data-role="search-result" aria-live="polite" style="font-size:12px;color:#94a3b8;white-space:nowrap;"></span>
+                <div style="display:flex;align-items:center;gap:6px;margin-left:auto;">
+                    <select data-role="sort-select" style="padding:4px 8px;font-size:11px;background:#111827;color:#cbd5e1;border:1px solid #334155;border-radius:6px;">
+                        <option value="manual">手动排序</option>
+                        <option value="name">按名称</option>
+                        <option value="modified">按修改时间</option>
+                        <option value="type">按类型</option>
+                        <option value="size">按大小</option>
+                    </select>
+                    <button data-role="sort-dir" style="padding:4px 8px;font-size:11px;background:#111827;color:#cbd5e1;border:1px solid #334155;border-radius:6px;cursor:pointer;">升序 ↑</button>
+                    <input data-role="card-size-slider" type="range" min="35" max="180" value="${_getLibZoom(st)}" style="width:70px;" title="Ctrl+滚轮也可缩放">
+                    <span data-role="card-size-value" style="font-size:11px;color:#94a3b8;min-width:34px;">${_getLibZoom(st)}%</span>
+                </div>
             </div>
-            <div style="display:flex;align-items:center;justify-content:flex-start;flex-wrap:wrap;gap:6px;padding:10px 24px;border-bottom:1px solid rgba(255,255,255,.04);font-size:12px;color:#bbb;">
-                <button id="tpl-folder-home" data-folder-id="" onclick="_openTemplateFolder('')" title="点击返回主工程库，或将工程/文件夹拖到这里" style="background:#ffffff08;border:1px dashed #ffffff35;border-radius:7px;padding:6px 10px;color:#cbd5e1;cursor:pointer;display:inline-flex;align-items:center;gap:6px;">${_templateHomeIcon()}<span>主工程库</span></button>
-                <div id="tpl-breadcrumbs" style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;flex:1;min-width:120px;"></div>
-                <span id="tpl-folder-path" style="display:none;"></span>
-                <button id="tpl-move-to-root" onclick="_moveSelectedTemplatesToRoot()" style="background:#ffffff0a;color:#ddd;border:1px solid #ffffff20;border-radius:6px;padding:5px 9px;cursor:pointer;">移到上级</button>
+            ${selectionBarHtml}
+            <div style="display:flex;align-items:center;justify-content:flex-start;flex-wrap:wrap;gap:6px;padding:8px 24px;border-bottom:1px solid rgba(255,255,255,.04);font-size:12px;color:#bbb;">
+                <button data-role="folder-home" data-folder-id="" title="返回根目录，或将项目/文件夹拖到这里" style="background:#ffffff08;border:1px dashed #ffffff35;border-radius:7px;padding:6px 10px;color:#cbd5e1;cursor:pointer;display:inline-flex;align-items:center;gap:6px;">${_templateHomeIcon()}<span>${st.cfg.homeLabel}</span></button>
+                <div data-role="breadcrumbs" style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;flex:1;min-width:120px;"></div>
+                <button data-role="move-to-root" style="display:none;background:#ffffff0a;color:#ddd;border:1px solid #ffffff20;border-radius:6px;padding:5px 9px;cursor:pointer;">移到上级</button>
+                <span style="font-size:11px;color:#64748b;">${subHint}</span>
             </div>
-            <div id="tpl-workspace-banner" style="display:none;padding:10px 24px;border-bottom:1px solid rgba(16,185,129,0.22);background:linear-gradient(90deg,rgba(16,185,129,0.12),rgba(99,102,241,0.12));flex-shrink:0;"></div>
-            <div id="tpl-grid-container" style="flex:1;overflow-y:auto;padding:20px 24px;">
+            <div data-role="workspace-banner" style="display:none;padding:10px 24px;border-bottom:1px solid rgba(16,185,129,0.22);background:linear-gradient(90deg,rgba(16,185,129,0.12),rgba(99,102,241,0.12));flex-shrink:0;"></div>
+            <div id="${p}-grid-container" data-role="grid-container" style="flex:1;overflow-y:auto;padding:20px 24px;">
                 <div style="color:#666;text-align:center;padding:60px 0;">加载中...</div>
             </div>
         </div>
     `;
 
-    // 点击遮罩关闭
-    modal.addEventListener('click', (e) => {
-        if (e.target === modal) modal.style.display = 'none';
+    // 绑定头部及选择控制栏事件
+    modal.addEventListener('click', async (e) => {
+        if (e.target === modal) {
+            modal.style.display = 'none';
+            return;
+        }
+        const btn = e.target.closest('[data-act]');
+        if (!btn) return;
+        const act = btn.dataset.act;
+        if (act === 'close') modal.style.display = 'none';
+        else if (act === 'new-folder') await _newLibraryFolder(st);
+        else if (act === 'new-blank-tab') await _createBlankLiveProjectDialog(st);
+        else if (act === 'save-template') await saveCurrentAsTemplate();
+        else if (act === 'update-template') await updateCurrentTemplate();
+        else if (act === 'repair-thumbs') await repairDuplicateTemplateThumbnails();
+        else if (act === 'import') await _importLibraryFiles(st);
+        else if (act === 'export-all') await _exportAllTemplates();
+        else if (act === 'select-all') _selectAllLibraryItems(st);
+        else if (act === 'invert-selection') _invertLibrarySelection(st);
+        else if (act === 'clear-selection') _clearLibrarySelection(st);
+        else if (act === 'toggle-multi-mode') _toggleMultiSelectMode(st);
+        else if (act === 'save-presets') await tplSaveSelectedPresets();
+        else if (act === 'apply-selected') await _applySelectedLiveProjects(st);
+        else if (act === 'append-selected') await _applySelectedLiveProjects(st, { loadMode: 'append' });
+        else if (act === 'apply-folder') await window.reelsApplyFolderById(st.folderId);
+        else if (act === 'archive-workspace') await _captureWorkspaceIntoCurrentFolder(st);
+        else if (act === 'import-from-templates') await _openImportFromTemplateModal(st);
+        else if (act === 'seal-selected') await _sealSelectedLiveProjectsToTemplates(st);
+        else if (act === 'copy-to-live') await _batchCopyTemplatesToLive(st);
+        else if (act === 'batch-move') await _batchMoveLibrarySelection(st);
+        else if (act === 'batch-delete') await _batchDeleteLibrarySelection(st);
     });
+
+    if (!isPicker) {
+        modal._keyController?.abort();
+        const keyCtrl = new AbortController();
+        modal._keyController = keyCtrl;
+        window.addEventListener('keydown', (event) => {
+            if (!modal.isConnected || getComputedStyle(modal).display === 'none') return;
+            if (document.getElementById('tpl-context-menu') || _tplInlineEditing) return;
+            if (event.target?.closest?.('input, textarea, select, [contenteditable]')) return;
+            const mod = event.ctrlKey || event.metaKey;
+            if (mod && String(event.key || '').toLowerCase() === 'a') {
+                event.preventDefault();
+                _selectAllLibraryItems(st, { forceAll: true });
+            } else if (event.key === 'Delete' && ((modal._selectedItemIds?.size || 0) + (modal._selectedFolderIds?.size || 0)) > 0) {
+                event.preventDefault();
+                _batchDeleteLibrarySelection(st);
+            } else if (event.key === 'Escape' && ((modal._selectedItemIds?.size || 0) + (modal._selectedFolderIds?.size || 0)) > 0) {
+                event.preventDefault();
+                _clearLibrarySelection(st);
+            }
+        }, { signal: keyCtrl.signal });
+    }
+
+    const searchInput = modal.querySelector('[data-role="search-input"]');
+    searchInput?.addEventListener('input', () => {
+        st.searchTerm = String(searchInput.value || '');
+        const clearBtn = modal.querySelector('[data-role="search-clear"]');
+        if (clearBtn) clearBtn.style.display = st.searchTerm ? '' : 'none';
+        clearTimeout(st.searchTimer);
+        st.searchTimer = setTimeout(() => _refreshLibraryView(st), 180);
+    });
+    searchInput?.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape') {
+            event.stopPropagation();
+            st.searchTerm = '';
+            searchInput.value = '';
+            clearTimeout(st.searchTimer);
+            _refreshLibraryView(st);
+        }
+    });
+    modal.querySelector('[data-role="search-clear"]')?.addEventListener('click', () => {
+        st.searchTerm = '';
+        if (searchInput) { searchInput.value = ''; searchInput.focus(); }
+        _refreshLibraryView(st);
+    });
+    modal.querySelector('[data-role="sort-select"]')?.addEventListener('change', (e) => {
+        localStorage.setItem(st.cfg.sortKey, e.target.value);
+        _refreshLibraryView(st);
+    });
+    modal.querySelector('[data-role="sort-dir"]')?.addEventListener('click', () => {
+        const nextDir = localStorage.getItem(st.cfg.sortDirKey) === 'desc' ? 'asc' : 'desc';
+        localStorage.setItem(st.cfg.sortDirKey, nextDir);
+        _refreshLibraryView(st);
+    });
+    modal.querySelector('[data-role="card-size-slider"]')?.addEventListener('input', (e) => {
+        _setLibZoom(st, e.target.value);
+    });
+    modal.querySelector('[data-role="folder-home"]')?.addEventListener('click', () => _openLibraryFolder(st, ''));
+    modal.querySelector('[data-role="move-to-root"]')?.addEventListener('click', () => _moveSelectedToParent(st));
 
     modal.addEventListener('wheel', event => {
         if (!event.ctrlKey || !event.deltaY) return;
         event.preventDefault();
         event.stopImmediatePropagation();
-        _setTemplateZoom(_getTemplateZoom() + (event.deltaY < 0 ? 5 : -5));
-    }, {passive:false, capture:true});
+        _setLibZoom(st, _getLibZoom(st) + (event.deltaY < 0 ? 5 : -5));
+    }, { passive: false, capture: true });
+
     document.body.appendChild(modal);
-    _initTemplateLibrarySizing(modal);
-    _updateCurrentTemplateButton();
-    _refreshTemplateList();
-    if (!isPicker && typeof window.reelsSyncWorkspaceTabsBackToLibraryFolder === 'function') {
-        window.reelsSyncWorkspaceTabsBackToLibraryFolder({ silent: true, onlyDirty: true, autoCreateNew: !!window.reelsGetWorkspaceLibraryStatus?.().folderId })
-            .then(res => { if (res && (res.updated || res.created)) _refreshTemplateList(); })
-            .catch(() => {});
-    }
+    _initLibraryWindowSizing(st, modal);
+    _updateLibraryHeaderContext(st);
+    flushAndRefreshLive();
+}
+
+function openTemplateLibrary(onSelectCallback = null, opts = {}) {
+    _openLibraryModal('template', onSelectCallback, opts);
 }
 window.openTemplateLibrary = openTemplateLibrary;
-window.openProjectLibrary = openTemplateLibrary;
-window.reelsRefreshTemplateLibraryIfOpen = function() {
-    const modal = document.getElementById('template-library-modal');
-    if (modal && getComputedStyle(modal).display !== 'none') {
-        _refreshTemplateList();
+
+function openProjectLibrary(opts = {}) {
+    _openLibraryModal('liveProject', null, opts);
+}
+window.openProjectLibrary = openProjectLibrary;
+window.openLiveProjectsLibrary = openProjectLibrary;
+
+window.reelsRefreshTemplateLibraryIfOpen = function(modeOverride = null) {
+    const targets = modeOverride ? [_getLibState(modeOverride)] : [_libStates.liveProject, _libStates.template];
+    for (const st of targets) {
+        const modal = document.getElementById(st.cfg.modalId);
+        if (modal && getComputedStyle(modal).display !== 'none') {
+            _refreshLibraryView(st);
+        }
     }
 };
 
-function _toggleTemplateCardSelection(id) {
-    const modal = document.getElementById('template-library-modal');
+function _toggleCardSelection(st, id, options = {}) {
+    const modal = document.getElementById(st.cfg.modalId);
     if (!modal || modal._onSelectCallback || !id) return;
-    const selected = modal._selectedTemplateIds || (modal._selectedTemplateIds = new Set());
-    if (selected.has(id)) selected.delete(id);
-    else selected.add(id);
-    _paintTemplateSelection();
+    _applyCardSelectionAction(st, modal, 't:' + String(id), {
+        fromCheckbox: true,
+        shiftKey: !!options.shiftKey,
+        ctrlKey: !!options.ctrlKey,
+        metaKey: !!options.metaKey,
+    });
 }
 
-async function _fetchLibraryTemplatesFull(ids) {
+async function _fetchLibraryItemsFull(st, ids) {
     const cleanIds = [...new Set((ids || []).map(v => String(v || '').trim()).filter(Boolean))];
     if (!cleanIds.length) return [];
     try {
-        const resp = await apiFetch(`${API_BASE}/templates/get-many`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ ids: cleanIds }),
-        });
-        const parsed = await resp.json();
-        const items = parsed.data || parsed;
+        const items = await _libApiRequest(st, 'get-many', { ids: cleanIds });
         if (Array.isArray(items) && items.length) return items;
     } catch (_) {}
     const out = [];
     for (const id of cleanIds) {
         try {
-            const resp = await apiFetch(`${API_BASE}/templates/get`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ id }),
-            });
-            const parsed = await resp.json();
-            const item = parsed.data || parsed;
+            const item = await _libApiRequest(st, 'get', { id });
             if (item && item.projectData) out.push(item);
         } catch (err) {
-            console.warn('[ProjectLibrary] 读取工程失败:', id, err);
+            console.warn(`[${st.cfg.itemNoun}] 读取失败:`, id, err);
         }
     }
     return out;
 }
 
-async function _applyLibraryIdsToWorkspace(ids, options = {}) {
+async function _applyLiveProjectIdsToWorkspace(st, ids, options = {}) {
     const cleanIds = [...new Set((ids || []).map(v => String(v || '').trim()).filter(Boolean))];
     if (!cleanIds.length) return false;
-    const modal = document.getElementById('template-library-modal');
-    const allSummaries = modal?._allTemplateSummaries || [];
+    const modal = document.getElementById(st.cfg.modalId);
+    const allSummaries = modal?._allSummaries || [];
     const summaryMap = new Map(allSummaries.map(s => [String(s.id), s]));
-    const fullList = await _fetchLibraryTemplatesFull(cleanIds);
+    const fullList = await _fetchLibraryItemsFull(st, cleanIds);
     const fullMap = new Map(fullList.map(item => [String(item.id), item]));
     const entries = cleanIds.map(id => {
         const tplData = fullMap.get(id);
@@ -323,13 +572,13 @@ async function _applyLibraryIdsToWorkspace(ids, options = {}) {
         return { tplData, summary: summaryMap.get(id) || { id, name: tplData.name, updatedAt: tplData.updatedAt } };
     }).filter(Boolean);
     if (!entries.length) {
-        if (typeof showToast === 'function') showToast('所选工程缺少工程数据，无法载入', 'warning');
+        showToast?.('所选工程缺少工程数据，无法打开', 'warning');
         return false;
     }
 
-    const folderId = typeof options.folderId === 'string' ? options.folderId : (_tplFolderId || '');
-    const folderPath = options.folderPath || _buildTemplateFolderPathText(folderId);
-    const folderDirectCount = Number(options.folderTotalCount) || allSummaries.filter(t => (_tplFolderData.assignments[t.id] || '') === folderId).length || entries.length;
+    const folderId = typeof options.folderId === 'string' ? options.folderId : (st.folderId || '');
+    const folderPath = options.folderPath || _buildTemplateFolderPathText(folderId, st.folderData.folders, st.cfg.homeLabel);
+    const folderDirectCount = Number(options.folderTotalCount) || allSummaries.filter(t => (st.folderData.assignments[t.id] || '') === folderId).length || entries.length;
     const scopeMode = options.scopeMode || (entries.length >= folderDirectCount ? 'folder' : 'selected');
 
     if (typeof window.reelsApplyLibraryProjects === 'function') {
@@ -344,54 +593,67 @@ async function _applyLibraryIdsToWorkspace(ids, options = {}) {
         if (!ok) return false;
     }
 
-    const first = entries[0].tplData;
-    if (entries.length === 1) _setCurrentTemplateContext(first.id, first.name);
-    else _setCurrentTemplateContext('', '');
-
     if (modal && options.closeModal !== false) modal.style.display = 'none';
     if (typeof openPanelByName === 'function') openPanelByName('batch-reels');
-    if (typeof showToast === 'function') {
-        showToast(`✅ 已应用「${folderPath}」中的 ${entries.length} 个工程标签（工作区与表格仅识别当前选定范围）`, 'success', 4500);
-    }
+    showToast?.(`✅ 已打开「${folderPath}」中的 ${entries.length} 个实时工程标签`, 'success', 4000);
     return true;
 }
 
-async function tplApplySelectedProjects() {
-    const modal = document.getElementById('template-library-modal');
+async function _applySelectedLiveProjects(st, options = {}) {
+    const modal = document.getElementById(st.cfg.modalId);
     if (!modal || modal._onSelectCallback) return;
-    const selected = modal._selectedTemplateIds || new Set();
-    const visibleOrder = (modal._templateSummaries || []).map(t => String(t.id));
-    const ids = visibleOrder.filter(id => selected.has(id));
-    if (!ids.length) {
-        if (typeof showToast === 'function') showToast('请先勾选要应用的工程标签卡片', 'info');
+    const selected = modal._selectedItemIds || new Set();
+    const selectedFolders = modal._selectedFolderIds || new Set();
+    const visibleOrder = (modal._visibleSummaries || []).map(t => String(t.id));
+    let ids = visibleOrder.filter(id => selected.has(id));
+    const loadMode = options.loadMode === 'append' ? 'append' : 'replace';
+    if (!ids.length && selectedFolders.size > 0) {
+        const pickedFolderIds = [...selectedFolders];
+        if (pickedFolderIds.length === 1 && loadMode === 'replace') {
+            await window.reelsApplyFolderById(pickedFolderIds[0]);
+            return;
+        }
+        const folderSet = new Set(pickedFolderIds);
+        ids = (modal._allSummaries || [])
+            .filter(t => folderSet.has(st.folderData.assignments[t.id] || ''))
+            .map(t => String(t.id));
+        if (!ids.length) {
+            showToast?.('所选文件夹下暂无直属工程可打开', 'info');
+            return;
+        }
+        await _applyLiveProjectIdsToWorkspace(st, ids, {
+            folderId: pickedFolderIds.length === 1 ? pickedFolderIds[0] : (st.folderId || ''),
+            folderTotalCount: ids.length,
+            scopeMode: pickedFolderIds.length === 1 ? 'folder' : 'selected',
+            loadMode,
+        });
         return;
     }
-    const visibleDirectCount = (modal._templateSummaries || []).length;
-    const folderId = _tplSearchTerm.trim()
-        ? (_tplFolderData.assignments[ids[0]] || '')
-        : _tplFolderId;
-    const folderTotalCount = _tplSearchTerm.trim()
-        ? (modal._allTemplateSummaries || []).filter(t => (_tplFolderData.assignments[t.id] || '') === folderId).length
+    if (!ids.length) {
+        showToast?.('请先勾选要打开的工程卡片', 'info');
+        return;
+    }
+    const visibleDirectCount = (modal._visibleSummaries || []).length;
+    const folderId = st.searchTerm.trim()
+        ? (st.folderData.assignments[ids[0]] || '')
+        : st.folderId;
+    const folderTotalCount = st.searchTerm.trim()
+        ? (modal._allSummaries || []).filter(t => (st.folderData.assignments[t.id] || '') === folderId).length
         : visibleDirectCount;
-    const scopeMode = (!_tplSearchTerm.trim() && ids.length >= visibleDirectCount && !!folderId) ? 'folder' : 'selected';
-    await _applyLibraryIdsToWorkspace(ids, { folderId, folderTotalCount, scopeMode });
-}
-
-async function tplApplyCurrentFolderProjects() {
-    await window.reelsApplyFolderById(_tplFolderId);
+    const scopeMode = (!st.searchTerm.trim() && ids.length >= visibleDirectCount && !!folderId) ? 'folder' : 'selected';
+    await _applyLiveProjectIdsToWorkspace(st, ids, { folderId, folderTotalCount, scopeMode, loadMode });
 }
 
 window.reelsApplyFolderById = async function(targetFolderId = '') {
+    const st = _getLibState('liveProject');
     const folderId = String(targetFolderId || '').trim();
-    const listResp = await apiFetch(`${API_BASE}/templates/list`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
-    const listParsed = await listResp.json();
-    const allTemplates = listParsed.data || listParsed || [];
-    const foldersData = await _templateFolderRequest('list');
-    _tplFolderData = { folders: [], assignments: {}, folderOrders: {}, ...foldersData };
+    const allTemplates = _sortLibraryItems(st, await _libApiRequest(st, 'list') || []);
+    const foldersData = await _libFolderRequest(st, 'list');
+    st.folderData = { folders: [], assignments: {}, folderOrders: {}, ...foldersData };
 
-    const directTemplates = _sortTemplateSummaries(allTemplates.filter(t => (_tplFolderData.assignments[t.id] || '') === folderId));
-    const keyOrder = _tplFolderData.folderOrders?.[folderId || ''] || (folderId ? [] : _tplFolderData.libraryOrder) || [];
-    const orderedTemplates = (localStorage.getItem('videokit_template_sort') || 'manual') === 'manual' && Array.isArray(keyOrder) && keyOrder.length
+    const directTemplates = allTemplates.filter(t => (st.folderData.assignments[t.id] || '') === folderId);
+    const keyOrder = st.folderData.folderOrders?.[folderId || ''] || (folderId ? [] : st.folderData.libraryOrder) || [];
+    const orderedTemplates = (localStorage.getItem(st.cfg.sortKey) || 'manual') === 'manual' && Array.isArray(keyOrder) && keyOrder.length
         ? (() => {
             const rank = new Map(keyOrder.map((k, i) => [k, i]));
             return [...directTemplates].sort((a, b) => (rank.get('t:' + a.id) ?? -1) - (rank.get('t:' + b.id) ?? -1));
@@ -399,173 +661,382 @@ window.reelsApplyFolderById = async function(targetFolderId = '') {
         : directTemplates;
 
     if (!orderedTemplates.length) {
-        if (typeof showToast === 'function') showToast('该文件夹当前没有直属工程标签（仅直属工程会被识别，不跨级拉取子文件夹）', 'info');
+        showToast?.('该文件夹当前没有直属工程标签（可先「新建空白标签」或拖入工程）', 'info');
         return false;
     }
-    const modal = document.getElementById('template-library-modal');
-    if (modal) modal._allTemplateSummaries = allTemplates;
-    return await _applyLibraryIdsToWorkspace(orderedTemplates.map(t => t.id), {
+    const modal = document.getElementById(st.cfg.modalId);
+    if (modal) modal._allSummaries = allTemplates;
+    return await _applyLiveProjectIdsToWorkspace(st, orderedTemplates.map(t => t.id), {
         folderId,
-        folderPath: _buildTemplateFolderPathText(folderId, _tplFolderData.folders),
+        folderPath: _buildTemplateFolderPathText(folderId, st.folderData.folders, st.cfg.homeLabel),
         folderTotalCount: orderedTemplates.length,
         scopeMode: 'folder',
     });
 };
 
-async function _refreshTemplateList() {
+// 新建空白标签（实时写入工程项目）
+async function _createBlankLiveProjectDialog(st, targetFolderOverride = null) {
+    const folderId = typeof targetFolderOverride === 'string' ? targetFolderOverride : (st.folderId || '');
+    const modal = document.getElementById(st.cfg.modalId);
+    const existingCount = (modal?._visibleSummaries || []).length;
+    const defaultName = `空白工程 ${existingCount + 1}`;
+    const folderPath = _buildTemplateFolderPathText(folderId, st.folderData.folders, st.cfg.homeLabel);
+
+    const ov = document.createElement('div');
+    ov.style.cssText = 'position:fixed;inset:0;z-index:400200;background:rgba(4,7,18,0.78);backdrop-filter:blur(4px);display:flex;align-items:center;justify-content:center;padding:16px;';
+    ov.innerHTML = `
+        <div style="background:#14182b;border:1px solid rgba(56,189,248,0.45);border-radius:14px;padding:18px 20px;width:min(440px,94vw);color:#e2e8f0;box-shadow:0 24px 60px rgba(0,0,0,0.75);display:flex;flex-direction:column;gap:12px;">
+            <div style="display:flex;justify-content:space-between;align-items:center;">
+                <h3 style="margin:0;font-size:15px;color:#fff;">📄 新建空白工程标签</h3>
+                <button type="button" data-close style="background:none;border:none;color:#94a3b8;font-size:18px;cursor:pointer;">✕</button>
+            </div>
+            <div style="font-size:11.5px;color:#94a3b8;">位置：<b style="color:#6ee7b7;">${_tplEscapeHtml(folderPath)}</b>（建立后实时自动保存，随时可增删改任务与样式）</div>
+            <input type="text" id="lpl-blank-name-input" value="${_tplEscapeHtml(defaultName)}" placeholder="输入空白工程标签名称..." style="width:100%;box-sizing:border-box;padding:8px 10px;background:#0b1020;color:#fff;border:1px solid #475569;border-radius:8px;font-size:13px;outline:none;" />
+            <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:4px;">
+                <button type="button" data-close style="padding:7px 12px;border-radius:8px;border:1px solid #334155;background:#1e293b;color:#cbd5e1;font-size:12px;cursor:pointer;">取消</button>
+                <button type="button" id="lpl-create-stay-btn" style="padding:7px 13px;border-radius:8px;border:1px solid rgba(56,189,248,0.45);background:rgba(14,165,233,0.18);color:#7dd3fc;font-size:12px;font-weight:600;cursor:pointer;">仅新建并留在文件夹</button>
+                <button type="button" id="lpl-create-open-btn" style="padding:7px 15px;border-radius:8px;border:none;background:linear-gradient(135deg,#0ea5e9,#10b981);color:#fff;font-size:12px;font-weight:700;cursor:pointer;">✨ 新建并打开编辑</button>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(ov);
+    const input = ov.querySelector('#lpl-blank-name-input');
+    input?.focus();
+    input?.select();
+
+    const submitCreate = async (openAfter) => {
+        const cleanName = String(input?.value || '').trim() || defaultName;
+        ov.remove();
+        try {
+            const globalStyle = window._reelsState?.globalSubtitleStyle || (typeof _readStyleFromUI === 'function' ? _readStyleFromUI() : {});
+            const projectData = (typeof ReelsProject !== 'undefined' && ReelsProject.collectProjectData)
+                ? ReelsProject.collectProjectData({
+                    tasks: [],
+                    backgroundLibrary: window._reelsState?.backgroundLibrary || [],
+                    style: globalStyle || {},
+                    exportOpts: { ...(window._reelsState?.exportOpts || {}), workMode: document.getElementById('reels-work-mode')?.value || 'srt' },
+                    watermarks: window._reelsState?.watermarks || [],
+                    selectedIdx: -1,
+                })
+                : { version: '2.0.0', createdAt: new Date().toISOString(), app: 'VideoKit', style: globalStyle || {}, exportOpts: {}, tasks: [], selectedIdx: -1 };
+            const saved = await _libApiRequest(st, 'save', {
+                name: cleanName,
+                folderId,
+                thumbnail: '',
+                projectData,
+            });
+            await _refreshLibraryView(st);
+            showToast?.(`📄 已新建空白工程「${cleanName}」并实时保存`, 'success');
+            if (openAfter && saved?.id) {
+                const wsStatus = typeof window.reelsGetWorkspaceLibraryStatus === 'function' ? window.reelsGetWorkspaceLibraryStatus() : null;
+                const appendInSameFolder = Boolean(wsStatus?.folderId && wsStatus.folderId === folderId);
+                await _applyLiveProjectIdsToWorkspace(st, [saved.id], {
+                    folderId,
+                    loadMode: appendInSameFolder ? 'append' : 'replace',
+                    confirmSwitch: !appendInSameFolder,
+                });
+            }
+        } catch (err) {
+            showToast?.(`新建空白标签失败：${err.message}`, 'error');
+        }
+    };
+
+    ov.querySelectorAll('[data-close]').forEach(el => { el.onclick = () => ov.remove(); });
+    ov.addEventListener('click', (e) => { if (e.target === ov) ov.remove(); });
+    ov.querySelector('#lpl-create-stay-btn').onclick = () => submitCreate(false);
+    ov.querySelector('#lpl-create-open-btn').onclick = () => submitCreate(true);
+    input?.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') { e.preventDefault(); submitCreate(true); }
+        else if (e.key === 'Escape') ov.remove();
+    });
+}
+
+async function _captureWorkspaceIntoCurrentFolder(st) {
+    const groups = typeof window.reelsCollectWorkspaceProjectGroups === 'function'
+        ? window.reelsCollectWorkspaceProjectGroups()
+        : [];
+    const targetGroups = groups.filter(g => g && !g.libraryTemplateId);
+    if (!targetGroups.length) {
+        showToast?.('当前工作区的标签都已经绑定在实时工程项目中啦 ✅', 'info');
+        return;
+    }
+    try {
+        const res = await _archiveGroupsToLibrary(targetGroups, {
+            folderMode: 'current-folder',
+            parentFolderId: st.folderId || '',
+            splitByGroup: false,
+            bindWorkspace: true,
+            captureThumbnails: true,
+            syncPresetAssets: false,
+        });
+        await _refreshLibraryView(st);
+        showToast?.(`✅ 已将 ${res.savedResults.length} 个标签实时收录到「${res.rootFolderPath}」`, 'success');
+    } catch (err) {
+        showToast?.(`收录失败：${err.message}`, 'error');
+    }
+}
+
+async function _sealSelectedLiveProjectsToTemplates(st) {
+    const modal = document.getElementById(st.cfg.modalId);
+    const selected = [...(modal?._selectedItemIds || [])];
+    if (!selected.length) {
+        showToast?.('请先勾选要封存的工程项目卡片', 'info');
+        return;
+    }
+    if (!confirm(`将所选 ${selected.length} 个实时工程另存一份为「📂 模板库」封存模板？\n\n原工程项目会继续保持实时编辑，新生成的模板独立封存互不干扰。`)) return;
+    try {
+        const items = await _fetchLibraryItemsFull(st, selected);
+        let saved = 0;
+        for (const item of items) {
+            if (!item?.projectData) continue;
+            await apiFetch(`${API_BASE}/templates/save`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    name: item.name,
+                    description: item.description || '从工程项目封存',
+                    thumbnail: item.thumbnail || '',
+                    tags: item.tags || [],
+                    projectData: JSON.parse(JSON.stringify(item.projectData)),
+                }),
+            });
+            saved++;
+        }
+        showToast?.(`🔒 已封存 ${saved} 个模板到「📂 模板库」`, 'success', 4000);
+        window.reelsRefreshTemplateLibraryIfOpen?.('template');
+    } catch (err) {
+        showToast?.(`封存模板失败：${err.message}`, 'error');
+    }
+}
+
+async function _openImportFromTemplateModal(st) {
+    try {
+        const [tplList, tplFolders] = await Promise.all([
+            _libApiRequest(_getLibState('template'), 'list'),
+            _libFolderRequest(_getLibState('template'), 'list'),
+        ]);
+        if (!Array.isArray(tplList) || !tplList.length) {
+            showToast?.('「模板库」当前还没有任何内容可导入', 'info');
+            return;
+        }
+        const assign = tplFolders?.assignments || {};
+        const folders = tplFolders?.folders || [];
+        const ov = document.createElement('div');
+        ov.style.cssText = 'position:fixed;inset:0;z-index:400200;background:rgba(4,7,18,0.82);backdrop-filter:blur(5px);display:flex;align-items:center;justify-content:center;padding:16px;';
+        ov.innerHTML = `
+            <div style="background:#14182b;border:1px solid rgba(16,185,129,0.42);border-radius:14px;padding:18px 20px;width:min(540px,95vw);max-height:80vh;display:flex;flex-direction:column;gap:10px;color:#e2e8f0;box-shadow:0 24px 60px rgba(0,0,0,0.8);">
+                <div style="display:flex;justify-content:space-between;align-items:center;">
+                    <h3 style="margin:0;font-size:15px;color:#fff;">📥 从「📂 模板库」复制导入到实时工程</h3>
+                    <button type="button" data-close style="background:none;border:none;color:#94a3b8;font-size:18px;cursor:pointer;">✕</button>
+                </div>
+                <div style="font-size:12px;color:#94a3b8;">复制过来后可作为实时工程自由修改，<b>原模板库中的封存模板完全保留不变</b>。</div>
+                <div style="display:flex;gap:8px;align-items:center;">
+                    <button type="button" id="ift-import-all-tree" style="padding:7px 14px;border-radius:8px;border:none;background:linear-gradient(135deg,#059669,#10b981);color:#fff;font-size:12px;font-weight:700;cursor:pointer;">📂 一键按原文件夹树全部复制过来 (${tplList.length} 个)</button>
+                    <button type="button" id="ift-select-toggle" style="margin-left:auto;padding:5px 10px;border-radius:6px;border:1px solid #334155;background:#1e293b;color:#cbd5e1;font-size:11px;cursor:pointer;">全选/取消</button>
+                </div>
+                <div style="flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:4px;border:1px solid rgba(255,255,255,0.08);border-radius:8px;padding:8px;max-height:44vh;">
+                    ${tplList.map(tpl => {
+                        const fPath = _buildTemplateFolderPathText(assign[tpl.id] || '', folders, '主模板库');
+                        return `<label style="display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:6px;background:rgba(255,255,255,0.03);cursor:pointer;font-size:12px;">
+                            <input type="checkbox" class="ift-item-cb" value="${_tplEscapeHtml(tpl.id)}" style="accent-color:#10b981;">
+                            <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${_tplEscapeHtml(tpl.name)}</span>
+                            <span style="font-size:10px;color:#94a3b8;">📁 ${_tplEscapeHtml(fPath)}</span>
+                        </label>`;
+                    }).join('')}
+                </div>
+                <div style="display:flex;justify-content:flex-end;gap:8px;">
+                    <button type="button" data-close style="padding:7px 14px;border-radius:8px;border:1px solid #334155;background:#1e293b;color:#cbd5e1;font-size:12px;cursor:pointer;">取消</button>
+                    <button type="button" id="ift-import-selected" style="padding:7px 16px;border-radius:8px;border:none;background:#6366f1;color:#fff;font-size:12px;font-weight:700;cursor:pointer;">✅ 复制所选到当前目录</button>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(ov);
+        ov.querySelectorAll('[data-close]').forEach(el => { el.onclick = () => ov.remove(); });
+        ov.addEventListener('click', (e) => { if (e.target === ov) ov.remove(); });
+        ov.querySelector('#ift-select-toggle').onclick = () => {
+            const cbs = [...ov.querySelectorAll('.ift-item-cb')];
+            const allChecked = cbs.length > 0 && cbs.every(c => c.checked);
+            cbs.forEach(c => { c.checked = !allChecked; });
+        };
+        const runImport = async (payload) => {
+            try {
+                const res = await _libApiRequest(st, 'import-from-templates', payload);
+                ov.remove();
+                await _refreshLibraryView(st);
+                showToast?.(`✅ 已复制导入 ${res.importedCount || 0} 个工程（保留原模板库不变）`, 'success', 4000);
+            } catch (err) {
+                showToast?.(`导入失败：${err.message}`, 'error');
+            }
+        };
+        ov.querySelector('#ift-import-all-tree').onclick = () => runImport({ copyAllFolders: true, targetFolderId: st.folderId || '' });
+        ov.querySelector('#ift-import-selected').onclick = () => {
+            const ids = [...ov.querySelectorAll('.ift-item-cb:checked')].map(c => c.value);
+            if (!ids.length) { showToast?.('请至少勾选一个模板', 'info'); return; }
+            runImport({ templateIds: ids, copyAllFolders: false, targetFolderId: st.folderId || '' });
+        };
+    } catch (err) {
+        showToast?.(`读取模板库失败：${err.message}`, 'error');
+    }
+}
+
+async function _refreshLibraryView(st) {
     _closeTemplateContextMenu();
-    const modal = document.getElementById('template-library-modal');
-    const container = document.getElementById('tpl-grid-container');
-    const badge = document.getElementById('tpl-count-badge');
-    if (!container || !modal) return;
-    
+    const modal = document.getElementById(st.cfg.modalId);
+    if (!modal) return;
+    const container = modal.querySelector('[data-role="grid-container"]');
+    const badge = modal.querySelector('[data-role="count-badge"]');
+    if (!container) return;
+
     const isPicker = !!modal._onSelectCallback;
+    const p = st.cfg.prefix;
 
     try {
-        const resp = await apiFetch(`${API_BASE}/templates/list`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
-        const parsed = await resp.json();
-        const allTemplates = _sortTemplateSummaries(parsed.data || parsed || []);
-        const rawFolders = await _templateFolderRequest('list');
-        _tplFolderData = { folders: [], assignments: {}, folderOrders: {}, ...(rawFolders || {}) };
-        if (typeof window !== 'undefined') {
-            if (!window._reelsLibraryThumbCache || typeof window._reelsLibraryThumbCache !== 'object') {
-                window._reelsLibraryThumbCache = {};
-            }
-            for (const tpl of allTemplates) {
-                if (tpl?.id && tpl.thumbnail) window._reelsLibraryThumbCache[tpl.id] = tpl.thumbnail;
+        const [rawList, rawFolders] = await Promise.all([
+            _libApiRequest(st, 'list'),
+            _libFolderRequest(st, 'list'),
+        ]);
+        const allItems = _sortLibraryItems(st, rawList || []);
+        st.folderData = { folders: [], assignments: {}, folderOrders: {}, ...(rawFolders || {}) };
+
+        if (st.mode === 'liveProject' && typeof window !== 'undefined') {
+            window._reelsLibraryThumbCache = window._reelsLibraryThumbCache || {};
+            for (const item of allItems) {
+                if (item?.id && item.thumbnail) window._reelsLibraryThumbCache[item.id] = item.thumbnail;
             }
         }
-        if (_tplFolderId && !_tplFolderData.folders.some(f => f.id === _tplFolderId)) _tplFolderId = '';
-        const query = _tplSearchTerm.trim();
+        if (st.folderId && !st.folderData.folders.some(f => f.id === st.folderId)) st.folderId = '';
+
+        const query = st.searchTerm.trim();
         const searching = !!query;
-        const templates = searching
-            ? allTemplates.filter(t => _templateMatchesSearch(t, query, _buildTemplateFolderPathText(_tplFolderData.assignments[t.id] || '')))
-            : allTemplates.filter(t => (_tplFolderData.assignments[t.id] || '') === _tplFolderId);
+        const items = searching
+            ? allItems.filter(t => _templateMatchesSearch(t, query, _buildTemplateFolderPathText(st.folderData.assignments[t.id] || '', st.folderData.folders, st.cfg.homeLabel)))
+            : allItems.filter(t => (st.folderData.assignments[t.id] || '') === st.folderId);
         const childFoldersRaw = searching
             ? []
-            : _tplFolderData.folders.filter(f => (f.parentId || '') === _tplFolderId);
-        const folders = _sortTemplateSummaries(childFoldersRaw.map(folder => {
-            const descIds = _collectTplDescendantFolderIds(folder.id, _tplFolderData.folders);
+            : st.folderData.folders.filter(f => (f.parentId || '') === st.folderId);
+        const folders = _sortLibraryItems(st, childFoldersRaw.map(folder => {
+            const descIds = _collectTplDescendantFolderIds(folder.id, st.folderData.folders);
             return {
                 ...folder,
                 templateType: '文件夹',
-                sizeBytes: allTemplates.filter(t => descIds.has(_tplFolderData.assignments[t.id] || '')).reduce((n, t) => n + (t.sizeBytes || 0), 0),
+                sizeBytes: allItems.filter(t => descIds.has(st.folderData.assignments[t.id] || '')).reduce((n, t) => n + (t.sizeBytes || 0), 0),
             };
         }));
 
-        const folderChain = _getTemplateFolderChain(_tplFolderId, _tplFolderData.folders);
+        const folderChain = _getTemplateFolderChain(st.folderId, st.folderData.folders, st.cfg.homeLabel);
         const currentFolder = folderChain[folderChain.length - 1] || null;
-        const parentFolderId = currentFolder?.parentId || '';
-        const moveOutBtn = document.getElementById('tpl-move-to-root');
+        const moveOutBtn = modal.querySelector('[data-role="move-to-root"]');
         if (moveOutBtn) {
             moveOutBtn.style.display = currentFolder ? '' : 'none';
-            moveOutBtn.textContent = parentFolderId ? '移出到上级' : '移出到主库';
+            moveOutBtn.textContent = currentFolder?.parentId ? '移出到上级' : '移出到根目录';
         }
-        const homeBtn = document.getElementById('tpl-folder-home');
-        if (homeBtn) {
-            homeBtn.dataset.folderId = '';
-            homeBtn.innerHTML = _templateHomeIcon() + '<span>主工程库</span>';
-        }
-        const bcEl = document.getElementById('tpl-breadcrumbs');
+        const bcEl = modal.querySelector('[data-role="breadcrumbs"]');
         if (bcEl) {
             bcEl.innerHTML = folderChain.map((f, idx) => {
                 const isLast = idx === folderChain.length - 1;
-                return `<span style="color:#64748b;">›</span><button class="tpl-breadcrumb-chip ${isLast ? 'is-current' : ''}" data-folder-id="${_tplEscapeHtml(f.id)}" title="${isLast ? '当前文件夹' : '点击进入此文件夹，或将工程/文件夹拖到这里'}">${_tplEscapeHtml(f.name)}</button>`;
+                return `<span style="color:#64748b;">›</span><button class="tpl-breadcrumb-chip ${isLast ? 'is-current' : ''}" data-folder-id="${_tplEscapeHtml(f.id)}" title="${isLast ? '当前文件夹' : '点击进入或拖放到此文件夹'}">${_tplEscapeHtml(f.name)}</button>`;
             }).join('');
         }
-        const legacyPath = document.getElementById('tpl-folder-path');
-        if (legacyPath) legacyPath.textContent = folderChain.length ? ' / ' + folderChain.map(f => f.name).join(' / ') : '';
 
-        modal._allTemplateSummaries = allTemplates;
-        _syncTemplateSortControls();
-        modal._templateSummaries = templates;
-        if (!modal._selectedTemplateIds) modal._selectedTemplateIds = new Set();
-        const availableIds = new Set(allTemplates.map(tpl => String(tpl.id)));
-        [...modal._selectedTemplateIds].forEach(id => { if (!availableIds.has(String(id))) modal._selectedTemplateIds.delete(id); });
-        _renderWorkspaceAutoSaveBanner(availableIds, isPicker);
-        _updateCurrentTemplateButton();
+        modal._allSummaries = allItems;
+        modal._visibleSummaries = items;
+        modal._visibleFolderIds = searching ? [] : folders.map(f => String(f.id));
+        if (!modal._selectedItemIds) modal._selectedItemIds = new Set();
+        if (!modal._selectedFolderIds) modal._selectedFolderIds = new Set();
+        const availableIds = new Set(allItems.map(item => String(item.id)));
+        const availableFolderIds = new Set((st.folderData.folders || []).map(f => String(f.id)));
+        [...modal._selectedItemIds].forEach(id => { if (!availableIds.has(String(id))) modal._selectedItemIds.delete(id); });
+        [...modal._selectedFolderIds].forEach(fid => { if (!availableFolderIds.has(String(fid))) modal._selectedFolderIds.delete(fid); });
 
-        badge.textContent = searching
-            ? `找到 ${templates.length} / ${allTemplates.length} 个工程`
-            : (_tplFolderId ? `本级 ${folders.length ? folders.length + ' 文件夹 · ' : ''}${templates.length} 个工程` : `共 ${allTemplates.length} 个工程`);
-        const searchStatus = document.getElementById('tpl-search-result');
-        if (searchStatus) searchStatus.textContent = searching ? `全库搜索 · ${templates.length} 个结果` : '';
-        const searchInput = document.getElementById('tpl-search-input');
-        if (searchInput && searchInput.value !== _tplSearchTerm) searchInput.value = _tplSearchTerm;
-        const searchClear = document.getElementById('tpl-search-clear');
-        if (searchClear) searchClear.style.display = searching ? '' : 'none';
+        _syncSortControls(st, modal);
+        if (st.mode === 'liveProject') {
+            _renderLiveWorkspaceBanner(st, modal, availableIds);
+        } else {
+            const banner = modal.querySelector('[data-role="workspace-banner"]');
+            if (banner) { banner.style.display = 'none'; banner.innerHTML = ''; }
+        }
+        _updateLibraryHeaderContext(st);
 
-        const titleEl = document.getElementById('tpl-lib-title');
-        if (titleEl) titleEl.textContent = isPicker ? '选择工程模板' : '工程管理库';
-
-        const applyFolderBtn = document.getElementById('tpl-apply-folder-btn');
-        if (applyFolderBtn) {
-            applyFolderBtn.disabled = searching || templates.length === 0;
-            applyFolderBtn.style.opacity = (!searching && templates.length > 0) ? '1' : '0.45';
-            applyFolderBtn.style.cursor = (!searching && templates.length > 0) ? 'pointer' : 'not-allowed';
-            applyFolderBtn.textContent = _tplFolderId ? `📂 应用本级全部(${templates.length})` : `📂 应用主库直属(${templates.length})`;
+        if (badge) {
+            badge.textContent = searching
+                ? `找到 ${items.length} / ${allItems.length} 个${st.cfg.itemNoun}`
+                : (st.folderId ? `本级 ${folders.length ? folders.length + ' 文件夹 · ' : ''}${items.length} 个${st.cfg.itemNoun}` : `共 ${allItems.length} 个${st.cfg.itemNoun}`);
+        }
+        const searchStatus = modal.querySelector('[data-role="search-result"]');
+        if (searchStatus) searchStatus.textContent = searching ? `全库搜索 · ${items.length} 个结果` : '';
+        const applyFolderBtn = modal.querySelector('#tpl-apply-folder-btn');
+        if (applyFolderBtn && st.mode === 'liveProject') {
+            applyFolderBtn.disabled = searching || items.length === 0;
+            applyFolderBtn.style.opacity = (!searching && items.length > 0) ? '1' : '0.45';
+            applyFolderBtn.style.cursor = (!searching && items.length > 0) ? 'pointer' : 'not-allowed';
+            applyFolderBtn.textContent = st.folderId ? `📂 打开本级全部(${items.length})` : `📂 打开根目录全部(${items.length})`;
         }
 
-        if (!searching && templates.length === 0 && folders.length === 0 && !_tplFolderId) {
-            container.innerHTML = `
-                <div style="text-align:center;padding:80px 0;color:#555;">
-                    <div style="font-size:48px;margin-bottom:16px;opacity:0.4;">🗂️</div>
-                    <p style="font-size:14px;margin:0;">工程管理库还没有保存任何工程</p>
-                    ${isPicker ? '' : '<p style="font-size:12px;color:#444;margin-top:6px;">点击上方「📁 新建文件夹」建多级目录，或点「💾 保存当前工程」开始</p>'}
+        if (!searching && items.length === 0 && folders.length === 0 && !st.folderId) {
+            container.innerHTML = st.mode === 'template' ? `
+                <div style="text-align:center;padding:70px 0;color:#64748b;">
+                    <div style="font-size:48px;margin-bottom:14px;opacity:0.45;">📂</div>
+                    <p style="font-size:14px;margin:0;color:#cbd5e1;">视频模板库还没有任何封存模板</p>
+                    <p style="font-size:12px;color:#64748b;margin-top:6px;">点击上方「💾 保存当前工程为模板」即可定版封存当前工程，以后随时调用不会自动被修改</p>
+                </div>
+            ` : `
+                <div style="text-align:center;padding:64px 0;color:#64748b;">
+                    <div style="font-size:48px;margin-bottom:14px;opacity:0.5;">🗂️</div>
+                    <p style="font-size:14px;margin:0;color:#cbd5e1;">实时工程项目区还是空的</p>
+                    <p style="font-size:12px;color:#64748b;margin-top:6px;">点「📁 新建文件夹」整理目录，或点「📄 新建空白标签」立即开建实时工程（也支持「📥 从模板库导入」把旧整理内容复制过来）</p>
                 </div>
             `;
-            _updateTemplatePresetSelectionUI();
+            _updateLibrarySelectionUI(st);
             return;
         }
 
-        if (searching && templates.length === 0) {
-            container.innerHTML = `<div style="padding:65px 20px;text-align:center;color:#94a3b8;"><div style="font-size:30px;margin-bottom:12px;">⌕</div><div>没有找到匹配的工程</div><div style="font-size:12px;margin-top:10px;">尝试缩短关键词，或清空搜索查看全部工程</div><button onclick="_clearTemplateSearch()" style="margin-top:18px;padding:8px 16px;background:#334155;color:#fff;border:0;border-radius:8px;cursor:pointer;">清空搜索</button></div>`;
-            _updateTemplatePresetSelectionUI();
+        if (searching && items.length === 0) {
+            container.innerHTML = `<div style="padding:65px 20px;text-align:center;color:#94a3b8;"><div style="font-size:30px;margin-bottom:12px;">⌕</div><div>没有找到匹配的${st.cfg.itemNoun}</div></div>`;
+            _updateLibrarySelectionUI(st);
             return;
         }
 
-        const activeWorkspaceIds = typeof window.reelsGetWorkspaceLibraryTemplateIds === 'function'
+        const activeWorkspaceIds = (st.mode === 'liveProject' && typeof window.reelsGetWorkspaceLibraryTemplateIds === 'function')
             ? window.reelsGetWorkspaceLibraryTemplateIds()
             : new Set();
 
-        let html = `<div id="tpl-card-grid" style="--tpl-card-size:${_getTemplateCardSize()}px;--tpl-scale:${_getTemplateZoom()/100};display:grid;grid-template-columns:repeat(auto-fill,minmax(0,min(max(96px,var(--tpl-card-size)),100%)));grid-auto-rows:1px;grid-auto-flow:row dense;column-gap:${Math.max(2,Math.round(12*_getTemplateZoom()/100))}px;row-gap:0;justify-content:start;align-items:start;">`;
-        html += folders.map(folder => _renderTemplateFolderCard(folder, allTemplates)).join('');
-        if (!searching && !templates.length && _tplFolderId) {
-            html += `<div style="grid-column:1/-1;text-align:center;color:#888;padding:34px;">${folders.length ? '当前文件夹下有子文件夹，暂无直属工程标签。' : '这个文件夹还没有工程标签，可新建子文件夹、保存当前工程或拖入卡片。'}</div>`;
+        let html = `<div id="${p}-card-grid" class="${p}-card-grid vk-lib-grid" style="--tpl-card-size:${_getLibCardSize(st)}px;--tpl-scale:${_getLibZoom(st) / 100};display:grid;grid-template-columns:repeat(auto-fill,minmax(0,min(max(96px,var(--tpl-card-size)),100%)));grid-auto-rows:1px;grid-auto-flow:row dense;column-gap:${Math.max(2, Math.round(12 * _getLibZoom(st) / 100))}px;row-gap:0;justify-content:start;align-items:start;">`;
+        html += folders.map(folder => _renderFolderCard(st, folder, allItems)).join('');
+        if (!searching && !items.length && st.folderId) {
+            html += `<div style="grid-column:1/-1;text-align:center;color:#888;padding:34px;">${folders.length ? `此目录暂无直属${st.cfg.itemNoun}` : `此文件夹为空，可点击「📁 新建文件夹」${st.mode === 'liveProject' ? '或「📄 新建空白标签」' : ''}开始`}</div>`;
         }
-        for (const tpl of templates) {
-            const thumbSrc = tpl.thumbnail || '';
-            const dateStr = tpl.updatedAt ? new Date(tpl.updatedAt).toLocaleDateString('zh-CN') : '';
-            const taskInfo = tpl.taskCount ? `${tpl.taskCount} 个任务` : '';
-            const safeId = _tplEscapeHtml(tpl.id);
-            const safeName = _tplEscapeHtml(tpl.name || '');
+
+        for (const item of items) {
+            const thumbSrc = item.thumbnail || '';
+            const dateStr = item.updatedAt ? new Date(item.updatedAt).toLocaleDateString('zh-CN') : '';
+            const taskInfo = item.taskCount ? `${item.taskCount} 条任务` : (st.mode === 'liveProject' ? '空白标签' : '0 条任务');
+            const safeId = _tplEscapeHtml(item.id);
+            const safeName = _tplEscapeHtml(item.name || '');
             const safeThumb = _tplEscapeHtml(thumbSrc);
             const safeDate = _tplEscapeHtml(dateStr);
             const safeTaskInfo = _tplEscapeHtml(taskInfo);
             const folderPathBadge = searching
-                ? `<span style="color:#a5b4fc;font-size:10px;white-space:normal;overflow-wrap:anywhere;">📂 ${_tplEscapeHtml(_buildTemplateFolderPathText(_tplFolderData.assignments[tpl.id] || ''))}</span>`
+                ? `<span style="color:#a5b4fc;font-size:10px;white-space:normal;overflow-wrap:anywhere;">📂 ${_tplEscapeHtml(_buildTemplateFolderPathText(st.folderData.assignments[item.id] || '', st.folderData.folders, st.cfg.homeLabel))}</span>`
                 : '';
-            const isDisabledPick = isPicker && modal._pickerDisabledIds && modal._pickerDisabledIds.has(tpl.id);
-            const isWorkspaceActive = !isPicker && activeWorkspaceIds.has(String(tpl.id));
+            const isDisabledPick = isPicker && modal._pickerDisabledIds?.has(item.id);
+            const isWorkspaceActive = !isPicker && st.mode === 'liveProject' && activeWorkspaceIds.has(String(item.id));
             const thumbHtml = thumbSrc
                 ? `<img draggable="false" src="${safeThumb}" style="width:100%;height:100%;object-fit:cover;" />`
-                : `<div style="display:flex;align-items:center;justify-content:center;height:100%;color:#555;font-size:36px;">🎬</div>`;
+                : `<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;color:#64748b;font-size:32px;gap:6px;"><span>${item.taskCount ? '🎬' : '📄'}</span>${!item.taskCount ? '<span style="font-size:10px;">空白工程</span>' : ''}</div>`;
 
             const actionsHtml = isPicker ? `
                 <div class="tpl-actions" style="position:absolute;top:8px;right:8px;left:8px;display:flex;flex-wrap:wrap;justify-content:flex-end;gap:4px;opacity:0;transition:opacity 0.2s;background:rgba(0,0,0,0.7);padding:6px;border-radius:8px;">
-                    <button data-action="pick" ${isDisabledPick ? 'disabled' : ''} style="padding:4px 12px;font-size:12px;font-weight:600;background:${isDisabledPick ? 'rgba(120,120,130,0.35)' : 'linear-gradient(135deg,#7c5cff,#a855f7)'};color:${isDisabledPick ? '#999' : '#fff'};border:none;border-radius:6px;cursor:${isDisabledPick ? 'not-allowed' : 'pointer'};">${isDisabledPick ? '已添加' : '✅ 选用此工程'}</button>
+                    <button data-action="pick" ${isDisabledPick ? 'disabled' : ''} style="padding:4px 12px;font-size:12px;font-weight:600;background:${isDisabledPick ? 'rgba(120,120,130,0.35)' : 'linear-gradient(135deg,#7c5cff,#a855f7)'};color:${isDisabledPick ? '#999' : '#fff'};border:none;border-radius:6px;cursor:${isDisabledPick ? 'not-allowed' : 'pointer'};">${isDisabledPick ? '已添加' : '✅ 选用此模板'}</button>
                 </div>
             ` : '';
 
             html += `
-                <div class="tpl-card" draggable="true" title="单击选择 / 勾选多选 · 双击载入到工作区 · 右键菜单" data-id="${safeId}" data-name="${safeName}" data-disabled-pick="${isDisabledPick ? 'true' : 'false'}" style="background:rgba(255,255,255,${isDisabledPick ? '0.018' : '0.03'});border:1px solid ${isDisabledPick ? 'rgba(120,120,130,0.28)' : 'rgba(255,255,255,0.06)'};border-radius:12px;overflow:hidden;cursor:${isDisabledPick ? 'not-allowed' : 'pointer'};transition:all 0.2s;position:relative;${isDisabledPick ? 'opacity:0.58;' : ''}"
+                <div class="tpl-card" draggable="true" title="单击多选 · 双击${st.mode === 'template' ? '载入模板副本' : '打开并实时编辑'} · 右键菜单" data-id="${safeId}" data-name="${safeName}" data-disabled-pick="${isDisabledPick ? 'true' : 'false'}" style="background:rgba(255,255,255,${isDisabledPick ? '0.018' : '0.03'});border:1px solid ${isDisabledPick ? 'rgba(120,120,130,0.28)' : 'rgba(255,255,255,0.06)'};border-radius:12px;overflow:hidden;cursor:${isDisabledPick ? 'not-allowed' : 'pointer'};transition:all 0.2s;position:relative;${isDisabledPick ? 'opacity:0.58;' : ''}"
                      onmouseenter="this.style.borderColor='rgba(99,102,241,0.4)';this.style.transform='translateY(-2px)'"
                      onmouseleave="this.style.borderColor='rgba(255,255,255,0.06)';this.style.transform='none'">
-                    <div class="tpl-template-cover" style="width:100%;aspect-ratio:9/16;background:#0a0a1a;overflow:hidden;">
-                        ${thumbHtml}
-                    </div>
-                    ${!isPicker ? `<button type="button" class="tpl-card-check" data-id="${safeId}" title="勾选/取消多选此工程标签" aria-label="多选"></button>` : ''}
-                    ${isWorkspaceActive ? '<div style="position:absolute;right:8px;top:8px;z-index:3;background:rgba(16,185,129,0.92);color:#041e13;font-size:10px;font-weight:700;padding:2px 7px;border-radius:999px;">工作区</div>' : ''}
+                    <div class="tpl-template-cover" style="width:100%;aspect-ratio:9/16;background:#0a0a1a;overflow:hidden;">${thumbHtml}</div>
+                    ${!isPicker ? `<button type="button" class="tpl-card-check" data-id="${safeId}" title="勾选/取消多选" aria-label="多选"></button>` : ''}
+                    ${isWorkspaceActive ? '<div style="position:absolute;right:8px;top:8px;z-index:3;background:rgba(16,185,129,0.92);color:#041e13;font-size:10px;font-weight:700;padding:2px 7px;border-radius:999px;">实时同步中</div>' : ''}
                     ${isDisabledPick ? '<div style="position:absolute;left:8px;top:8px;background:rgba(16,185,129,0.9);color:#06150f;font-size:11px;font-weight:700;padding:3px 8px;border-radius:999px;">已添加</div>' : ''}
                     <div class="tpl-card-info" style="padding:10px 8px;background:#242424;">
                         <div class="tpl-name" style="font-size:calc(12px * var(--tpl-scale,1));font-weight:500;color:#eeeeee;text-align:center;white-space:normal;overflow:visible;overflow-wrap:anywhere;word-break:break-word;display:block;line-height:1.5;" title="${safeName}">${safeName}</div>
@@ -580,150 +1051,491 @@ async function _refreshTemplateList() {
             `;
         }
         html += '</div>';
-        const savedScroll = container._tplRenderedFolder === _tplFolderId && container._tplRenderedSearch === query ? container.scrollTop : 0;
+
+        const savedScroll = container._tplRenderedFolder === st.folderId && container._tplRenderedSearch === query ? container.scrollTop : 0;
         container.innerHTML = html;
-        const folderOrderKey = _tplFolderId || '';
-        const manualOrderList = _tplFolderData.folderOrders?.[folderOrderKey] || (!_tplFolderId ? _tplFolderData.libraryOrder : null);
-        if (!searching && (localStorage.getItem('videokit_template_sort') || 'manual') === 'manual' && Array.isArray(manualOrderList) && manualOrderList.length) {
-            const grid = container.querySelector('#tpl-card-grid');
+
+        const folderOrderKey = st.folderId || '';
+        const manualOrderList = st.folderData.folderOrders?.[folderOrderKey] || (!st.folderId ? st.folderData.libraryOrder : null);
+        if (!searching && (localStorage.getItem(st.cfg.sortKey) || 'manual') === 'manual' && Array.isArray(manualOrderList) && manualOrderList.length) {
+            const grid = container.querySelector(`.${p}-card-grid`);
             const rank = new Map(manualOrderList.map((id, i) => [id, i]));
             if (grid) {
-                Array.from(grid.children).filter(el => el.matches('.tpl-card,.tpl-folder-card')).sort((a, b) => (rank.get(_templateLibraryItemKey(a)) ?? -1) - (rank.get(_templateLibraryItemKey(b)) ?? -1)).forEach(card => grid.appendChild(card));
+                Array.from(grid.children)
+                    .filter(el => el.matches('.tpl-card,.tpl-folder-card'))
+                    .sort((a, b) => (rank.get(_libItemKey(a)) ?? -1) - (rank.get(_libItemKey(b)) ?? -1))
+                    .forEach(card => grid.appendChild(card));
             }
         }
 
-        _bindTemplateFolderCards(container);
-        container.oncontextmenu = event => { if (event.target.closest('.tpl-card,.tpl-folder-card,button,input,select,[contenteditable]')) return; event.preventDefault(); event.stopPropagation(); _showTemplateBlankMenu(event); };
+        _bindFolderCards(st, modal, container);
+        container.oncontextmenu = event => {
+            if (event.target.closest('.tpl-card,.tpl-folder-card,button,input,select,[contenteditable]')) return;
+            event.preventDefault();
+            event.stopPropagation();
+            _showBlankContextMenu(st, event);
+        };
+
         container.querySelectorAll('.tpl-card').forEach(card => {
             if (isPicker) {
-                card.addEventListener('mouseenter', () => card.querySelector('.tpl-actions').style.opacity = '1');
-                card.addEventListener('mouseleave', () => card.querySelector('.tpl-actions').style.opacity = '0');
+                card.addEventListener('mouseenter', () => { const a = card.querySelector('.tpl-actions'); if (a) a.style.opacity = '1'; });
+                card.addEventListener('mouseleave', () => { const a = card.querySelector('.tpl-actions'); if (a) a.style.opacity = '0'; });
             } else {
                 card.addEventListener('contextmenu', event => {
                     if (event.target.isContentEditable) return;
-                    event.preventDefault(); event.stopPropagation(); _showTemplateContextMenu(event, card);
+                    event.preventDefault();
+                    event.stopPropagation();
+                    _showItemContextMenu(st, event, card);
                 });
                 card.querySelector('.tpl-card-check')?.addEventListener('click', event => {
                     event.preventDefault();
                     event.stopPropagation();
-                    _toggleTemplateCardSelection(card.dataset.id || '');
+                    _toggleCardSelection(st, card.dataset.id || '', {
+                        shiftKey: event.shiftKey,
+                        ctrlKey: event.ctrlKey,
+                        metaKey: event.metaKey,
+                    });
                 });
             }
-            
+
             card.querySelector('.tpl-actions')?.addEventListener('click', async (e) => {
                 const btn = e.target.closest('button[data-action]');
                 if (!btn) return;
                 e.stopPropagation();
                 const id = card.dataset.id || '';
-                const name = card.dataset.name || '';
-                const action = btn.dataset.action;
-                
-                if (action === 'pick') {
+                if (btn.dataset.action === 'pick') {
                     if (btn.disabled || card.dataset.disabledPick === 'true') return;
                     btn.textContent = '加载中...';
                     try {
-                        const r = await apiFetch(`${API_BASE}/templates/get`, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({id}) });
-                        const res = await r.json();
-                        const tplData = res.data || res;
-                        if (modal._onSelectCallback) {
-                            modal._onSelectCallback(tplData);
-                        }
+                        const tplData = await _libApiRequest(st, 'get', { id });
+                        modal._onSelectCallback?.(tplData);
                         btn.textContent = '✅ 已添加';
-                        btn.style.background = 'rgba(16,185,129,0.8)';
-                        setTimeout(() => {
-                            btn.textContent = '✅ 选用此工程';
-                            btn.style.background = 'linear-gradient(135deg,#7c5cff,#a855f7)';
-                        }, 1500);
-                    } catch(err) {
-                        alert('读取工程失败');
-                        btn.textContent = '✅ 选用此工程';
+                    } catch (err) {
+                        alert('读取模板失败');
+                        btn.textContent = '✅ 选用此模板';
                     }
                 }
-                else if (action === 'load') _loadTemplateInCurrentWindow(id);
-                else if (action === 'window') _openTemplateInWindow(id, name);
-                else if (action === 'export') _exportTemplate(id, name);
-                else if (action === 'export_archive') _exportArchiveTemplate(id, name);
-                else if (action === 'move-root') await _moveTemplateIds([id], _getParentFolderId(_tplFolderId));
-                else if (action === 'rename') _renameTemplate(id);
-                else if (action === 'delete') _deleteTemplate(id, name);
             });
-            
-            card.querySelector('.tpl-name')?.addEventListener('dblclick', event => { event.preventDefault(); event.stopPropagation(); _renameTemplate(card.dataset.id); });
+
+            card.querySelector('.tpl-name')?.addEventListener('dblclick', event => {
+                event.preventDefault();
+                event.stopPropagation();
+                _renameLibraryItem(st, card.dataset.id);
+            });
             card.addEventListener('dblclick', async () => {
                 const id = card.dataset.id;
                 if (isPicker) {
                     if (card.dataset.disabledPick === 'true') return;
                     try {
-                        const r = await apiFetch(`${API_BASE}/templates/get`, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({id}) });
-                        const res = await r.json();
-                        if (modal._onSelectCallback) modal._onSelectCallback(res.data || res);
-                    } catch(err) {}
-                } else {
+                        const tplData = await _libApiRequest(st, 'get', { id });
+                        modal._onSelectCallback?.(tplData);
+                    } catch (_) {}
+                } else if (st.mode === 'template') {
                     await _loadTemplateInCurrentWindow(id);
+                } else {
+                    await _applyLiveProjectIdsToWorkspace(st, [id], { folderId: st.folderId });
                 }
             });
         });
 
-        if (!searching) _initTemplateReordering(container);
-        _initTemplateMarquee(container);
-        _bindTemplateMixedGridLayout(container);
-        _paintTemplateSelection();
-        _updateTemplatePresetSelectionUI();
-        container._tplRenderedFolder = _tplFolderId;
+        if (!searching) _initLibraryReordering(st, modal, container);
+        _initLibraryMarquee(st, modal, container);
+        _bindMixedGridLayout(st, container);
+        _paintLibrarySelection(st);
+        _updateLibrarySelectionUI(st);
+        container._tplRenderedFolder = st.folderId;
         container._tplRenderedSearch = query;
         container.scrollTop = savedScroll;
-
     } catch (e) {
         container.innerHTML = `<div style="color:#f87171;text-align:center;padding:40px;">加载失败: ${_tplEscapeHtml(e?.message || String(e))}</div>`;
     }
 }
 
-function _updateTemplatePresetSelectionUI() {
-    const modal = document.getElementById('template-library-modal');
-    if (!modal || modal._onSelectCallback) return;
-    const selected = modal._selectedTemplateIds || new Set();
-    const visibleIds = (modal._templateSummaries || []).map(tpl => String(tpl.id));
-    const visibleSelectedCount = visibleIds.filter(id => selected.has(id)).length;
-    const total = visibleIds.length;
-    const count = selected.size;
-    const label = document.getElementById('tpl-selected-count');
-    const allButton = document.getElementById('tpl-select-all-btn');
-    const saveButton = document.getElementById('tpl-save-selected-presets-btn');
-    const applySelectedBtn = document.getElementById('tpl-apply-selected-btn');
-    if (label) label.textContent = count ? `已选 ${count} / ${total}` : '未选择';
-    if (allButton) {
-        allButton.textContent = visibleIds.length && visibleIds.every(id => selected.has(id)) ? '☐ 取消全选' : '☑ 全选';
+function _renderLiveWorkspaceBanner(st, modal, availableIds) {
+    const banner = modal.querySelector('[data-role="workspace-banner"]');
+    if (!banner) return;
+    if (typeof window.reelsGetWorkspaceSaveCandidateInfo !== 'function') {
+        banner.style.display = 'none';
+        banner.innerHTML = '';
+        return;
     }
-    if (applySelectedBtn) {
-        applySelectedBtn.disabled = visibleSelectedCount === 0;
-        applySelectedBtn.style.opacity = visibleSelectedCount ? '1' : '.48';
-        applySelectedBtn.style.cursor = visibleSelectedCount ? 'pointer' : 'not-allowed';
-        applySelectedBtn.textContent = visibleSelectedCount ? `✅ 应用所选标签(${visibleSelectedCount})` : '✅ 应用所选标签';
+    const info = window.reelsGetWorkspaceSaveCandidateInfo(availableIds);
+    const unarchived = (info.unarchivedGroups || []).filter(g => !g._fromSealedTemplate);
+    const sig = `${info.totalGroups}|${unarchived.length}|${info.unarchivedTasks}|${unarchived.slice(0, 6).map(g => g.key).join(',')}`;
+    if (!unarchived.length || st.dismissedBannerSig === sig) {
+        banner.style.display = 'none';
+        banner.innerHTML = '';
+        return;
     }
-    if (saveButton) {
-        saveButton.disabled = count === 0;
-        saveButton.style.opacity = count ? '1' : '.48';
-        saveButton.style.cursor = count ? 'pointer' : 'not-allowed';
+    const previewText = unarchived.slice(0, 5).map(g => g.name).join(' · ') + (unarchived.length > 5 ? ` 等 ${unarchived.length} 个` : '');
+    banner.style.display = 'flex';
+    banner.style.alignItems = 'center';
+    banner.style.justifyContent = 'space-between';
+    banner.style.gap = '10px';
+    banner.style.flexWrap = 'wrap';
+    banner.innerHTML = `
+        <div style="flex:1 1 260px;min-width:200px;">
+            <div style="font-size:12px;color:#ecfdf5;font-weight:600;">⚡ 工作区有 <b style="color:#6ee7b7;">${unarchived.length}</b> 个待归入目录的标签（${info.unarchivedTasks} 条任务）：<span style="color:#a5b4fc;font-weight:400;">${_tplEscapeHtml(previewText)}</span></div>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;">
+            <input data-role="archive-folder-name" type="text" value="${_tplEscapeHtml(info.suggestedName)}" placeholder="新建工程文件夹名..." style="width:160px;padding:4px 8px;background:#0f172a;color:#f8fafc;border:1px solid rgba(129,140,248,0.45);border-radius:7px;font-size:11.5px;outline:none;" />
+            <button type="button" data-role="archive-new-btn" style="padding:5px 12px;font-size:11.5px;font-weight:700;background:linear-gradient(135deg,#10b981,#059669);color:#fff;border:none;border-radius:7px;cursor:pointer;">✨ 建文件夹并收入</button>
+            <button type="button" data-role="archive-here-btn" style="padding:5px 11px;font-size:11px;font-weight:600;background:rgba(99,102,241,0.22);color:#e0e7ff;border:1px solid rgba(129,140,248,0.45);border-radius:7px;cursor:pointer;">放入当前目录</button>
+            <button type="button" data-role="archive-dismiss-btn" style="padding:4px 8px;font-size:11px;background:transparent;color:#94a3b8;border:1px solid rgba(148,163,184,0.28);border-radius:6px;cursor:pointer;">收起</button>
+        </div>
+    `;
+    const runArchive = async (folderMode) => {
+        const folderName = String(banner.querySelector('[data-role="archive-folder-name"]')?.value || info.suggestedName || '工作区工程').trim() || '工作区工程';
+        await reelsAutoArchiveWorkspaceToLibrary({
+            folderMode,
+            folderName,
+            parentFolderId: st.folderId || '',
+            splitByGroup: info.groupNames.length > 0,
+            captureThumbnails: true,
+            bindWorkspace: true,
+        });
+    };
+    banner.querySelector('[data-role="archive-new-btn"]')?.addEventListener('click', () => runArchive('new-folder'));
+    banner.querySelector('[data-role="archive-here-btn"]')?.addEventListener('click', () => runArchive('current-folder'));
+    banner.querySelector('[data-role="archive-dismiss-btn"]')?.addEventListener('click', () => {
+        st.dismissedBannerSig = sig;
+        banner.style.display = 'none';
+    });
+}
+
+function _getVisibleSelectionKeys(modal) {
+    if (!modal) return [];
+    const domKeys = Array.from(modal.querySelectorAll('.vk-lib-grid > .tpl-folder-card, .vk-lib-grid > .tpl-card'))
+        .map(el => el.classList.contains('tpl-folder-card') ? ('f:' + String(el.dataset.folderId || '')) : ('t:' + String(el.dataset.id || '')))
+        .filter(k => k.length > 2);
+    if (domKeys.length) return domKeys;
+    return [
+        ...(modal._visibleFolderIds || []).map(fid => 'f:' + String(fid)),
+        ...(modal._visibleSummaries || []).map(t => 't:' + String(t.id)),
+    ];
+}
+
+function _setKeySelected(modal, key, flag) {
+    if (!modal || !key) return;
+    if (!modal._selectedItemIds) modal._selectedItemIds = new Set();
+    if (!modal._selectedFolderIds) modal._selectedFolderIds = new Set();
+    if (key.startsWith('f:')) {
+        const fid = key.slice(2);
+        if (flag) modal._selectedFolderIds.add(fid); else modal._selectedFolderIds.delete(fid);
+    } else if (key.startsWith('t:')) {
+        const id = key.slice(2);
+        if (flag) modal._selectedItemIds.add(id); else modal._selectedItemIds.delete(id);
     }
 }
 
-function tplSelectAllTemplates() {
-    const modal = document.getElementById('template-library-modal');
-    if (!modal || modal._onSelectCallback) return;
-    const templates = modal._templateSummaries || [];
-    const selected = modal._selectedTemplateIds || (modal._selectedTemplateIds = new Set());
-    const visibleIds = new Set(templates.map(tpl => String(tpl.id)));
-    const allVisibleSelected = visibleIds.size > 0 && [...visibleIds].every(id => selected.has(id));
-    if (allVisibleSelected) visibleIds.forEach(id => selected.delete(id));
-    else visibleIds.forEach(id => selected.add(id));
-    _paintTemplateSelection();
-    _updateTemplatePresetSelectionUI();
+function _isKeySelected(modal, key) {
+    if (!modal || !key) return false;
+    if (key.startsWith('f:')) return !!modal._selectedFolderIds?.has(key.slice(2));
+    if (key.startsWith('t:')) return !!modal._selectedItemIds?.has(key.slice(2));
+    return false;
 }
+
+function _applyCardSelectionAction(st, modal, key, options = {}) {
+    if (!modal || modal._onSelectCallback || !key) return;
+    if (!modal._selectedItemIds) modal._selectedItemIds = new Set();
+    if (!modal._selectedFolderIds) modal._selectedFolderIds = new Set();
+    const keys = _getVisibleSelectionKeys(modal);
+    const additive = !!(options.fromCheckbox || modal._multiSelectMode || options.ctrlKey || options.metaKey);
+
+    if (options.shiftKey && modal._selectionAnchorKey) {
+        const a = keys.indexOf(modal._selectionAnchorKey);
+        const b = keys.indexOf(key);
+        if (a !== -1 && b !== -1) {
+            if (!additive) {
+                modal._selectedItemIds.clear();
+                modal._selectedFolderIds.clear();
+            }
+            const [lo, hi] = a <= b ? [a, b] : [b, a];
+            for (let i = lo; i <= hi; i++) _setKeySelected(modal, keys[i], true);
+            _paintLibrarySelection(st);
+            return;
+        }
+    }
+    if (additive) {
+        _setKeySelected(modal, key, !_isKeySelected(modal, key));
+    } else {
+        modal._selectedItemIds.clear();
+        modal._selectedFolderIds.clear();
+        _setKeySelected(modal, key, true);
+    }
+    modal._selectionAnchorKey = key;
+    _paintLibrarySelection(st);
+}
+
+function _setButtonEnabledState(btn, enabled, activeLabel = null) {
+    if (!btn) return;
+    btn.disabled = !enabled;
+    btn.style.opacity = enabled ? '1' : '.42';
+    btn.style.cursor = enabled ? 'pointer' : 'not-allowed';
+    if (activeLabel !== null) btn.textContent = activeLabel;
+}
+
+function _updateLibrarySelectionUI(st) {
+    const modal = document.getElementById(st.cfg.modalId);
+    if (!modal || modal._onSelectCallback) return;
+    const selectedItems = modal._selectedItemIds || new Set();
+    const selectedFolders = modal._selectedFolderIds || new Set();
+    const visibleItemIds = (modal._visibleSummaries || []).map(item => String(item.id));
+    const visibleFolderIds = (modal._visibleFolderIds || []).map(fid => String(fid));
+    const visibleItemSel = visibleItemIds.filter(id => selectedItems.has(id)).length;
+    const visibleFolderSel = visibleFolderIds.filter(fid => selectedFolders.has(fid)).length;
+    const totalVisible = visibleItemIds.length + visibleFolderIds.length;
+    const visibleSelectedTotal = visibleItemSel + visibleFolderSel;
+    const totalItemSel = selectedItems.size;
+    const totalFolderSel = selectedFolders.size;
+    const totalSel = totalItemSel + totalFolderSel;
+
+    const label = modal.querySelector('[data-role="selected-count"]');
+    const allButton = modal.querySelector('[data-act="select-all"]');
+    const clearBtn = modal.querySelector('[data-act="clear-selection"]');
+    const invertBtn = modal.querySelector('[data-act="invert-selection"]');
+    const multiBtn = modal.querySelector('[data-act="toggle-multi-mode"]');
+    const savePresetsBtn = modal.querySelector('#tpl-save-selected-presets-btn');
+    const applySelectedBtn = modal.querySelector('#tpl-apply-selected-btn');
+    const appendSelectedBtn = modal.querySelector('#lpl-append-selected-btn');
+    const sealBtn = modal.querySelector('#lpl-seal-to-tpl-btn');
+    const copyToLiveBtn = modal.querySelector('#tpl-copy-selected-to-live-btn');
+    const moveBtn = modal.querySelector('[data-act="batch-move"]');
+    const deleteBtn = modal.querySelector('[data-act="batch-delete"]');
+
+    if (label) {
+        if (totalSel === 0) {
+            label.textContent = totalVisible ? `未选择（共 ${totalVisible} 项 · 点复选框 / Shift连选 / 框选）` : '当前目录为空';
+            label.style.color = '#94a3b8';
+        } else {
+            const parts = [];
+            if (totalItemSel) parts.push(`${totalItemSel} 个${st.cfg.itemNoun}`);
+            if (totalFolderSel) parts.push(`${totalFolderSel} 个文件夹`);
+            label.textContent = `已选 ${parts.join(' · ')}`;
+            label.style.color = '#93c5fd';
+        }
+    }
+
+    const allVisibleSelected = totalVisible > 0 && visibleSelectedTotal === totalVisible;
+    if (allButton) {
+        allButton.disabled = totalVisible === 0;
+        allButton.style.opacity = totalVisible ? '1' : '.42';
+        allButton.style.cursor = totalVisible ? 'pointer' : 'not-allowed';
+        if (allVisibleSelected) {
+            allButton.textContent = `☐ 取消全选(${visibleSelectedTotal})`;
+        } else {
+            allButton.textContent = st.mode === 'template'
+                ? `☑ 全选${totalVisible ? `(${totalVisible})` : '模板'}`
+                : `☑ 全选${totalVisible ? `(${totalVisible})` : ''}`;
+        }
+    }
+
+    if (multiBtn) {
+        const on = !!modal._multiSelectMode;
+        multiBtn.setAttribute('aria-pressed', String(on));
+        multiBtn.textContent = on ? '☑️ 多选模式: 开（点卡片即选）' : '☑️ 多选模式: 关';
+        multiBtn.style.background = on ? 'rgba(16,185,129,0.28)' : 'rgba(16,185,129,0.12)';
+        multiBtn.style.borderColor = on ? 'rgba(52,211,153,0.75)' : 'rgba(16,185,129,0.34)';
+        multiBtn.style.color = on ? '#ecfdf5' : '#6ee7b7';
+        modal.classList.toggle('vk-multi-select-on', on);
+    }
+
+    _setButtonEnabledState(invertBtn, totalVisible > 0);
+    _setButtonEnabledState(clearBtn, totalSel > 0);
+    _setButtonEnabledState(applySelectedBtn, visibleItemSel > 0 || (visibleItemIds.length === 0 && visibleFolderSel > 0),
+        visibleItemSel > 0
+            ? `✅ 打开所选(${visibleItemSel})`
+            : (visibleFolderSel > 0 ? `✅ 打开所选文件夹(${visibleFolderSel})` : '✅ 打开所选工程'));
+    _setButtonEnabledState(appendSelectedBtn, visibleItemSel > 0 || visibleFolderSel > 0,
+        visibleItemSel ? `📥 追加(${visibleItemSel})` : '📥 追加打开');
+    _setButtonEnabledState(sealBtn, totalItemSel > 0, totalItemSel ? `🔒 封存(${totalItemSel})` : '🔒 封存到模板库');
+    _setButtonEnabledState(copyToLiveBtn, totalItemSel > 0, totalItemSel ? `📤 复制到工程(${totalItemSel})` : '📤 复制到工程项目');
+    _setButtonEnabledState(savePresetsBtn, totalItemSel > 0);
+    _setButtonEnabledState(moveBtn, totalSel > 0, totalSel ? `📦 批量移动(${totalSel})` : '📦 批量移动');
+    _setButtonEnabledState(deleteBtn, totalSel > 0, totalSel ? `🗑️ 批量删除(${totalSel})` : '🗑️ 批量删除');
+}
+
+function _selectAllLibraryItems(st, options = {}) {
+    const modal = document.getElementById(st.cfg.modalId);
+    if (!modal || modal._onSelectCallback) return;
+    const itemIds = (modal._visibleSummaries || []).map(t => String(t.id));
+    const folderIds = (modal._visibleFolderIds || []).map(fid => String(fid));
+    const selectedItems = modal._selectedItemIds || (modal._selectedItemIds = new Set());
+    const selectedFolders = modal._selectedFolderIds || (modal._selectedFolderIds = new Set());
+    const totalVisible = itemIds.length + folderIds.length;
+    const allVisibleSelected = totalVisible > 0
+        && itemIds.every(id => selectedItems.has(id))
+        && folderIds.every(fid => selectedFolders.has(fid));
+    if (allVisibleSelected && !options.forceAll) {
+        itemIds.forEach(id => selectedItems.delete(id));
+        folderIds.forEach(fid => selectedFolders.delete(fid));
+    } else {
+        itemIds.forEach(id => selectedItems.add(id));
+        folderIds.forEach(fid => selectedFolders.add(fid));
+    }
+    _paintLibrarySelection(st);
+}
+
+function _invertLibrarySelection(st) {
+    const modal = document.getElementById(st.cfg.modalId);
+    if (!modal || modal._onSelectCallback) return;
+    const keys = _getVisibleSelectionKeys(modal);
+    for (const key of keys) _setKeySelected(modal, key, !_isKeySelected(modal, key));
+    _paintLibrarySelection(st);
+}
+
+function _clearLibrarySelection(st) {
+    const modal = document.getElementById(st.cfg.modalId);
+    if (!modal || modal._onSelectCallback) return;
+    modal._selectedItemIds?.clear();
+    modal._selectedFolderIds?.clear();
+    modal._selectionAnchorKey = '';
+    _paintLibrarySelection(st);
+}
+
+function _toggleMultiSelectMode(st) {
+    const modal = document.getElementById(st.cfg.modalId);
+    if (!modal || modal._onSelectCallback) return;
+    modal._multiSelectMode = !modal._multiSelectMode;
+    _updateLibrarySelectionUI(st);
+    showToast?.(modal._multiSelectMode ? '☑️ 多选模式已开启：直接点击卡片或文件夹即可连续勾选' : '多选模式已关闭', 'info', 2200);
+}
+
+async function _batchCopyTemplatesToLive(st) {
+    const modal = document.getElementById(st.cfg.modalId);
+    const ids = [...(modal?._selectedItemIds || [])];
+    if (!ids.length) { showToast?.('请先勾选要复制到工程项目的模板', 'info'); return; }
+    try {
+        const res = await _libApiRequest(_getLibState('liveProject'), 'import-from-templates', {
+            templateIds: ids,
+            copyAllFolders: false,
+        });
+        showToast?.(`✅ 已复制 ${res.importedCount || ids.length} 份到「🗂️ 工程项目」（原模板保留不变）`, 'success', 4000);
+        window.reelsRefreshTemplateLibraryIfOpen?.('liveProject');
+    } catch (err) {
+        showToast?.(`复制失败：${err.message}`, 'error');
+    }
+}
+
+async function _batchMoveLibrarySelection(st) {
+    const modal = document.getElementById(st.cfg.modalId);
+    if (!modal || modal._onSelectCallback) return;
+    const itemIds = [...(modal._selectedItemIds || [])];
+    const folderIds = [...(modal._selectedFolderIds || [])];
+    const total = itemIds.length + folderIds.length;
+    if (!total) { showToast?.(`请先勾选要移动的${st.cfg.itemNoun}或文件夹`, 'info'); return; }
+
+    const excludeSet = new Set();
+    for (const fid of folderIds) {
+        for (const d of _collectTplDescendantFolderIds(fid, st.folderData.folders || [])) excludeSet.add(d);
+    }
+    const target = await _pickTargetFolder(st, {
+        title: `批量移动所选 ${total} 项到...`,
+        excludeFolderIds: [...excludeSet],
+    });
+    if (target === null) return;
+
+    const prevFolderId = st.folderId;
+    try {
+        if (itemIds.length) {
+            await _libFolderRequest(st, 'move', { ids: itemIds, folderId: target });
+            itemIds.forEach(id => modal._selectedItemIds.delete(id));
+        }
+        if (folderIds.length) {
+            await _libFolderRequest(st, 'move-folders', { folderIds, targetParentId: target });
+            folderIds.forEach(fid => modal._selectedFolderIds.delete(fid));
+        }
+        await _refreshLibraryView(st);
+        if (st.mode === 'liveProject') {
+            window.reelsOnLibraryFolderChanged?.([prevFolderId, target, ...folderIds].filter(Boolean));
+        }
+        const targetLabel = _buildTemplateFolderPathText(target, st.folderData.folders, st.cfg.homeLabel);
+        showToast?.(`📦 已将 ${total} 项移动到「${targetLabel}」`, 'success');
+    } catch (err) {
+        showToast?.(`批量移动失败：${err.message}`, 'error');
+    }
+}
+
+async function _batchDeleteLibrarySelection(st) {
+    const modal = document.getElementById(st.cfg.modalId);
+    if (!modal || modal._onSelectCallback) return;
+    const itemIds = [...(modal._selectedItemIds || [])];
+    const folderIds = [...(modal._selectedFolderIds || [])];
+    const total = itemIds.length + folderIds.length;
+    if (!total) { showToast?.(`请先勾选要删除的${st.cfg.itemNoun}或文件夹`, 'info'); return; }
+
+    const descParts = [];
+    if (itemIds.length) descParts.push(`${itemIds.length} 个${st.cfg.itemNoun}`);
+    if (folderIds.length) descParts.push(`${folderIds.length} 个文件夹（仅删除空文件夹）`);
+    if (!confirm(`确定彻底删除所选 ${descParts.join(' 和 ')}？此操作不可恢复。`)) return;
+
+    const affectedFolders = new Set();
+    let deletedItems = 0, deletedFolders = 0, skippedFolders = 0, itemFailures = 0;
+
+    for (const id of itemIds) {
+        const prevFolder = st.folderData?.assignments?.[id] || st.folderId || '';
+        if (prevFolder) affectedFolders.add(prevFolder);
+        try {
+            await _libApiRequest(st, 'delete', { id });
+            if (st.mode === 'template' && _currentTemplateContext.id === id) _setCurrentTemplateContext('', '');
+            modal._selectedItemIds.delete(id);
+            deletedItems++;
+        } catch (err) {
+            itemFailures++;
+            console.warn('[LibraryBatchDelete] item failed:', id, err);
+        }
+    }
+
+    if (folderIds.length) {
+        const folderMap = new Map((st.folderData.folders || []).map(f => [f.id, f]));
+        const getDepth = (fid) => {
+            let d = 0, cur = fid, seen = new Set();
+            while (cur && folderMap.has(cur) && !seen.has(cur)) {
+                seen.add(cur);
+                cur = folderMap.get(cur).parentId || '';
+                d++;
+            }
+            return d;
+        };
+        const orderedFolders = [...folderIds].sort((a, b) => getDepth(b) - getDepth(a));
+        for (const fid of orderedFolders) {
+            try {
+                await _libFolderRequest(st, 'delete', { id: fid });
+                if (st.folderId === fid) st.folderId = folderMap.get(fid)?.parentId || '';
+                modal._selectedFolderIds.delete(fid);
+                affectedFolders.add(fid);
+                deletedFolders++;
+            } catch (_) {
+                skippedFolders++;
+            }
+        }
+    }
+
+    if (st.mode === 'liveProject' && affectedFolders.size) {
+        window.reelsOnLibraryFolderChanged?.([...affectedFolders]);
+    }
+    await _refreshLibraryView(st);
+
+    const summary = [];
+    if (deletedItems) summary.push(`${deletedItems} 个${st.cfg.itemNoun}`);
+    if (deletedFolders) summary.push(`${deletedFolders} 个文件夹`);
+    const notes = [];
+    if (itemFailures) notes.push(`${itemFailures} 项删除失败`);
+    if (skippedFolders) notes.push(`${skippedFolders} 个非空文件夹已跳过（请先清空其内子项）`);
+    showToast?.(
+        (summary.length ? `🗑️ 已删除 ${summary.join('、')}` : '未删除任何项目') + (notes.length ? `（${notes.join('；')}）` : ''),
+        (itemFailures || skippedFolders) ? 'warning' : 'success',
+        4500
+    );
+}
+
+function tplSelectAllTemplates() { _selectAllLibraryItems(_getLibState('template')); }
 
 async function tplSaveSelectedPresets() {
-    const modal = document.getElementById('template-library-modal');
+    const st = _getLibState('template');
+    const modal = document.getElementById(st.cfg.modalId);
     if (!modal || modal._onSelectCallback) return;
-    const selected = [...(modal._selectedTemplateIds || [])];
+    const selected = [...(modal._selectedItemIds || [])];
     if (!selected.length) return;
     const groupName = await (typeof _showInputDialog === 'function'
         ? _showInputDialog('预设保存分组', '例如：九月祷告、金色字幕', '我的预设')
@@ -732,16 +1544,12 @@ async function tplSaveSelectedPresets() {
     if (!category) return;
     if (!confirm(`将 ${selected.length} 个模板中的动态字幕和覆层分别保存到分组「${category}」？\n\n同名预设会自动重命名，不会修改原模板或已有预设。`)) return;
 
-    const button = document.getElementById('tpl-save-selected-presets-btn');
+    const button = modal.querySelector('#tpl-save-selected-presets-btn');
     if (button) { button.disabled = true; button.textContent = '保存中…'; }
     let subtitles = 0, overlays = 0, failed = 0;
     for (const id of selected) {
         try {
-            const resp = await apiFetch(`${API_BASE}/templates/get`, {
-                method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id }),
-            });
-            const parsed = await resp.json();
-            const template = parsed.data || parsed;
+            const template = await _libApiRequest(st, 'get', { id });
             if (!template?.projectData) throw new Error('模板工程数据不存在');
             const synced = _syncTemplatePresetAssets(template.name || id, template.projectData, category);
             if (synced.subtitle) subtitles++;
@@ -752,17 +1560,14 @@ async function tplSaveSelectedPresets() {
         }
     }
     if (button) button.textContent = '💾 保存所选预设';
-    _updateTemplatePresetSelectionUI();
-    const message = `已保存到「${category}」：动态字幕 ${subtitles} 个、覆层 ${overlays} 个${failed ? `；${failed} 个失败` : ''}`;
-    if (typeof showToast === 'function') showToast(message, failed ? 'warning' : 'success', 5000);
-    else alert(message);
+    _updateLibrarySelectionUI(st);
+    showToast?.(`已保存到「${category}」：动态字幕 ${subtitles} 个、覆层 ${overlays} 个${failed ? `；${failed} 个失败` : ''}`, failed ? 'warning' : 'success', 5000);
 }
 
 // ═══════════════════════════════════════════════════════
-// 2. 保存当前工程为模板
+// 2. 保存为封存模板 (📂 模板库) & 实时工程批量收录 (🗂️ 工程项目)
 // ═══════════════════════════════════════════════════════
 
-/** 为队列生成稳定短编号；同一路径/标签在不同日期保存仍保持一致。 */
 function _templateQueueShortId(value) {
     const input = String(value || 'queue').trim().toLowerCase().replace(/\\/g, '/');
     let hash = 2166136261;
@@ -782,20 +1587,13 @@ function _templateQueueIdentityFromTasks(tasks) {
     return '';
 }
 
-function _templateIdForQueue(baseName, queueIdentity) {
-    return `tpl_queue_${_templateQueueShortId(`${baseName}|${queueIdentity}`)}`;
-}
-
 function _captureVisibleTemplateThumbnail() {
     let thumbnail = '';
     try {
-        // V2 使用独立 Canvas。优先截取当前正在显示的预览，
-        // 同时保留旧预览回退，避免已有模板流程受影响。
         const v2 = window.ReelsPreviewV2;
         const canvas = (v2?.isOpen?.() ? v2.getCanvas?.() : null)
             || document.getElementById('reels-preview-canvas');
         if (canvas) {
-            // 创建缩略图 canvas（270×480，9:16）
             const thumbCanvas = document.createElement('canvas');
             thumbCanvas.width = 270;
             thumbCanvas.height = 480;
@@ -808,6 +1606,7 @@ function _captureVisibleTemplateThumbnail() {
     }
     return thumbnail;
 }
+window._captureVisibleTemplateThumbnail = _captureVisibleTemplateThumbnail;
 
 async function _captureTemplateThumbnailForTasks(tasks, fallbackThumbnail = '') {
     const state = window._reelsState;
@@ -824,7 +1623,6 @@ async function _captureTemplateThumbnailForTasks(tasks, fallbackThumbnail = '') 
             state.selectedIdx = 0;
             if (typeof reelsUpdatePreview === 'function') reelsUpdatePreview();
         }
-        // 等待图片/视频元数据和 Canvas 至少完成一次实际绘制。
         await new Promise(resolve => setTimeout(resolve, 450));
         return _captureVisibleTemplateThumbnail() || fallbackThumbnail;
     } catch (error) {
@@ -842,41 +1640,32 @@ async function _captureTemplateThumbnailForTasks(tasks, fallbackThumbnail = '') 
         window._templateThumbnailCaptureActive = false;
     }
 }
+window.captureTemplateThumbnailForTasks = _captureTemplateThumbnailForTasks;
 
 async function _repairTemplateThumbnailsByIds(templateIds, options = {}) {
+    const st = _getLibState('template');
     const ids = [...new Set((templateIds || []).filter(Boolean))];
     if (!ids.length) return { repaired: 0, failed: 0 };
     const button = document.getElementById('tpl-repair-thumbnails-btn');
     const originalText = button?.textContent || '';
     if (button) button.disabled = true;
-    let repaired = 0;
-    let failed = 0;
+    let repaired = 0, failed = 0;
     try {
         for (let i = 0; i < ids.length; i++) {
             if (button) button.textContent = `📸 ${i + 1}/${ids.length}`;
             try {
-                const getResp = await apiFetch(`${API_BASE}/templates/get`, {
-                    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: ids[i] })
-                });
-                const getResult = await getResp.json();
-                const tpl = getResult.data || getResult;
+                const tpl = await _libApiRequest(st, 'get', { id: ids[i] });
                 const tasks = JSON.parse(JSON.stringify(tpl?.projectData?.tasks || []));
                 if (!tasks.length) throw new Error('模板没有任务');
                 const thumbnail = await _captureTemplateThumbnailForTasks(tasks, tpl.thumbnail || '');
                 if (!thumbnail) throw new Error('未能生成截图');
-                const saveResp = await apiFetch(`${API_BASE}/templates/thumbnail`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        id: tpl.id,
-                        name: tpl.name,
-                        description: tpl.description || '',
-                        tags: tpl.tags || [],
-                        thumbnail,
-                    }),
+                await _libApiRequest(st, 'thumbnail', {
+                    id: tpl.id,
+                    name: tpl.name,
+                    description: tpl.description || '',
+                    tags: tpl.tags || [],
+                    thumbnail,
                 });
-                const saveResult = await saveResp.json();
-                if (!(saveResult.success || saveResult.data?.success)) throw new Error(saveResult.error || '保存失败');
                 repaired++;
             } catch (error) {
                 failed++;
@@ -888,25 +1677,18 @@ async function _repairTemplateThumbnailsByIds(templateIds, options = {}) {
             button.disabled = false;
             button.textContent = originalText || '📸 修复重复封面';
         }
-        if (repaired > 0 && typeof window.reelsOnLibraryFolderChanged === 'function') {
-            window.reelsOnLibraryFolderChanged([], { skipWorkspaceSync: true });
-        }
-        if (document.getElementById('template-library-modal')) _refreshTemplateList();
+        if (document.getElementById(st.cfg.modalId)) _refreshLibraryView(st);
     }
-    if (!options.silent && typeof showToast === 'function') {
-        showToast(`已重新生成 ${repaired} 张工程封面${failed ? `，${failed} 张失败` : ''}`, failed ? 'warning' : 'success', 6000);
+    if (!options.silent) {
+        showToast?.(`已重新生成 ${repaired} 张模板封面${failed ? `，${failed} 张失败` : ''}`, failed ? 'warning' : 'success', 6000);
     }
     return { repaired, failed };
 }
-window.captureTemplateThumbnailForTasks = _captureTemplateThumbnailForTasks;
 
 async function repairDuplicateTemplateThumbnails() {
+    const st = _getLibState('template');
     try {
-        const resp = await apiFetch(`${API_BASE}/templates/list`, {
-            method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}'
-        });
-        const parsed = await resp.json();
-        const templates = parsed.data || parsed || [];
+        const templates = await _libApiRequest(st, 'list') || [];
         const byThumbnail = new Map();
         templates.forEach(tpl => {
             const key = String(tpl.thumbnail || '');
@@ -916,30 +1698,25 @@ async function repairDuplicateTemplateThumbnails() {
         });
         const duplicateIds = [...byThumbnail.values()].filter(group => group.length > 1).flat();
         if (!duplicateIds.length) {
-            if (typeof showToast === 'function') showToast('没有检测到重复模板封面', 'info');
+            showToast?.('没有检测到重复模板封面', 'info');
             return;
         }
         if (!confirm(`检测到 ${duplicateIds.length} 个模板共用了重复封面。\n\n是否逐模板重新生成独立截图？`)) return;
         await _repairTemplateThumbnailsByIds(duplicateIds);
     } catch (error) {
-        if (typeof showToast === 'function') showToast(`修复模板封面失败：${error.message}`, 'error');
+        showToast?.(`修复模板封面失败：${error.message}`, 'error');
     }
 }
 window.repairDuplicateTemplateThumbnails = repairDuplicateTemplateThumbnails;
 window._repairTemplateThumbnailsByIds = _repairTemplateThumbnailsByIds;
 
 function _captureCurrentTemplatePayload(name) {
-    // 截取当前 Canvas 预览作为缩略图
     const thumbnail = _captureVisibleTemplateThumbnail();
-
-    // 用 ReelsProject.collectProjectData 序列化工程
     let projectData = {};
     try {
         if (typeof collectCurrentProjectState === 'function') {
-            const state = collectCurrentProjectState();
-            projectData = ReelsProject.collectProjectData(state);
+            projectData = ReelsProject.collectProjectData(collectCurrentProjectState());
         } else if (typeof ReelsProject !== 'undefined') {
-            // 尝试直接收集
             projectData = ReelsProject.collectProjectData({
                 tasks: window.reelsTasks || [],
                 style: window.reelsGlobalStyle || {},
@@ -951,12 +1728,7 @@ function _captureCurrentTemplatePayload(name) {
         console.error('[Template] 工程序列化失败:', e);
         throw new Error('序列化工程失败: ' + e.message);
     }
-
-    return {
-        name,
-        thumbnail,
-        projectData,
-    };
+    return { name, thumbnail, projectData };
 }
 
 function _makeUniqueTemplatePresetName(baseName, existingNames) {
@@ -968,8 +1740,6 @@ function _makeUniqueTemplatePresetName(baseName, existingNames) {
     return candidate;
 }
 
-// 模板工程内的样式/覆层是快照；用户选择同步时，再生成可跨工程调用的独立预设。
-// 同名不覆盖已有“我的预设”，而是自动创建带序号的新预设。
 function _syncTemplatePresetAssets(templateName, projectData, category = '模板同步') {
     const tasks = Array.isArray(projectData?.tasks) ? projectData.tasks : [];
     const result = { subtitle: false, overlay: false };
@@ -994,9 +1764,9 @@ function _syncTemplatePresetAssets(templateName, projectData, category = '模板
         try {
             const key = 'reels_overlay_group_presets';
             const saved = JSON.parse(localStorage.getItem(key) || '{}');
-            const layerTypes = [...new Set(layers.map(layer => ({ text:'纯文本', textcard:'文字卡片', scroll:'滚动字幕', image:'图片媒体', video:'视频媒体', solid_mask:'纯色蒙版' })[layer.type] || '其他覆层'))];
+            const layerTypes = [...new Set(layers.map(layer => ({ text: '纯文本', textcard: '文字卡片', scroll: '滚动字幕', image: '图片媒体', video: '视频媒体', solid_mask: '纯色蒙版' })[layer.type] || '其他覆层'))];
             const presetName = _makeUniqueTemplatePresetName(`${templateName} · 覆层`, new Set(Object.keys(saved)));
-            saved[presetName] = { name:presetName, layers, updatedAt:new Date().toISOString(), meta:{ layerCount:layers.length, category, layerTypes, needsBatchText:layers.some(layer => !layer.fixed_text && ['text','textcard','scroll'].includes(layer.type)) } };
+            saved[presetName] = { name: presetName, layers, updatedAt: new Date().toISOString(), meta: { layerCount: layers.length, category, layerTypes, needsBatchText: layers.some(layer => !layer.fixed_text && ['text', 'textcard', 'scroll'].includes(layer.type)) } };
             localStorage.setItem(key, JSON.stringify(saved));
             result.overlay = true;
         } catch (error) { console.warn('[Template] 同步覆层预设失败:', error); }
@@ -1004,79 +1774,9 @@ function _syncTemplatePresetAssets(templateName, projectData, category = '模板
     return result;
 }
 
-let _tplDismissedBannerSig = '';
-let _tplArchivingInProgress = false;
-
-function _renderWorkspaceAutoSaveBanner(availableIds, isPicker) {
-    const banner = document.getElementById('tpl-workspace-banner');
-    if (!banner) return;
-    if (isPicker || typeof window.reelsGetWorkspaceSaveCandidateInfo !== 'function') {
-        banner.style.display = 'none';
-        banner.innerHTML = '';
-        return;
-    }
-    const info = window.reelsGetWorkspaceSaveCandidateInfo(availableIds);
-    const sig = `${info.totalGroups}|${info.unarchivedGroups.length}|${info.unarchivedTasks}|${info.unarchivedGroups.slice(0, 6).map(g => g.key).join(',')}`;
-    if (!info.unarchivedGroups.length || _tplDismissedBannerSig === sig) {
-        banner.style.display = 'none';
-        banner.innerHTML = '';
-        return;
-    }
-
-    const previewText = info.previewNames.join(' · ') + (info.unarchivedGroups.length > info.previewNames.length ? ` 等 ${info.unarchivedGroups.length} 个` : '');
-    const hasSubGroups = info.groupNames.length > 0;
-    const inSubfolder = !!_tplFolderId;
-
-    banner.style.display = 'flex';
-    banner.style.alignItems = 'center';
-    banner.style.justifyContent = 'space-between';
-    banner.style.gap = '10px';
-    banner.style.flexWrap = 'wrap';
-    banner.innerHTML = `
-        <div style="flex:1 1 280px;min-width:220px;">
-            <div style="font-size:12.5px;color:#ecfdf5;font-weight:600;line-height:1.4;">
-                ⚡ 检测到工作区共有 <b style="color:#6ee7b7;">${info.unarchivedGroups.length}</b> 个未入库工程标签（${info.unarchivedTasks} 条任务${hasSubGroups ? ` · ${info.groupNames.length} 个小分组` : ''}）
-            </div>
-            <div style="font-size:11px;color:#a5b4fc;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="${_tplEscapeHtml(previewText)}">
-                已识别标签：${_tplEscapeHtml(previewText)}
-            </div>
-        </div>
-        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
-            <input id="tpl-auto-archive-name" type="text" value="${_tplEscapeHtml(info.suggestedName)}" placeholder="目标工程文件夹名..." style="width:170px;padding:5px 9px;background:#0f172a;color:#f8fafc;border:1px solid rgba(129,140,248,0.45);border-radius:7px;font-size:11.5px;outline:none;" />
-            ${hasSubGroups ? `<label style="display:inline-flex;align-items:center;gap:4px;font-size:11px;color:#ddd6fe;cursor:pointer;white-space:nowrap;" title="把各标签的小分组自动建成二级子文件夹"><input type="checkbox" id="tpl-auto-archive-split-groups" checked style="accent-color:#8b5cf6;">按小分组建子文件夹</label>` : ''}
-            <label style="display:inline-flex;align-items:center;gap:4px;font-size:11px;color:#cbd5e1;cursor:pointer;white-space:nowrap;" title="自动渲染截取各标签封面图"><input type="checkbox" id="tpl-auto-archive-capture-thumbs" checked style="accent-color:#10b981;">生成封面</label>
-            <button type="button" id="tpl-auto-archive-btn" style="padding:6px 13px;font-size:11.5px;font-weight:700;background:linear-gradient(135deg,#10b981,#059669);color:#fff;border:none;border-radius:7px;cursor:pointer;white-space:nowrap;">✨ 一键自动保存并管理</button>
-            ${inSubfolder ? '<button type="button" id="tpl-auto-archive-here-btn" style="padding:6px 11px;font-size:11px;font-weight:600;background:rgba(99,102,241,0.22);color:#e0e7ff;border:1px solid rgba(129,140,248,0.45);border-radius:7px;cursor:pointer;white-space:nowrap;" title="不新建外层目录，直接存入当前打开的文件夹">存入当前文件夹</button>' : ''}
-            <button type="button" id="tpl-auto-archive-dismiss-btn" style="padding:4px 8px;font-size:11px;background:transparent;color:#94a3b8;border:1px solid rgba(148,163,184,0.28);border-radius:6px;cursor:pointer;">暂不提示</button>
-        </div>
-    `;
-
-    const runArchive = async (folderMode) => {
-        const nameInput = document.getElementById('tpl-auto-archive-name');
-        const folderName = String(nameInput?.value || info.suggestedName || '工作区工程').trim() || '工作区工程';
-        const splitGroups = !!document.getElementById('tpl-auto-archive-split-groups')?.checked;
-        const captureThumbs = document.getElementById('tpl-auto-archive-capture-thumbs')?.checked !== false;
-        await reelsAutoArchiveWorkspaceToLibrary({
-            folderMode,
-            folderName,
-            parentFolderId: _tplFolderId || '',
-            splitByGroup: splitGroups,
-            captureThumbnails: captureThumbs,
-            bindWorkspace: true,
-        });
-    };
-
-    banner.querySelector('#tpl-auto-archive-btn')?.addEventListener('click', () => runArchive('new-folder'));
-    banner.querySelector('#tpl-auto-archive-here-btn')?.addEventListener('click', () => runArchive('current-folder'));
-    banner.querySelector('#tpl-auto-archive-dismiss-btn')?.addEventListener('click', () => {
-        _tplDismissedBannerSig = sig;
-        banner.style.display = 'none';
-    });
-}
-
-async function _ensureLibraryFolder(parentId, desiredName, existingFolders, options = {}) {
+async function _ensureLibraryFolder(st, parentId, desiredName, existingFolders, options = {}) {
     const cleanParent = String(parentId || '').trim();
-    const cleanBase = String(desiredName || '新建工程文件夹').trim().slice(0, 180) || '新建工程文件夹';
+    const cleanBase = String(desiredName || '新建文件夹').trim().slice(0, 180) || '新建文件夹';
     const siblings = (existingFolders || []).filter(f => f && (f.parentId || '') === cleanParent);
     if (options.reuseExisting) {
         const hit = siblings.find(f => f.name === cleanBase);
@@ -1088,7 +1788,7 @@ async function _ensureLibraryFolder(parentId, desiredName, existingFolders, opti
     while (existingNames.has(candidateName)) {
         candidateName = `${cleanBase} (${suffix++})`;
     }
-    const res = await _templateFolderRequest('create', { name: candidateName, parentId: cleanParent });
+    const res = await _libFolderRequest(st, 'create', { name: candidateName, parentId: cleanParent });
     const created = res.folder || res;
     if (created && created.id && Array.isArray(existingFolders)) {
         existingFolders.push(created);
@@ -1096,19 +1796,18 @@ async function _ensureLibraryFolder(parentId, desiredName, existingFolders, opti
     return created;
 }
 
-async function _reorderLibraryFolderTail(folderId, newlyOrderedCardIds = []) {
+async function _reorderLibraryFolderTail(st, folderId, newlyOrderedCardIds = []) {
     if (!newlyOrderedCardIds.length) return;
     try {
-        const [foldersRes, listResp] = await Promise.all([
-            _templateFolderRequest('list'),
-            apiFetch(`${API_BASE}/templates/list`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }),
+        const [foldersRes, allItems] = await Promise.all([
+            _libFolderRequest(st, 'list'),
+            _libApiRequest(st, 'list'),
         ]);
         const foldersParsed = foldersRes || { folders: [], assignments: {}, folderOrders: {} };
-        const listParsed = await listResp.json();
-        const allTemplates = listParsed.data || listParsed || [];
+        const list = Array.isArray(allItems) ? allItems : [];
         const cleanParent = String(folderId || '').trim();
         const childFolders = (foldersParsed.folders || []).filter(f => f && (f.parentId || '') === cleanParent);
-        const directTemplates = allTemplates.filter(t => t && (foldersParsed.assignments?.[t.id] || '') === cleanParent);
+        const directItems = list.filter(t => t && (foldersParsed.assignments?.[t.id] || '') === cleanParent);
         const prevOrder = foldersParsed.folderOrders?.[cleanParent] || (!cleanParent ? foldersParsed.libraryOrder : []) || [];
         const prevRank = new Map((Array.isArray(prevOrder) ? prevOrder : []).map((k, idx) => [k, idx]));
         const newRank = new Map(newlyOrderedCardIds.map((id, idx) => [String(id), idx]));
@@ -1116,25 +1815,26 @@ async function _reorderLibraryFolderTail(folderId, newlyOrderedCardIds = []) {
         const folderKeys = [...childFolders]
             .sort((a, b) => (prevRank.get('f:' + a.id) ?? Number.MAX_SAFE_INTEGER) - (prevRank.get('f:' + b.id) ?? Number.MAX_SAFE_INTEGER))
             .map(f => 'f:' + f.id);
-        const existingCardKeys = directTemplates
+        const existingCardKeys = directItems
             .filter(t => !newRank.has(String(t.id)))
             .sort((a, b) => (prevRank.get('t:' + a.id) ?? Number.MAX_SAFE_INTEGER) - (prevRank.get('t:' + b.id) ?? Number.MAX_SAFE_INTEGER))
             .map(t => 't:' + t.id);
         const newCardKeys = newlyOrderedCardIds
-            .filter(id => directTemplates.some(t => String(t.id) === String(id)))
+            .filter(id => directItems.some(t => String(t.id) === String(id)))
             .map(id => 't:' + id);
         const fullOrder = [...folderKeys, ...existingCardKeys, ...newCardKeys];
         if (fullOrder.length > 0) {
-            await _templateFolderRequest('reorder', { order: fullOrder, parentId: cleanParent });
+            await _libFolderRequest(st, 'reorder', { order: fullOrder, parentId: cleanParent });
         }
     } catch (err) {
-        console.warn('[ProjectLibrary] 保留标签排序失败（不影响已保存数据）:', err);
+        console.warn('[ProjectLibrary] 保留排序失败（不影响已保存数据）:', err);
     }
 }
 
 async function _archiveGroupsToLibrary(groups, options = {}) {
-    const validGroups = (Array.isArray(groups) ? groups : []).filter(g => g && Array.isArray(g.tasks) && g.tasks.length > 0);
-    if (!validGroups.length) throw new Error('没有可保存的非空工程标签');
+    const st = _getLibState('liveProject');
+    const validGroups = (Array.isArray(groups) ? groups : []).filter(g => g && Array.isArray(g.tasks) && (g.tasks.length > 0 || options.allowEmpty));
+    if (!validGroups.length) throw new Error('没有可保存的工程标签');
 
     window.reelsSyncWatermarkFromUI?.();
     const sharedStyle = options.style
@@ -1152,17 +1852,17 @@ async function _archiveGroupsToLibrary(groups, options = {}) {
         ? options.backgroundLibrary
         : (Array.isArray(window._reelsState?.backgroundLibrary) ? window._reelsState.backgroundLibrary : []);
 
-    const foldersRes = await _templateFolderRequest('list');
+    const [foldersRes, allItems] = await Promise.all([
+        _libFolderRequest(st, 'list'),
+        _libApiRequest(st, 'list'),
+    ]);
     const foldersList = Array.isArray(foldersRes?.folders) ? [...foldersRes.folders] : [];
-    const listResp = await apiFetch(`${API_BASE}/templates/list`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
-    const listParsed = await listResp.json();
-    const allTemplates = listParsed.data || listParsed || [];
-    const existingById = new Map(allTemplates.map(t => [String(t.id), t]));
+    const existingById = new Map((allItems || []).map(t => [String(t.id), t]));
     const assignments = foldersRes?.assignments || {};
 
-    let rootFolderId = String(options.parentFolderId ?? (_tplFolderId || '')).trim();
+    let rootFolderId = String(options.parentFolderId ?? (st.folderId || '')).trim();
     if (options.folderMode !== 'current-folder') {
-        const createdRoot = await _ensureLibraryFolder(rootFolderId, options.folderName || '新建工程', foldersList, { reuseExisting: false });
+        const createdRoot = await _ensureLibraryFolder(st, rootFolderId, options.folderName || '新建工程文件夹', foldersList, { reuseExisting: false });
         rootFolderId = String(createdRoot?.id || '').trim();
     }
 
@@ -1172,7 +1872,7 @@ async function _archiveGroupsToLibrary(groups, options = {}) {
         for (const g of validGroups) {
             const gName = String(g.group || '').trim();
             if (!gName || folderMapByGroup.has(gName)) continue;
-            const sub = await _ensureLibraryFolder(rootFolderId, gName, foldersList, { reuseExisting: true });
+            const sub = await _ensureLibraryFolder(st, rootFolderId, gName, foldersList, { reuseExisting: true });
             if (sub?.id) folderMapByGroup.set(gName, sub.id);
         }
     }
@@ -1183,7 +1883,7 @@ async function _archiveGroupsToLibrary(groups, options = {}) {
     const getUsedSet = (fId) => {
         const key = String(fId || '');
         if (!usedNamesPerFolder.has(key)) {
-            const existingNames = allTemplates
+            const existingNames = (allItems || [])
                 .filter(t => String(assignments[t.id] || '') === key)
                 .map(t => t.name);
             usedNamesPerFolder.set(key, new Set(existingNames));
@@ -1242,22 +1942,14 @@ async function _archiveGroupsToLibrary(groups, options = {}) {
         });
 
         try {
-            const saveBody = {
+            const res = await _libApiRequest(st, 'save', {
                 ...(existingInSameFolder ? { id: existingLibId } : {}),
                 name: finalName,
                 description: group.group ? `分组：${group.group}` : '',
                 folderId: targetFolderId,
                 thumbnail: thumb,
                 projectData,
-            };
-            const resp = await apiFetch(`${API_BASE}/templates/save`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(saveBody),
             });
-            const parsed = await resp.json();
-            const res = parsed.data || parsed;
-            if (!res?.success && !res?.id) throw new Error(res?.error || parsed?.error || '保存失败');
             const savedId = res.id || (existingInSameFolder ? existingLibId : '');
             if (options.syncPresetAssets) {
                 const synced = _syncTemplatePresetAssets(finalName, projectData);
@@ -1286,24 +1978,24 @@ async function _archiveGroupsToLibrary(groups, options = {}) {
     }
 
     for (const [fId, cardIds] of savedIdsByFolder.entries()) {
-        await _reorderLibraryFolderTail(fId, cardIds);
+        await _reorderLibraryFolderTail(st, fId, cardIds);
     }
 
     const folderPaths = {};
     const folderCounts = {};
-    const updatedFoldersRes = await _templateFolderRequest('list');
+    const updatedFoldersRes = await _libFolderRequest(st, 'list');
     const latestFolders = updatedFoldersRes?.folders || foldersList;
     const latestAssign = updatedFoldersRes?.assignments || {};
     const touchedFolderIds = new Set([rootFolderId, ...savedResults.map(r => r.libraryFolderId)]);
     for (const fId of touchedFolderIds) {
-        folderPaths[fId] = _buildTemplateFolderPathText(fId, latestFolders);
+        folderPaths[fId] = _buildTemplateFolderPathText(fId, latestFolders, st.cfg.homeLabel);
         folderCounts[fId] = Object.values(latestAssign).filter(v => String(v || '') === String(fId || '')).length;
     }
 
     if (options.bindWorkspace && typeof window.reelsBindSavedGroupsToWorkspace === 'function') {
         window.reelsBindSavedGroupsToWorkspace(savedResults, {
             rootFolderId,
-            rootFolderPath: folderPaths[rootFolderId] || '主工程库',
+            rootFolderPath: folderPaths[rootFolderId] || st.cfg.homeLabel,
             rootFolderDirectCount: folderCounts[rootFolderId] || savedResults.length,
             folderPaths,
             folderCounts,
@@ -1312,7 +2004,7 @@ async function _archiveGroupsToLibrary(groups, options = {}) {
 
     return {
         rootFolderId,
-        rootFolderPath: folderPaths[rootFolderId] || '主工程库',
+        rootFolderPath: folderPaths[rootFolderId] || st.cfg.homeLabel,
         savedResults,
         failed,
         syncedSubtitle,
@@ -1322,430 +2014,285 @@ async function _archiveGroupsToLibrary(groups, options = {}) {
 }
 
 async function reelsAutoArchiveWorkspaceToLibrary(options = {}) {
-    if (_tplArchivingInProgress) return false;
+    const st = _getLibState('liveProject');
+    if (st.archivingInProgress) return false;
     const groups = typeof window.reelsCollectWorkspaceProjectGroups === 'function'
         ? window.reelsCollectWorkspaceProjectGroups()
         : [];
     if (!groups.length) {
-        showToast?.('当前工作区没有可保存的非空任务标签', 'info');
+        showToast?.('当前工作区没有可收录的非空任务标签', 'info');
         return false;
     }
 
-    _tplArchivingInProgress = true;
-    const mainBtn = document.getElementById('tpl-auto-archive-btn');
-    const hereBtn = document.getElementById('tpl-auto-archive-here-btn');
-    const origMainText = mainBtn?.textContent || '';
-    const origHereText = hereBtn?.textContent || '';
-    if (mainBtn) mainBtn.disabled = true;
-    if (hereBtn) hereBtn.disabled = true;
-
+    st.archivingInProgress = true;
     try {
         const res = await _archiveGroupsToLibrary(groups, {
             folderMode: options.folderMode || 'new-folder',
             folderName: options.folderName || `工作区工程_${new Date().toISOString().slice(0, 10)}`,
-            parentFolderId: options.parentFolderId ?? (_tplFolderId || ''),
+            parentFolderId: options.parentFolderId ?? (st.folderId || ''),
             splitByGroup: options.splitByGroup !== false,
             captureThumbnails: options.captureThumbnails !== false,
             bindWorkspace: options.bindWorkspace !== false,
             syncPresetAssets: !!options.syncPresetAssets,
-            onProgress: (done, total) => {
-                const txt = `⏳ 保存并生成封面 ${done}/${total}...`;
-                if (options.folderMode === 'current-folder' && hereBtn) hereBtn.textContent = txt;
-                else if (mainBtn) mainBtn.textContent = txt;
-            },
         });
-        _tplFolderId = res.rootFolderId;
-        if (res.savedResults.length === 1) {
-            _setCurrentTemplateContext(res.savedResults[0].libraryTemplateId, res.savedResults[0].name);
-        } else {
-            _setCurrentTemplateContext('', '');
-        }
+        st.folderId = res.rootFolderId;
         window.reelsOnLibraryFolderChanged?.([res.rootFolderId].filter(Boolean), { skipWorkspaceSync: true });
-        await _refreshTemplateList();
+        await _refreshLibraryView(st);
         showToast?.(
-            `✅ 已自动识别并保存 ${res.savedResults.length} 个标签到「${res.rootFolderPath}」${res.failed.length ? `（${res.failed.length} 个失败）` : '，可直接勾选或管理应用'}`,
+            `✅ 已收录 ${res.savedResults.length} 个实时工程到「${res.rootFolderPath}」${res.failed.length ? `（${res.failed.length} 个失败）` : ''}`,
             res.failed.length ? 'warning' : 'success',
             5000
         );
         return true;
     } catch (err) {
-        showToast?.(`自动保存失败：${err.message}`, 'error');
+        showToast?.(`收录失败：${err.message}`, 'error');
         return false;
     } finally {
-        _tplArchivingInProgress = false;
-        if (mainBtn) { mainBtn.disabled = false; mainBtn.textContent = origMainText || '✨ 一键自动保存并管理'; }
-        if (hereBtn) { hereBtn.disabled = false; hereBtn.textContent = origHereText || '存入当前文件夹'; }
+        st.archivingInProgress = false;
     }
 }
 window.reelsAutoArchiveWorkspaceToLibrary = reelsAutoArchiveWorkspaceToLibrary;
 
-function _showSaveWorkspaceProjectModal(info, groups) {
-    return new Promise(resolve => {
-        const inFolderLabel = _tplFolderId ? _buildTemplateFolderPathText(_tplFolderId) : '主工程库';
-        const hasSubGroups = info.groupNames.length > 0;
-        const ov = document.createElement('div');
-        ov.id = 'tpl-save-workspace-modal';
-        ov.style.cssText = 'position:fixed;inset:0;z-index:400100;background:rgba(4,7,18,0.82);backdrop-filter:blur(5px);display:flex;align-items:center;justify-content:center;padding:16px;';
-        ov.innerHTML = `
-            <div style="background:#14182b;border:1px solid rgba(129,140,248,0.42);border-radius:14px;padding:18px 20px;width:min(490px,94vw);color:#e2e8f0;box-shadow:0 24px 60px rgba(0,0,0,0.75);display:flex;flex-direction:column;gap:12px;">
-                <div style="display:flex;justify-content:space-between;align-items:center;">
-                    <h3 style="margin:0;font-size:15.5px;color:#fff;">💾 保存当前工作区工程到管理库</h3>
-                    <button type="button" id="tsw-close" style="background:none;border:none;color:#94a3b8;font-size:18px;cursor:pointer;">✕</button>
-                </div>
-                <div style="font-size:12px;color:#cbd5e1;background:rgba(16,185,129,0.1);border:1px solid rgba(16,185,129,0.28);border-radius:8px;padding:9px 11px;line-height:1.55;">
-                    已自动识别工作区 <b>${groups.length}</b> 个标签页（共 <b>${info.totalTasks}</b> 条任务${hasSubGroups ? ` · 含 <b>${info.groupNames.length}</b> 个小分组` : ''}）：<br>
-                    <span style="color:#a5b4fc;font-size:11px;">${_tplEscapeHtml(groups.slice(0, 6).map(g => g.name).join(' · ') + (groups.length > 6 ? ` 等 ${groups.length} 个` : ''))}</span>
-                </div>
-                <div>
-                    <div style="font-size:11.5px;color:#94a3b8;margin-bottom:5px;">工程文件夹 / 名称（将保存于「${_tplEscapeHtml(inFolderLabel)}」）：</div>
-                    <input type="text" id="tsw-folder-name" value="${_tplEscapeHtml(info.suggestedName)}" style="width:100%;box-sizing:border-box;padding:8px 10px;background:#0b1020;color:#fff;border:1px solid #475569;border-radius:8px;font-size:13px;outline:none;" />
-                </div>
-                <div style="display:flex;flex-direction:column;gap:7px;font-size:12px;color:#cbd5e1;">
-                    <label style="display:flex;align-items:center;gap:7px;cursor:pointer;">
-                        <input type="radio" name="tsw-mode" value="new-folder" checked style="accent-color:#8b5cf6;">
-                        <span>在「${_tplEscapeHtml(inFolderLabel)}」下新建同名工程文件夹并归档</span>
-                    </label>
-                    <label style="display:flex;align-items:center;gap:7px;cursor:pointer;">
-                        <input type="radio" name="tsw-mode" value="current-folder" style="accent-color:#8b5cf6;">
-                        <span>直接保存到「${_tplEscapeHtml(inFolderLabel)}」当前目录</span>
-                    </label>
-                    ${hasSubGroups ? `<label style="display:flex;align-items:center;gap:7px;cursor:pointer;margin-top:2px;">
-                        <input type="checkbox" id="tsw-split-groups" checked style="accent-color:#10b981;">
-                        <span>按小分组（${_tplEscapeHtml(info.groupNames.slice(0, 3).join('、'))}${info.groupNames.length > 3 ? '…' : ''}）自动建二级子文件夹</span>
-                    </label>` : ''}
-                    <label style="display:flex;align-items:center;gap:7px;cursor:pointer;">
-                        <input type="checkbox" id="tsw-bind-ws" checked style="accent-color:#10b981;">
-                        <span>保存后自动绑定当前工作区，直接在工程库管理与应用</span>
-                    </label>
-                    <label style="display:flex;align-items:center;gap:7px;cursor:pointer;">
-                        <input type="checkbox" id="tsw-capture-thumbs" checked style="accent-color:#10b981;">
-                        <span>自动截取并生成各标签封面缩略图</span>
-                    </label>
-                    <label style="display:flex;align-items:center;gap:7px;cursor:pointer;color:#94a3b8;">
-                        <input type="checkbox" id="tsw-sync-presets" style="accent-color:#6366f1;">
-                        <span>同时把字幕样式与覆层导出为独立“我的预设”</span>
-                    </label>
-                </div>
-                <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:4px;">
-                    <button type="button" id="tsw-cancel" style="padding:7px 14px;border-radius:8px;border:1px solid #334155;background:#1e293b;color:#cbd5e1;font-size:12px;cursor:pointer;">取消</button>
-                    <button type="button" id="tsw-confirm" style="padding:7px 18px;border-radius:8px;border:none;background:linear-gradient(135deg,#6366f1,#10b981);color:#fff;font-size:12px;font-weight:700;cursor:pointer;">✨ 确认保存</button>
-                </div>
-            </div>
-        `;
-        document.body.appendChild(ov);
-        const input = ov.querySelector('#tsw-folder-name');
-        input?.focus();
-        input?.select();
-        const done = (val) => { ov.remove(); resolve(val); };
-        ov.querySelector('#tsw-close').onclick = () => done(null);
-        ov.querySelector('#tsw-cancel').onclick = () => done(null);
-        ov.addEventListener('click', e => { if (e.target === ov) done(null); });
-        ov.querySelector('#tsw-confirm').onclick = () => {
-            const folderMode = ov.querySelector('input[name="tsw-mode"]:checked')?.value || 'new-folder';
-            const folderName = String(input?.value || '').trim();
-            if (folderMode === 'new-folder' && !folderName) {
-                input?.focus();
-                return;
-            }
-            done({
-                folderMode,
-                folderName: folderName || info.suggestedName || '新建工程',
-                splitByGroup: !!ov.querySelector('#tsw-split-groups')?.checked,
-                bindWorkspace: ov.querySelector('#tsw-bind-ws')?.checked !== false,
-                captureThumbnails: ov.querySelector('#tsw-capture-thumbs')?.checked !== false,
-                syncPresetAssets: !!ov.querySelector('#tsw-sync-presets')?.checked,
-            });
-        };
-    });
-}
-
-async function _resolveTemplateSaveFolderId() {
-    if (_tplFolderId) return _tplFolderId;
-    const modal = document.getElementById('template-library-modal');
-    if (modal && getComputedStyle(modal).display !== 'none') return '';
-    const activeWorkspaceFolder = typeof window.reelsGetWorkspaceLibraryStatus === 'function'
-        ? (window.reelsGetWorkspaceLibraryStatus().folderId || '')
-        : '';
-    if (activeWorkspaceFolder) return activeWorkspaceFolder;
-    if (_currentTemplateContext.id) {
-        const folders = await _templateFolderRequest('list');
-        return folders.assignments?.[_currentTemplateContext.id] || '';
-    }
-    return '';
-}
-
+// 封存模式保存当前工程为模板（完全还原早期“保存当前工程为模板”体验：绝不绑定或自动覆盖！）
 async function saveCurrentAsTemplate() {
-    if (_tplArchivingInProgress) return;
-    const groups = typeof window.reelsCollectWorkspaceProjectGroups === 'function'
-        ? window.reelsCollectWorkspaceProjectGroups()
-        : [];
-    const info = typeof window.reelsGetWorkspaceSaveCandidateInfo === 'function'
-        ? window.reelsGetWorkspaceSaveCandidateInfo()
-        : { totalGroups: groups.length, totalTasks: groups.reduce((s, g) => s + (g.tasks?.length || 0), 0), groupNames: [], suggestedName: `工作区工程_${new Date().toISOString().slice(0, 10)}` };
-
-    if (groups.length > 1) {
-        const opts = await _showSaveWorkspaceProjectModal(info, groups);
-        if (!opts) return;
-        _tplArchivingInProgress = true;
-        try {
-            showToast?.(`正在识别并保存 ${groups.length} 个标签页，请稍候...`, 'info');
-            const res = await _archiveGroupsToLibrary(groups, {
-                folderMode: opts.folderMode,
-                folderName: opts.folderName,
-                parentFolderId: _tplFolderId || '',
-                splitByGroup: opts.splitByGroup,
-                bindWorkspace: opts.bindWorkspace,
-                captureThumbnails: opts.captureThumbnails,
-                syncPresetAssets: opts.syncPresetAssets,
-            });
-            _tplFolderId = res.rootFolderId;
-            _setCurrentTemplateContext('', '');
-            window.reelsOnLibraryFolderChanged?.([res.rootFolderId].filter(Boolean), { skipWorkspaceSync: true });
-            await _refreshTemplateList();
-            showToast?.(
-                `✅ 已保存 ${res.savedResults.length} 个工程标签到「${res.rootFolderPath}」${opts.syncPresetAssets ? `；同步字幕 ${res.syncedSubtitle}、覆层 ${res.syncedOverlay}` : ''}${res.failed.length ? `（${res.failed.length} 个失败）` : ''}`,
-                res.failed.length ? 'warning' : 'success',
-                5000
-            );
-        } catch (e) {
-            showToast?.('保存工程失败: ' + e.message, 'error');
-        } finally {
-            _tplArchivingInProgress = false;
-        }
-        return;
-    }
-
-    const saveFolderId = await _resolveTemplateSaveFolderId();
-    const defaultSingleName = (groups[0]?.name && groups[0].name !== '默认' && groups[0].name !== '未命名标签')
-        ? groups[0].name
-        : `工程_${new Date().toLocaleDateString('zh-CN')}`;
+    const st = _getLibState('template');
+    const saveFolderId = st.folderId || (_currentTemplateContext.id ? (await _libFolderRequest(st, 'list')).assignments?.[_currentTemplateContext.id] || '' : '');
+    const defaultName = `模板_${new Date().toLocaleDateString('zh-CN')}`;
     const name = await (typeof _showInputDialog === 'function'
-        ? _showInputDialog('保存当前工程', '请输入工程卡片名称', defaultSingleName)
-        : prompt('请输入工程卡片名称：', defaultSingleName));
+        ? _showInputDialog('保存当前工程为封存模板', '输入模板名称', defaultName)
+        : Promise.resolve(prompt('请输入模板名称：', defaultName)));
     if (!name || !name.trim()) return;
+    const syncPresetAssets = typeof confirm === 'function'
+        ? confirm('是否同时同步保存独立预设？\n\n“确定”：把模板内的动态字幕样式和覆层分别保存为同名独立预设。\n“取消”：仅封存保存模板工程。')
+        : false;
 
     try {
         const baseName = name.trim();
         const basePayload = _captureCurrentTemplatePayload(baseName);
-        basePayload.folderId = saveFolderId;
-        const singleGroup = groups[0]
-            ? [{ ...groups[0], name: baseName, thumbnail: basePayload.thumbnail }]
-            : [{ key: 'single', tabId: '', name: baseName, group: '', hidden: false, tasks: basePayload.projectData?.tasks || [], thumbnail: basePayload.thumbnail }];
-        const res = await _archiveGroupsToLibrary(singleGroup, {
-            folderMode: 'current-folder',
-            parentFolderId: saveFolderId,
-            splitByGroup: false,
-            bindWorkspace: true,
-            captureThumbnails: true,
-            syncPresetAssets: false,
-            style: basePayload.projectData?.style,
-            exportOpts: basePayload.projectData?.exportOpts,
-            backgroundLibrary: basePayload.projectData?.backgroundLibrary,
-            watermarks: basePayload.projectData?.watermarks,
-        });
-        const saved = res.savedResults[0];
-        if (saved?.libraryTemplateId) {
-            _setCurrentTemplateContext(saved.libraryTemplateId, saved.name);
+
+        let groups = [];
+        if (typeof _batchTableState !== 'undefined' && Array.isArray(_batchTableState.tabs)) {
+            if (typeof _syncTasksToActiveTab === 'function') _syncTasksToActiveTab();
+            const visibleGroups = new Map();
+            const visibleTasks = window._reelsState?.tasks || [];
+            visibleTasks.forEach(task => {
+                let id = 'legacy';
+                let gName = '已有任务';
+                if (task._batchTabId) {
+                    id = `tab:${task._batchTabId}`;
+                    gName = task._batchTabName || '未命名分组';
+                } else if (task._folderQueueId) {
+                    id = `folder:${task._folderQueueId}`;
+                    gName = task._folderQueueName || '文件夹队列';
+                }
+                if (!visibleGroups.has(id)) visibleGroups.set(id, { id, name: gName, tasks: [] });
+                visibleGroups.get(id).tasks.push(task);
+            });
+            if (visibleGroups.size > 1) {
+                groups = Array.from(visibleGroups.values());
+            } else {
+                groups = _batchTableState.tabs
+                    .filter(tab => Array.isArray(tab.tasks) && tab.tasks.length > 0)
+                    .map(tab => ({ id: tab.id, name: tab.name, tasks: tab.tasks }));
+            }
         }
-        window.reelsOnLibraryFolderChanged?.(saveFolderId ? [saveFolderId] : [], { skipWorkspaceSync: true });
-        showToast?.(`工程「${saved?.name || baseName}」已保存并绑定 ✅`, 'success');
-        _refreshTemplateList();
+
+        if (groups.length > 1) {
+            let saved = 0, syncedSubtitle = 0, syncedOverlay = 0;
+            const failed = [];
+            const usedNames = new Map();
+            for (let index = 0; index < groups.length; index++) {
+                const group = groups[index];
+                const rawGroupName = String(group.name || `分组${index + 1}`).trim() || `分组${index + 1}`;
+                const seenCount = (usedNames.get(rawGroupName) || 0) + 1;
+                usedNames.set(rawGroupName, seenCount);
+                const groupName = seenCount > 1 ? `${rawGroupName}_${seenCount}` : rawGroupName;
+                const queueIdentity = group.id || _templateQueueIdentityFromTasks(group.tasks) || `group:${index}`;
+                const queueShortId = _templateQueueShortId(queueIdentity);
+                const templateName = `${baseName}_${groupName} [Q-${queueShortId}]`;
+                const stableTemplateId = `tpl_queue_${_templateQueueShortId(`${baseName}|${queueIdentity}`)}`;
+                const projectData = ReelsProject.collectProjectData({
+                    tasks: group.tasks,
+                    backgroundLibrary: basePayload.projectData.backgroundLibrary || [],
+                    style: basePayload.projectData.style || {},
+                    exportOpts: basePayload.projectData.exportOpts || {},
+                    watermarks: basePayload.projectData.watermarks || [],
+                    selectedIdx: group.tasks.length ? 0 : -1,
+                });
+                try {
+                    const groupThumbnail = await _captureTemplateThumbnailForTasks(group.tasks, basePayload.thumbnail);
+                    await _libApiRequest(st, 'save', {
+                        id: stableTemplateId,
+                        name: templateName,
+                        folderId: saveFolderId,
+                        thumbnail: groupThumbnail,
+                        projectData,
+                    });
+                    if (syncPresetAssets) {
+                        const synced = _syncTemplatePresetAssets(templateName, projectData);
+                        if (synced.subtitle) syncedSubtitle++;
+                        if (synced.overlay) syncedOverlay++;
+                    }
+                    saved++;
+                } catch (err) {
+                    failed.push(`${templateName}: ${err.message}`);
+                }
+            }
+            if (saved === 0) throw new Error(failed.join('；') || '保存模板失败');
+            _refreshLibraryView(st);
+            showToast?.(`🔒 已封存保存 ${saved} 个模板${syncPresetAssets ? `（预设：字幕 ${syncedSubtitle}、覆层 ${syncedOverlay}）` : ''}${failed.length ? `，${failed.length} 个失败` : ''}`, failed.length ? 'warning' : 'success', 4500);
+            return;
+        }
+
+        const res = await _libApiRequest(st, 'save', {
+            name: baseName,
+            folderId: saveFolderId,
+            thumbnail: basePayload.thumbnail,
+            projectData: basePayload.projectData,
+        });
+        if (syncPresetAssets) _syncTemplatePresetAssets(baseName, basePayload.projectData);
+        if (res?.id) _setCurrentTemplateContext(res.id, baseName);
+        showToast?.(`🔒 模板「${baseName}」已封存保存 ✅（工作区后续修改不会自动覆盖它）`, 'success', 4000);
+        _refreshLibraryView(st);
     } catch (e) {
-        showToast?.('保存工程失败: ' + e.message, 'error');
+        showToast?.('保存模板失败: ' + e.message, 'error');
     }
 }
 
 async function updateCurrentTemplate() {
+    const st = _getLibState('template');
     if (!_currentTemplateContext.id) {
-        if (typeof showToast === 'function') showToast('请先从模板库载入一个模板，再更新当前模板', 'warning');
-        else alert('请先从模板库载入一个模板，再更新当前模板');
+        showToast?.('请先从「📂 模板库」载入过某个模板，再手动点更新覆盖它', 'warning');
         return;
     }
-
     const name = _currentTemplateContext.name || _currentTemplateContext.id;
-    if (!confirm(`确定用当前工程覆盖模板「${name}」？`)) return;
-
+    if (!confirm(`确定用当前工作区覆盖更新封存模板「${name}」？`)) return;
     try {
         const payload = _captureCurrentTemplatePayload(name);
-        delete payload.folderId; // Updating content must never move an existing template.
-        const resp = await apiFetch(`${API_BASE}/templates/save`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                ...payload,
-                id: _currentTemplateContext.id,
-            }),
-        });
-        const result = await resp.json();
-        if (result.success || result.data?.success) {
-            if (payload.thumbnail) {
-                window._reelsLibraryThumbCache = window._reelsLibraryThumbCache || {};
-                window._reelsLibraryThumbCache[_currentTemplateContext.id] = payload.thumbnail;
-            }
-            window.reelsOnLibraryFolderChanged?.([], { skipWorkspaceSync: true });
-            if (typeof showToast === 'function') showToast(`工程「${name}」已更新 ✅`, 'success');
-            _refreshTemplateList();
-        } else {
-            throw new Error(result.error || '更新失败');
-        }
+        await _libApiRequest(st, 'save', { ...payload, id: _currentTemplateContext.id });
+        showToast?.(`♻️ 封存模板「${name}」已更新 ✅`, 'success');
+        _refreshLibraryView(st);
     } catch (e) {
-        if (typeof showToast === 'function') showToast('更新模板失败: ' + e.message, 'error');
-        else alert('更新模板失败: ' + e.message);
+        showToast?.('更新模板失败: ' + e.message, 'error');
     }
 }
 
 // ═══════════════════════════════════════════════════════
-// 3. 打开模板（新窗口 / 当前窗口）
+// 3. 载入封存模板（独立副本，不改原模板）/ 独立窗口
 // ═══════════════════════════════════════════════════════
 
 async function _openTemplateInWindow(templateId, templateName) {
     if (window.electronAPI?.openTemplateWindow) {
         try {
             const result = await window.electronAPI.openTemplateWindow(templateId, templateName);
-            if (result?.reused) {
-                if (typeof showToast === 'function') showToast(`模板「${templateName}」窗口已聚焦`, 'info');
-            }
+            if (result?.reused) showToast?.(`模板「${templateName}」窗口已聚焦`, 'info');
         } catch (e) {
             console.error('[Template] 打开窗口失败:', e);
-            // Fallback: 当前窗口加载
             _loadTemplateInCurrentWindow(templateId);
         }
     } else {
-        // 浏览器模式：当前窗口加载
         _loadTemplateInCurrentWindow(templateId);
     }
 }
 
 async function _loadTemplateInCurrentWindow(templateId, options = {}) {
+    const st = _getLibState('template');
     try {
-        if (typeof window.reelsApplyLibraryProjects === 'function' && !window.location?.hash?.startsWith('#template=')) {
-            const modal = document.getElementById('template-library-modal');
-            const summary = (modal?._allTemplateSummaries || []).find(t => String(t.id) === String(templateId));
-            const assignedFolder = _tplFolderData?.assignments?.[templateId];
-            const targetFolderId = typeof options.folderId === 'string'
-                ? options.folderId
-                : (assignedFolder !== undefined ? assignedFolder : (_tplFolderId || ''));
-            const folderTotalCount = (modal?._allTemplateSummaries || []).filter(t => (_tplFolderData.assignments[t.id] || '') === targetFolderId).length || 1;
-            const resp = await apiFetch(`${API_BASE}/templates/get`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ id: templateId }),
-            });
-            const result = await resp.json();
-            const tplData = result.data || result;
-            if (result.error || !tplData.projectData) throw new Error(result.error || '工程缺少数据');
-            const ok = await window.reelsApplyLibraryProjects([{ tplData, summary: summary || { id: tplData.id, name: tplData.name, updatedAt: tplData.updatedAt } }], {
-                folderId: targetFolderId,
-                folderPath: _buildTemplateFolderPathText(targetFolderId),
-                folderTotalCount,
-                scopeMode: folderTotalCount <= 1 && targetFolderId ? 'folder' : (targetFolderId ? 'selected' : 'selected'),
+        const tplData = await _libApiRequest(st, 'get', { id: templateId });
+        if (!tplData || !tplData.projectData) throw new Error('模板缺少工程数据');
+
+        if (typeof window.reelsApplySealedTemplate === 'function' && !window.location?.hash?.startsWith('#template=')) {
+            const ok = await window.reelsApplySealedTemplate(tplData, {
                 loadMode: options.append ? 'append' : 'replace',
+                confirmSwitch: options.confirmSwitch !== false,
             });
             if (!ok) return;
             _setCurrentTemplateContext(tplData.id || templateId, tplData.name || '');
+            const modal = document.getElementById(st.cfg.modalId);
             if (modal) modal.style.display = 'none';
             if (typeof openPanelByName === 'function') openPanelByName('batch-reels');
-            if (typeof showToast === 'function') showToast(`工程「${tplData.name}」已载入到工作区`, 'success');
+            showToast?.(`🔒 已载入模板「${tplData.name}」副本到工作区（修改副本不会影响原模板）`, 'success', 4000);
             return;
         }
 
-        const resp = await apiFetch(`${API_BASE}/templates/get`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ id: templateId }),
-        });
-        const result = await resp.json();
-        const tplData = result.data || result;
-        if(result.error || !tplData.projectData)throw new Error(result.error || '工程缺少数据');
-
-        if (tplData.projectData && typeof ReelsProject !== 'undefined') {
+        if (typeof ReelsProject !== 'undefined') {
             const restored = ReelsProject.applyProjectData(tplData.projectData);
             if (typeof _batchTableState !== 'undefined') {
                 const tabId = 'tab_template_' + Date.now();
-                _batchTableState.tabs = [{id:tabId,name:tplData.name || '工程',libraryTemplateId:tplData.id || templateId,tasks:[],materialDir:''}];
+                _batchTableState.tabs = [{ id: tabId, name: tplData.name || '模板', _fromSealedTemplate: true, tasks: [], materialDir: '' }];
                 _batchTableState.activeTabId = tabId;
                 _batchTableState.appliedTabIds = [tabId];
                 _batchTableState.openSnapshotTasks = null;
                 _batchTableState.selectedRows = new Set();
-                for(const task of restored.tasks){task._batchTabId=tabId;task._batchTabName=tplData.name || '工程';task._libraryTemplateId=tplData.id || templateId;}
+                for (const task of restored.tasks) {
+                    task._batchTabId = tabId;
+                    task._batchTabName = tplData.name || '模板';
+                }
             }
-            if(window._reelsState){
-                _reelsState.batchGroupCollapsed={'__reels_existing_tasks__':false};
-                _reelsState.folderQueueCollapsed={};
-                for(const task of restored.tasks){if(task._batchTabId)_reelsState.batchGroupCollapsed[task._batchTabId]=false;if(task._folderQueueId)_reelsState.folderQueueCollapsed[task._folderQueueId]=false;}
+            if (window._reelsState) {
+                _reelsState.batchGroupCollapsed = { '__reels_existing_tasks__': false };
+                _reelsState.folderQueueCollapsed = {};
+                for (const task of restored.tasks) {
+                    if (task._batchTabId) _reelsState.batchGroupCollapsed[task._batchTabId] = false;
+                    if (task._folderQueueId) _reelsState.folderQueueCollapsed[task._folderQueueId] = false;
+                }
             }
             if (restored.exportOpts?.subtitleStyleScopeVersion !== 2) {
-                restored.exportOpts = {...restored.exportOpts, subtitleStyleScopeVersion:2, subtitleStyleScope:'task', subtitleStyleApplyAll:false};
+                restored.exportOpts = { ...restored.exportOpts, subtitleStyleScopeVersion: 2, subtitleStyleScope: 'task', subtitleStyleApplyAll: false };
             }
             if (typeof applyRestoredProject === 'function') applyRestoredProject(restored);
             _setCurrentTemplateContext(tplData.id || templateId, tplData.name || '');
-            if (typeof showToast === 'function') showToast(`工程「${tplData.name}」已加载`, 'success');
-            const modal = document.getElementById('template-library-modal');
+            showToast?.(`模板「${tplData.name}」已加载`, 'success');
+            const modal = document.getElementById(st.cfg.modalId);
             if (modal) modal.style.display = 'none';
             if (typeof openPanelByName === 'function') openPanelByName('batch-reels');
         }
     } catch (e) {
-        if (typeof showToast === 'function') showToast('加载工程失败: ' + e.message, 'error');
+        showToast?.('加载模板失败: ' + e.message, 'error');
     }
 }
 
 // ═══════════════════════════════════════════════════════
-// 4. 删除 / 重命名
+// 4. 删除 / 重命名 / 导入导出
 // ═══════════════════════════════════════════════════════
 
-async function _deleteTemplate(id, name) {
-    if (!confirm(`确定删除工程「${name}」？此操作不可恢复。`)) return;
-    const prevFolder = _tplFolderData?.assignments?.[id] || _tplFolderId || '';
+async function _deleteLibraryItem(st, id, name) {
+    if (!confirm(`确定彻底删除${st.cfg.itemNoun}「${name}」？此操作不可恢复。`)) return;
+    const prevFolder = st.folderData?.assignments?.[id] || st.folderId || '';
     try {
-        await apiFetch(`${API_BASE}/templates/delete`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ id }),
-        });
-        if (_currentTemplateContext.id === id) {
+        await _libApiRequest(st, 'delete', { id });
+        if (st.mode === 'template' && _currentTemplateContext.id === id) {
             _setCurrentTemplateContext('', '');
         }
-        if (typeof showToast === 'function') showToast(`工程「${name}」已删除`, 'success');
-        window.reelsOnLibraryFolderChanged?.(prevFolder ? [prevFolder] : []);
-        _refreshTemplateList();
+        showToast?.(`${st.cfg.itemNoun}「${name}」已删除`, 'success');
+        if (st.mode === 'liveProject') {
+            window.reelsOnLibraryFolderChanged?.(prevFolder ? [prevFolder] : []);
+        }
+        _refreshLibraryView(st);
     } catch (e) {
-        if (typeof showToast === 'function') showToast('删除失败: ' + e.message, 'error');
+        showToast?.('删除失败: ' + e.message, 'error');
     }
 }
 
-async function _renameTemplate(id) {
-    const card = Array.from(document.querySelectorAll('.tpl-card')).find(card => card.dataset.id === id);
+async function _renameLibraryItem(st, id) {
+    const modal = document.getElementById(st.cfg.modalId);
+    const card = Array.from(modal?.querySelectorAll('.tpl-card') || []).find(c => c.dataset.id === id);
     const title = card?.querySelector('.tpl-name');
     if (!title) return;
-    _editTemplateNameInPlace(title, async name => {
-        const response = await apiFetch(`${API_BASE}/templates/rename`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id, name }) });
-        const parsed = await response.json(), result = parsed.data || parsed;
-        if (parsed.error || result.error || result.success === false) throw new Error(parsed.error || result.error || '重命名失败');
-        if (_currentTemplateContext.id === id) _setCurrentTemplateContext(id, name);
-        _updateRenamedLibraryCard('template', id, name);
-        const fId = _tplFolderData?.assignments?.[id] || _tplFolderId || '';
-        window.reelsOnLibraryFolderChanged?.(fId ? [fId] : []);
+    _editNameInPlace(title, async name => {
+        await _libApiRequest(st, 'rename', { id, name });
+        if (st.mode === 'template' && _currentTemplateContext.id === id) _setCurrentTemplateContext(id, name);
+        _updateRenamedCard(st, st.mode === 'template' ? 'template' : 'project', id, name);
+        if (st.mode === 'liveProject') {
+            const fId = st.folderData?.assignments?.[id] || st.folderId || '';
+            window.reelsOnLibraryFolderChanged?.(fId ? [fId] : []);
+        }
     });
 }
 
-// ═══════════════════════════════════════════════════════
-// 4b. 导入 / 导出模板文件
-// ═══════════════════════════════════════════════════════
-
-/**
- * 导出模板为 .vktpl 文件
- */
-async function _exportTemplate(id, name) {
+async function _exportLibraryItem(st, id, name) {
     try {
-        const resp = await apiFetch(`${API_BASE}/templates/get`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ id }),
-        });
-        const result = await resp.json();
-        const tplData = result.data || result;
-
-        // 导出完整数据（含缩略图）
+        const tplData = await _libApiRequest(st, 'get', { id });
         const exportObj = {
             _format: 'videokit-template',
             _version: 1,
@@ -1756,60 +2303,43 @@ async function _exportTemplate(id, name) {
             createdAt: tplData.createdAt,
             projectData: tplData.projectData,
         };
-
-        const jsonStr = JSON.stringify(exportObj, null, 2);
-        const blob = new Blob([jsonStr], { type: 'application/json' });
+        const blob = new Blob([JSON.stringify(exportObj, null, 2)], { type: 'application/json' });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = `${name || 'template'}.vktpl`;
+        a.download = `${name || 'project'}.vktpl`;
         a.click();
         URL.revokeObjectURL(url);
-
-        if (typeof showToast === 'function') showToast(`模板「${name}」已导出`, 'success');
+        showToast?.(`「${name}」已导出`, 'success');
     } catch (e) {
-        if (typeof showToast === 'function') showToast('导出失败: ' + e.message, 'error');
-        else alert('导出失败: ' + e.message);
+        showToast?.('导出失败: ' + e.message, 'error');
     }
 }
 
-/**
- * 打包导出模板及关联的本地素材 (归档)
- */
-async function _exportArchiveTemplate(id, name) {
+async function _exportArchiveLibraryItem(st, id) {
     try {
-        if (typeof showToast === 'function') showToast(`正在收集素材并打包，请稍候...`, 'info');
-        const resp = await apiFetch(`${API_BASE}/templates/export-archive`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ id }),
-        });
-        const result = await resp.json();
-        const zipPath = result.data ? result.data.zip_path : result.zip_path;
-        if (zipPath && window.electronAPI && window.electronAPI.showItemInFolder) {
+        showToast?.('正在收集素材并打包，请稍候...', 'info');
+        const result = await _libApiRequest(st, 'export-archive', { id });
+        const zipPath = result?.zip_path;
+        if (zipPath && window.electronAPI?.showItemInFolder) {
             window.electronAPI.showItemInFolder(zipPath);
-            if (typeof showToast === 'function') showToast(`打包完成！已在文件夹中显示。`, 'success');
+            showToast?.('打包完成！已在文件夹中显示。', 'success');
         } else if (zipPath) {
-            if (typeof showToast === 'function') showToast(`打包完成: ${zipPath}`, 'success');
+            showToast?.(`打包完成: ${zipPath}`, 'success');
         } else {
-            throw new Error(result.error || '打包失败');
+            throw new Error('打包失败');
         }
     } catch (e) {
-        if (typeof showToast === 'function') showToast('打包失败: ' + e.message, 'error');
-        else alert('打包失败: ' + e.message);
+        showToast?.('打包失败: ' + e.message, 'error');
     }
 }
 
-/**
- * 导入 .vktpl 或 .vkpkg 模板文件
- */
 function _extractTabsFromProjectPayload(data, fallbackName = '导入工程') {
     if (!data || typeof data !== 'object') return null;
     if (data._format === 'videokit-template-collection' && Array.isArray(data.templates)) {
         const items = data.templates.filter(t => t && t.projectData);
         return items.length ? { mode: 'collection', items } : null;
     }
-
     const inner = (data.projectData && typeof data.projectData === 'object') ? data.projectData : data;
     const sharedStyle = inner.style || data.style || inner.uiState?.globalSubtitleStyle || data.uiState?.globalSubtitleStyle || {};
     const sharedExportOpts = inner.exportOpts || data.exportOpts || {};
@@ -1845,32 +2375,21 @@ function _extractTabsFromProjectPayload(data, fallbackName = '导入工程') {
                 const only = nonEmptyTabs[0];
                 return {
                     mode: 'single',
-                    style: sharedStyle,
-                    exportOpts: sharedExportOpts,
-                    watermarks: sharedWatermarks,
-                    backgroundLibrary: sharedBgLib,
+                    style: sharedStyle, exportOpts: sharedExportOpts, watermarks: sharedWatermarks, backgroundLibrary: sharedBgLib,
                     items: [{
                         name: data.name || only.name || fallbackName,
                         description: data.description || (only.group ? `分组：${only.group}` : ''),
                         thumbnail: data.thumbnail || only.thumbnail || '',
                         tags: data.tags || [],
                         projectData: ReelsProject.collectProjectData({
-                            tasks: only.tasks,
-                            backgroundLibrary: sharedBgLib,
-                            style: sharedStyle,
-                            exportOpts: sharedExportOpts,
-                            watermarks: sharedWatermarks,
-                            selectedIdx: 0,
+                            tasks: only.tasks, backgroundLibrary: sharedBgLib, style: sharedStyle, exportOpts: sharedExportOpts, watermarks: sharedWatermarks, selectedIdx: 0,
                         }),
                     }],
                 };
             }
             return {
                 mode: nonEmptyTabs.length > 1 ? 'multi-tab' : 'single',
-                style: sharedStyle,
-                exportOpts: sharedExportOpts,
-                watermarks: sharedWatermarks,
-                backgroundLibrary: sharedBgLib,
+                style: sharedStyle, exportOpts: sharedExportOpts, watermarks: sharedWatermarks, backgroundLibrary: sharedBgLib,
                 items: nonEmptyTabs.map((tab, idx) => ({
                     key: `import_tab_${idx}`,
                     name: String(tab.name || `${fallbackName}_${idx + 1}`).trim(),
@@ -1888,10 +2407,7 @@ function _extractTabsFromProjectPayload(data, fallbackName = '导入工程') {
         if (split.grouped && split.tabs.length > 1) {
             return {
                 mode: 'multi-tab',
-                style: sharedStyle,
-                exportOpts: sharedExportOpts,
-                watermarks: sharedWatermarks,
-                backgroundLibrary: sharedBgLib,
+                style: sharedStyle, exportOpts: sharedExportOpts, watermarks: sharedWatermarks, backgroundLibrary: sharedBgLib,
                 items: split.tabs.map((tab, idx) => ({
                     key: `import_split_${idx}`,
                     name: String(tab.name || `${fallbackName}_${idx + 1}`).trim(),
@@ -1903,234 +2419,130 @@ function _extractTabsFromProjectPayload(data, fallbackName = '导入工程') {
             };
         }
         if (data.projectData) {
-            return {
-                mode: 'single',
-                style: sharedStyle,
-                exportOpts: sharedExportOpts,
-                watermarks: sharedWatermarks,
-                backgroundLibrary: sharedBgLib,
-                items: [data],
-            };
+            return { mode: 'single', style: sharedStyle, exportOpts: sharedExportOpts, watermarks: sharedWatermarks, backgroundLibrary: sharedBgLib, items: [data] };
         }
         if (typeof ReelsProject !== 'undefined') {
             return {
                 mode: 'single',
-                style: sharedStyle,
-                exportOpts: sharedExportOpts,
-                watermarks: sharedWatermarks,
-                backgroundLibrary: sharedBgLib,
+                style: sharedStyle, exportOpts: sharedExportOpts, watermarks: sharedWatermarks, backgroundLibrary: sharedBgLib,
                 items: [{
                     name: data.name || (split.grouped ? split.tabs[0]?.name : fallbackName) || fallbackName,
                     description: data.description || '',
                     thumbnail: data.thumbnail || '',
                     tags: data.tags || [],
                     projectData: ReelsProject.collectProjectData({
-                        tasks: inner.tasks,
-                        backgroundLibrary: sharedBgLib,
-                        style: sharedStyle,
-                        exportOpts: sharedExportOpts,
-                        watermarks: sharedWatermarks,
-                        selectedIdx: 0,
+                        tasks: inner.tasks, backgroundLibrary: sharedBgLib, style: sharedStyle, exportOpts: sharedExportOpts, watermarks: sharedWatermarks, selectedIdx: 0,
                     }),
                 }],
             };
         }
     }
-
-    if (data.projectData) {
-        return { mode: 'single', items: [data] };
-    }
+    if (data.projectData) return { mode: 'single', items: [data] };
     return null;
 }
 window.reelsExtractTabsFromProjectPayload = _extractTabsFromProjectPayload;
 
-async function _importTemplate() {
+async function _importLibraryFiles(st) {
     const input = document.createElement('input');
     input.type = 'file';
     input.accept = '.vktpl,.json,.vkpkg';
     input.multiple = true;
     input.onchange = async (e) => {
-        const files = Array.from(e.target.files);
-        if (files.length === 0) return;
-
+        const files = Array.from(e.target.files || []);
+        if (!files.length) return;
         let imported = 0;
         for (const file of files) {
             if (file.name.endsWith('.vkpkg')) {
                 const filePath = window.electronAPI ? window.electronAPI.getFilePath(file) : '';
                 if (!filePath) {
-                    if (typeof showToast === 'function') showToast(`跳过 ${file.name}: 无法获取本地路径`, 'warning');
+                    showToast?.(`跳过 ${file.name}: 无法获取本地路径`, 'warning');
                     continue;
                 }
                 try {
-                    if (typeof showToast === 'function') showToast(`正在导入归档包 ${file.name}...`, 'info');
-                    const resp = await apiFetch(`${API_BASE}/templates/import-archive`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ zip_path: filePath }),
-                    });
-                    const result = await resp.json();
-                    if (result.id || (result.data && result.data.id)) {
-                        imported++;
-                    }
+                    showToast?.(`正在导入归档包 ${file.name}...`, 'info');
+                    const result = await _libApiRequest(st, 'import-archive', { zip_path: filePath, folderId: st.folderId || '' });
+                    if (result?.id) imported++;
                 } catch (err) {
-                    if (typeof showToast === 'function') showToast(`导入失败 ${file.name}: ` + err.message, 'error');
+                    showToast?.(`导入失败 ${file.name}: ` + err.message, 'error');
                 }
                 continue;
             }
-
             try {
-                const text = await file.text();
-                const data = JSON.parse(text);
-
-                const fileBaseName = file.name.replace(/\.(vktpl|json)$/i, '').trim() || '导入工程';
+                const data = JSON.parse(await file.text());
+                const fileBaseName = file.name.replace(/\.(vktpl|json)$/i, '').trim() || `导入${st.cfg.itemNoun}`;
                 const extracted = _extractTabsFromProjectPayload(data, fileBaseName);
                 if (!extracted || !extracted.items.length) {
-                    if (typeof showToast === 'function') showToast(`跳过 ${file.name}: 不是有效的工程/模板文件`, 'warning');
-                    else alert(`跳过 ${file.name}: 不是有效的工程/模板文件`);
+                    showToast?.(`跳过 ${file.name}: 不是有效工程/模板文件`, 'warning');
                     continue;
                 }
-
-                if (extracted.mode === 'multi-tab' && extracted.items.length > 1) {
+                if (st.mode === 'liveProject' && extracted.mode === 'multi-tab' && extracted.items.length > 1) {
                     const res = await _archiveGroupsToLibrary(extracted.items, {
-                        folderMode: 'new-folder',
-                        folderName: fileBaseName,
-                        parentFolderId: _tplFolderId || '',
-                        splitByGroup: true,
-                        bindWorkspace: false,
-                        captureThumbnails: false,
-                        syncPresetAssets: false,
-                        style: extracted.style,
-                        exportOpts: extracted.exportOpts,
-                        watermarks: extracted.watermarks,
-                        backgroundLibrary: extracted.backgroundLibrary,
+                        folderMode: 'new-folder', folderName: fileBaseName, parentFolderId: st.folderId || '',
+                        splitByGroup: true, bindWorkspace: false, captureThumbnails: false, syncPresetAssets: false,
+                        style: extracted.style, exportOpts: extracted.exportOpts, watermarks: extracted.watermarks, backgroundLibrary: extracted.backgroundLibrary,
                     });
                     imported += res.savedResults.length;
-                    _tplFolderId = res.rootFolderId;
+                    st.folderId = res.rootFolderId;
                 } else {
                     for (const tpl of extracted.items) {
-                        const saveBody = {
+                        const res = await _libApiRequest(st, 'save', {
                             name: tpl.name || fileBaseName,
                             description: tpl.description || '',
                             thumbnail: tpl.thumbnail || '',
                             tags: tpl.tags || [],
-                            folderId: _tplFolderId || '',
+                            folderId: st.folderId || '',
                             projectData: tpl.projectData || ReelsProject.collectProjectData({
-                                tasks: tpl.tasks || [],
-                                backgroundLibrary: extracted.backgroundLibrary || [],
-                                style: extracted.style || {},
-                                exportOpts: extracted.exportOpts || {},
-                                watermarks: extracted.watermarks || [],
-                                selectedIdx: 0,
+                                tasks: tpl.tasks || [], backgroundLibrary: extracted.backgroundLibrary || [], style: extracted.style || {}, exportOpts: extracted.exportOpts || {}, watermarks: extracted.watermarks || [], selectedIdx: 0,
                             }),
-                        };
-                        const resp = await apiFetch(`${API_BASE}/templates/save`, {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify(saveBody),
                         });
-                        const result = await resp.json();
-                        if (result.success || result.data?.success) {
-                            imported++;
-                        }
+                        if (res?.success || res?.id) imported++;
                     }
                 }
             } catch (err) {
-                console.error(`[Template] 导入 ${file.name} 失败:`, err);
-                if (typeof showToast === 'function') showToast(`导入 ${file.name} 失败: ${err.message}`, 'error');
-                else alert(`导入 ${file.name} 失败: ${err.message}`);
+                showToast?.(`导入 ${file.name} 失败: ` + err.message, 'error');
             }
         }
-
         if (imported > 0) {
-            window.reelsOnLibraryFolderChanged?.(_tplFolderId ? [_tplFolderId] : []);
-            if (typeof showToast === 'function') showToast(`成功导入 ${imported} 个工程 ✅`, 'success');
-            else alert(`成功导入 ${imported} 个工程 ✅`);
-            _refreshTemplateList();
+            if (st.mode === 'liveProject') window.reelsOnLibraryFolderChanged?.(st.folderId ? [st.folderId] : []);
+            showToast?.(`成功导入 ${imported} 个${st.cfg.itemNoun} ✅`, 'success');
+            _refreshLibraryView(st);
         }
     };
     input.click();
 }
 
-/**
- * 一键导出所有模板
- */
 async function _exportAllTemplates() {
+    const st = _getLibState('template');
     try {
-        if (typeof showToast === 'function') showToast('正在准备导出，请稍候...', 'info');
-        
-        // 1. 获取列表
-        const listResp = await apiFetch(`${API_BASE}/templates/list`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
-        const listParsed = await listResp.json();
-        const templatesList = listParsed.data || listParsed || [];
-        
-        if (templatesList.length === 0) {
-            if (typeof showToast === 'function') showToast('没有可导出的模板', 'warning');
-            return;
-        }
-
+        showToast?.('正在准备导出，请稍候...', 'info');
+        const templatesList = await _libApiRequest(st, 'list') || [];
+        if (!templatesList.length) { showToast?.('没有可导出的模板', 'warning'); return; }
         const fullTemplates = [];
-        // 2. 循环获取详情
         for (const tpl of templatesList) {
-            const resp = await apiFetch(`${API_BASE}/templates/get`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ id: tpl.id }),
-            });
-            const result = await resp.json();
-            const tplData = result.data || result;
-            
+            const tplData = await _libApiRequest(st, 'get', { id: tpl.id });
             fullTemplates.push({
-                name: tplData.name,
-                description: tplData.description || '',
-                thumbnail: tplData.thumbnail || '',
-                tags: tplData.tags || [],
-                createdAt: tplData.createdAt,
-                projectData: tplData.projectData,
+                name: tplData.name, description: tplData.description || '', thumbnail: tplData.thumbnail || '',
+                tags: tplData.tags || [], createdAt: tplData.createdAt, projectData: tplData.projectData,
             });
         }
-
-        // 3. 构建合集并导出
-        const exportObj = {
-            _format: 'videokit-template-collection',
-            _version: 1,
-            exportedAt: Date.now(),
-            count: fullTemplates.length,
-            templates: fullTemplates
-        };
-
-        const jsonStr = JSON.stringify(exportObj, null, 2);
-        const blob = new Blob([jsonStr], { type: 'application/json' });
+        const exportObj = { _format: 'videokit-template-collection', _version: 1, exportedAt: Date.now(), count: fullTemplates.length, templates: fullTemplates };
+        const blob = new Blob([JSON.stringify(exportObj, null, 2)], { type: 'application/json' });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
-        a.download = `所有模板_${dateStr}_(${fullTemplates.length}个).vktpl`;
+        a.download = `所有模板_${new Date().toISOString().slice(0, 10).replace(/-/g, '')}_(${fullTemplates.length}个).vktpl`;
         a.click();
         URL.revokeObjectURL(url);
-
-        if (typeof showToast === 'function') showToast(`成功导出 ${fullTemplates.length} 个模板`, 'success');
+        showToast?.(`成功导出 ${fullTemplates.length} 个模板`, 'success');
     } catch (e) {
-        if (typeof showToast === 'function') showToast('全部导出失败: ' + e.message, 'error');
-        else alert('全部导出失败: ' + e.message);
+        showToast?.('全部导出失败: ' + e.message, 'error');
     }
 }
 
-// ═══════════════════════════════════════════════════════
-// 5. 启动时自动检测 hash 参数加载模板
-// ═══════════════════════════════════════════════════════
-
 function _checkHashForTemplate() {
-    const hash = window.location.hash; // e.g. #template=tpl_xxxxx
-    const match = hash.match(/template=([^&]+)/);
-    if (!match) {
-        // 默认启动不自动弹出视频模板库（由用户点击“模板库”按钮再按需打开）
-        return;
-    }
-
+    const match = window.location.hash.match(/template=([^&]+)/);
+    if (!match) return;
     const templateId = match[1];
-    console.log('[Template] 检测到 URL hash 模板参数:', templateId);
-
-    // 等 DOM 和 app 初始化完成后加载
     const tryLoad = () => {
         if (typeof ReelsProject === 'undefined' || typeof apiFetch === 'undefined') {
             setTimeout(tryLoad, 200);
@@ -2138,155 +2550,255 @@ function _checkHashForTemplate() {
         }
         _loadTemplateInCurrentWindow(templateId);
     };
-
-    // 延迟执行，确保 app.js 已经初始化
     setTimeout(tryLoad, 500);
 }
+if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', _checkHashForTemplate);
+else _checkHashForTemplate();
 
-// DOM 加载后检测
-if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', _checkHashForTemplate);
-} else {
-    _checkHashForTemplate();
+// ═══════════════════════════════════════════════════════
+// 5. 文件夹导航、排序、拖拽与框选（通用复用）
+// ═══════════════════════════════════════════════════════
+
+function _libItemKey(card) {
+    return card.classList.contains('tpl-folder-card') ? 'f:' + card.dataset.folderId : 't:' + card.dataset.id;
 }
 
-function _templateLibraryItemKey(card){return card.classList.contains('tpl-folder-card')?'f:'+card.dataset.folderId:'t:'+card.dataset.id;}
-function _initTemplateReordering(container){
-    const grid=container.querySelector('#tpl-card-grid');if(!grid)return;
-    let dragged=null,original=[],moving=[],movingSet=new Set(),kind='',saving=false;
-    const cards=()=>Array.from(grid.children).filter(c=>c.matches('.tpl-card,.tpl-folder-card'));
-    const restore=()=>original.forEach(card=>grid.appendChild(card));
-    const resetOpacity=()=>cards().forEach(card=>card.style.opacity='');
-    grid.addEventListener('dragstart',event=>{
-        const card=event.target.closest('.tpl-card,.tpl-folder-card');
-        if(!card||saving||event.target.closest('button,input,label,[contenteditable]')){event.preventDefault();return;}
-        dragged=card;original=cards();kind=card.classList.contains('tpl-folder-card')?'folder':'template';event.dataTransfer.effectAllowed='move';
-        if(kind==='folder'){moving=[card];event.dataTransfer.setData('application/x-videokit-folder',card.dataset.folderId);}
-        else{
-            const modal=document.getElementById('template-library-modal');if(!modal._selectedTemplateIds.has(card.dataset.id)){modal._selectedTemplateIds=new Set([card.dataset.id]);_paintTemplateSelection();}
-            moving=original.filter(c=>c.classList.contains('tpl-card')&&modal._selectedTemplateIds.has(c.dataset.id));
-            event.dataTransfer.setData('application/x-videokit-templates',JSON.stringify(moving.map(c=>c.dataset.id)));event.dataTransfer.setData('text/plain',card.dataset.id);
+function _initLibraryReordering(st, modal, container) {
+    const grid = container.querySelector(`.${st.cfg.prefix}-card-grid`);
+    if (!grid) return;
+    let dragged = null, original = [], moving = [], movingSet = new Set(), kind = '', saving = false;
+    const cards = () => Array.from(grid.children).filter(c => c.matches('.tpl-card,.tpl-folder-card'));
+    const restore = () => original.forEach(card => grid.appendChild(card));
+    const resetOpacity = () => cards().forEach(card => card.style.opacity = '');
+    grid.addEventListener('dragstart', event => {
+        const card = event.target.closest('.tpl-card,.tpl-folder-card');
+        if (!card || saving || event.target.closest('button,input,label,[contenteditable]')) { event.preventDefault(); return; }
+        dragged = card; original = cards(); kind = card.classList.contains('tpl-folder-card') ? 'folder' : 'item';
+        event.dataTransfer.effectAllowed = 'move';
+        if (kind === 'folder') {
+            moving = [card];
+            event.dataTransfer.setData('application/x-videokit-folder', card.dataset.folderId);
+        } else {
+            if (!modal._selectedItemIds.has(card.dataset.id)) {
+                modal._selectedItemIds = new Set([card.dataset.id]);
+                _paintLibrarySelection(st);
+            }
+            moving = original.filter(c => c.classList.contains('tpl-card') && modal._selectedItemIds.has(c.dataset.id));
+            event.dataTransfer.setData('application/x-videokit-items', JSON.stringify(moving.map(c => c.dataset.id)));
+            event.dataTransfer.setData('text/plain', card.dataset.id);
         }
-        movingSet=new Set(moving);for(const card of moving)card.style.opacity='.45';
+        movingSet = new Set(moving);
+        for (const c of moving) c.style.opacity = '.45';
     });
-    grid.addEventListener('dragover',event=>{
-        if(!dragged)return;event.preventDefault();event.dataTransfer.dropEffect='move';
-        const target=event.target.closest('.tpl-card,.tpl-folder-card');
-        if(kind==='template'&&target?.classList.contains('tpl-folder-card'))return;
-        if(target&&!movingSet.has(target)){
-            const box=target.getBoundingClientRect(),after=event.clientY>box.bottom||(event.clientY>=box.top&&event.clientX>box.left+box.width/2);
-            let reference=after?target.nextSibling:target;while(reference&&movingSet.has(reference))reference=reference.nextSibling;
-            for(const card of moving)grid.insertBefore(card,reference);
-        }else if(!target&&event.target===grid){const box=grid.lastElementChild?.getBoundingClientRect();if(box&&(event.clientY>box.bottom||(event.clientY>=box.top&&event.clientX>box.right)))for(const card of moving)grid.appendChild(card);}
-        const bounds=container.getBoundingClientRect();if(event.clientY<bounds.top+60)container.scrollTop-=24;if(event.clientY>bounds.bottom-60)container.scrollTop+=24;
+    grid.addEventListener('dragover', event => {
+        if (!dragged) return;
+        event.preventDefault();
+        event.dataTransfer.dropEffect = 'move';
+        const target = event.target.closest('.tpl-card,.tpl-folder-card');
+        if (kind === 'item' && target?.classList.contains('tpl-folder-card')) return;
+        if (target && !movingSet.has(target)) {
+            const box = target.getBoundingClientRect();
+            const after = event.clientY > box.bottom || (event.clientY >= box.top && event.clientX > box.left + box.width / 2);
+            let ref = after ? target.nextSibling : target;
+            while (ref && movingSet.has(ref)) ref = ref.nextSibling;
+            for (const c of moving) grid.insertBefore(c, ref);
+        } else if (!target && event.target === grid) {
+            const box = grid.lastElementChild?.getBoundingClientRect();
+            if (box && (event.clientY > box.bottom || (event.clientY >= box.top && event.clientX > box.right))) {
+                for (const c of moving) grid.appendChild(c);
+            }
+        }
+        const bounds = container.getBoundingClientRect();
+        if (event.clientY < bounds.top + 60) container.scrollTop -= 24;
+        if (event.clientY > bounds.bottom - 60) container.scrollTop += 24;
     });
-    grid.addEventListener('drop',async event=>{
-        if(!dragged)return;event.preventDefault();event.stopPropagation();
-        const folderTarget=event.target.closest('.tpl-folder-card');
-        if(kind==='template'&&folderTarget){const ids=moving.map(c=>c.dataset.id);resetOpacity();restore();dragged=null;await _moveTemplateIds(ids,folderTarget.dataset.folderId);return;}
-        resetOpacity();dragged=null;const current=cards();if(current.every((card,i)=>card===original[i]))return;saving=true;
-        try{
-            const order=current.map(_templateLibraryItemKey);
-            await _templateFolderRequest('reorder',{order,parentId:_tplFolderId});
-            if(!_tplFolderData.folderOrders || typeof _tplFolderData.folderOrders!=='object') _tplFolderData.folderOrders={};
-            _tplFolderData.folderOrders[_tplFolderId || '']=order;
-            if(!_tplFolderId) _tplFolderData.libraryOrder=order;
-            localStorage.setItem('videokit_template_sort','manual');_syncTemplateSortControls();
-            window.reelsOnLibraryFolderChanged?.(_tplFolderId ? [_tplFolderId] : []);
-        }catch(error){restore();if(typeof showToast==='function')showToast(error.message,'error');}finally{saving=false;}
+    grid.addEventListener('drop', async event => {
+        if (!dragged) return;
+        event.preventDefault();
+        event.stopPropagation();
+        const folderTarget = event.target.closest('.tpl-folder-card');
+        if (kind === 'item' && folderTarget) {
+            const ids = moving.map(c => c.dataset.id);
+            resetOpacity(); restore(); dragged = null;
+            await _moveLibraryItemIds(st, ids, folderTarget.dataset.folderId);
+            return;
+        }
+        resetOpacity(); dragged = null;
+        const current = cards();
+        if (current.every((c, i) => c === original[i])) return;
+        saving = true;
+        try {
+            const order = current.map(_libItemKey);
+            await _libFolderRequest(st, 'reorder', { order, parentId: st.folderId });
+            if (!st.folderData.folderOrders || typeof st.folderData.folderOrders !== 'object') st.folderData.folderOrders = {};
+            st.folderData.folderOrders[st.folderId || ''] = order;
+            if (!st.folderId) st.folderData.libraryOrder = order;
+            localStorage.setItem(st.cfg.sortKey, 'manual');
+            _syncSortControls(st, modal);
+            if (st.mode === 'liveProject') window.reelsOnLibraryFolderChanged?.(st.folderId ? [st.folderId] : []);
+        } catch (error) {
+            restore();
+            showToast?.(error.message, 'error');
+        } finally {
+            saving = false;
+        }
     });
-    grid.addEventListener('dragend',()=>{if(dragged){resetOpacity();restore();dragged=null;}});
+    grid.addEventListener('dragend', () => { if (dragged) { resetOpacity(); restore(); dragged = null; } });
 }
 
-function _sortTemplateSummaries(items) {
-    const mode = localStorage.getItem('videokit_template_sort') || 'manual';
+function _sortLibraryItems(st, items) {
+    const mode = localStorage.getItem(st.cfg.sortKey) || 'manual';
     if (mode === 'manual') return [...items];
-    const direction = localStorage.getItem('videokit_template_sort_direction') === 'desc' ? -1 : 1;
-    const compare = (a,b) => String(a || '').localeCompare(String(b || ''),'zh-CN',{numeric:true,sensitivity:'base'});
-    return [...items].sort((a,b) => direction * (mode === 'name' ? compare(a.name,b.name) : mode === 'type' ? compare(a.templateType,b.templateType) : mode === 'size' ? (Number(a.sizeBytes)||0)-(Number(b.sizeBytes)||0) : (Date.parse(a.updatedAt || a.createdAt)||0)-(Date.parse(b.updatedAt || b.createdAt)||0)));
-}
-function _syncTemplateSortControls() {
-    const mode = localStorage.getItem('videokit_template_sort') || 'manual';
-    const select = document.getElementById('tpl-sort-select'); if(select) select.value=mode;
-    const button=document.getElementById('tpl-sort-direction');
-    if(button) {button.disabled=mode==='manual';button.style.opacity=mode==='manual'?'0.4':'1';button.textContent=localStorage.getItem('videokit_template_sort_direction')==='desc'?'降序 ↓':'升序 ↑';}
-}
-function _setTemplateSort(mode) {
-    localStorage.setItem('videokit_template_sort',mode);
-    _refreshTemplateList();
-}
-function _toggleTemplateSortDirection() {
-    localStorage.setItem('videokit_template_sort_direction',localStorage.getItem('videokit_template_sort_direction')==='desc'?'asc':'desc');
-    _refreshTemplateList();
+    const dir = localStorage.getItem(st.cfg.sortDirKey) === 'desc' ? -1 : 1;
+    const compare = (a, b) => String(a || '').localeCompare(String(b || ''), 'zh-CN', { numeric: true, sensitivity: 'base' });
+    return [...items].sort((a, b) => dir * (
+        mode === 'name' ? compare(a.name, b.name) :
+        mode === 'type' ? compare(a.templateType, b.templateType) :
+        mode === 'size' ? (Number(a.sizeBytes) || 0) - (Number(b.sizeBytes) || 0) :
+        (Date.parse(a.updatedAt || a.createdAt) || 0) - (Date.parse(b.updatedAt || b.createdAt) || 0)
+    ));
 }
 
-async function _templateFolderRequest(action,data={}) {
-    const response=await apiFetch(`${API_BASE}/templates/folders/${action}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
-    const parsed=await response.json(),result=parsed.data || parsed;
-    if(parsed.error || result.error || result.success===false)throw new Error(parsed.error || result.error || '文件夹操作失败');
-    return result;
-}
-function _getParentFolderId(folderId) {
-    const f = (_tplFolderData.folders || []).find(item => item.id === folderId);
-    return f?.parentId || '';
+function _syncSortControls(st, modal) {
+    const mode = localStorage.getItem(st.cfg.sortKey) || 'manual';
+    const select = modal.querySelector('[data-role="sort-select"]');
+    if (select) select.value = mode;
+    const button = modal.querySelector('[data-role="sort-dir"]');
+    if (button) {
+        button.disabled = mode === 'manual';
+        button.style.opacity = mode === 'manual' ? '0.4' : '1';
+        button.textContent = localStorage.getItem(st.cfg.sortDirKey) === 'desc' ? '降序 ↓' : '升序 ↑';
+    }
 }
 
-async function _newTemplateFolder(parentOverride) {
-    const parentId = typeof parentOverride === 'string' ? parentOverride : _tplFolderId;
-    const parentLabel = parentId ? `（位于「${_buildTemplateFolderPathText(parentId)}」）` : '（位于主工程库）';
+function _getParentFolder(st, folderId) {
+    return (st.folderData.folders || []).find(item => item.id === folderId)?.parentId || '';
+}
+
+async function _newLibraryFolder(st, parentOverride) {
+    const parentId = typeof parentOverride === 'string' ? parentOverride : st.folderId;
+    const parentLabel = parentId ? `（位于「${_buildTemplateFolderPathText(parentId, st.folderData.folders, st.cfg.homeLabel)}」）` : `（位于${st.cfg.homeLabel}）`;
     const name = typeof _showInputDialog === 'function'
-        ? await _showInputDialog(`新建文件夹 ${parentLabel}`, '文件夹名称', '新建文件夹')
+        ? await _showInputDialog(`新建文件夹 ${parentLabel}`, '输入文件夹名称', '新建文件夹')
         : prompt(`文件夹名称 ${parentLabel}`, '新建文件夹');
     if (!name?.trim()) return;
     try {
-        await _templateFolderRequest('create', { name: name.trim(), parentId });
-        await _refreshTemplateList();
+        await _libFolderRequest(st, 'create', { name: name.trim(), parentId });
+        await _refreshLibraryView(st);
     } catch (e) {
         showToast?.(e.message, 'error');
     }
 }
 
-async function _renameTemplateFolder(id) {
-    const card = Array.from(document.querySelectorAll('.tpl-folder-card')).find(card => card.dataset.folderId === id);
+async function _renameLibraryFolder(st, id) {
+    const modal = document.getElementById(st.cfg.modalId);
+    const card = Array.from(modal?.querySelectorAll('.tpl-folder-card') || []).find(c => c.dataset.folderId === id);
     const title = card?.querySelector('.tpl-folder-name');
     if (!title) return;
-    _editTemplateNameInPlace(title, async name => {
-        await _templateFolderRequest('rename', { id, name });
-        _updateRenamedLibraryCard('folder', id, name);
-        window.reelsOnLibraryFolderChanged?.([id], { skipWorkspaceSync: false });
+    _editNameInPlace(title, async name => {
+        await _libFolderRequest(st, 'rename', { id, name });
+        _updateRenamedCard(st, 'folder', id, name);
+        if (st.mode === 'liveProject') window.reelsOnLibraryFolderChanged?.([id], { skipWorkspaceSync: false });
     });
 }
 
-async function _deleteTemplateFolder(id) {
-    const folder = (_tplFolderData.folders || []).find(f => f.id === id);
+async function _deleteLibraryFolder(st, id) {
+    const folder = (st.folderData.folders || []).find(f => f.id === id);
     const name = folder?.name || '该文件夹';
     if (!confirm(`确定删除空文件夹「${name}」？`)) return;
     try {
-        await _templateFolderRequest('delete', { id });
-        if (_tplFolderId === id) {
-            _tplFolderId = folder?.parentId || '';
-        }
-        await _refreshTemplateList();
+        await _libFolderRequest(st, 'delete', { id });
+        if (st.folderId === id) st.folderId = folder?.parentId || '';
+        await _refreshLibraryView(st);
         showToast?.(`文件夹「${name}」已删除`, 'success');
     } catch (e) {
         showToast?.(e.message, 'error');
     }
 }
 
-async function _moveFolderIds(folderIds, targetParentId) {
+async function _moveLibraryFolderIds(st, folderIds, targetParentId) {
     try {
-        await _templateFolderRequest('move-folders', { folderIds, targetParentId });
-        await _refreshTemplateList();
+        await _libFolderRequest(st, 'move-folders', { folderIds, targetParentId });
+        await _refreshLibraryView(st);
         showToast?.('文件夹已移动 ✅', 'success');
     } catch (e) {
         showToast?.(e.message, 'error');
     }
 }
 
-function _pickLibraryTargetFolder(options = {}) {
+async function _openLibraryFolder(st, id, options = {}) {
+    if (id && !st.folderData.folders.some(f => f.id === id)) id = '';
+    const modal = document.getElementById(st.cfg.modalId);
+    const container = modal?.querySelector('[data-role="grid-container"]');
+    if (!options.fromHistory && id !== st.folderId) {
+        st.folderHistory[st.folderHistoryIndex] = { id: st.folderId, scrollTop: container?.scrollTop || 0 };
+        st.folderHistory = st.folderHistory.slice(0, st.folderHistoryIndex + 1);
+        st.folderHistory.push({ id, scrollTop: 0 });
+        st.folderHistoryIndex++;
+    }
+    st.folderId = id;
+    modal?._selectedItemIds?.clear();
+    modal?._selectedFolderIds?.clear();
+    if (modal) modal._selectionAnchorKey = '';
+    await _refreshLibraryView(st);
+    if (container && Number.isFinite(options.scrollTop)) container.scrollTop = options.scrollTop;
+}
+
+async function _navigateLibraryFolder(direction) {
+    const st = _getVisibleLibraryState();
+    if (!st) return false;
+    const modal = document.getElementById(st.cfg.modalId);
+    const now = Date.now();
+    if (st.lastNavigation.direction === direction && now - st.lastNavigation.time < 100) return false;
+    const next = st.folderHistoryIndex + (direction === 'back' ? -1 : 1);
+    if (next < 0 || next >= st.folderHistory.length) return false;
+    st.lastNavigation = { direction, time: now };
+    const container = modal.querySelector('[data-role="grid-container"]');
+    st.folderHistory[st.folderHistoryIndex] = { id: st.folderId, scrollTop: container?.scrollTop || 0 };
+    st.folderHistoryIndex = next;
+    const entry = st.folderHistory[next];
+    await _openLibraryFolder(st, entry.id, { fromHistory: true, scrollTop: entry.scrollTop });
+    return true;
+}
+window.addEventListener('videokit-template-navigation', event => { _navigateLibraryFolder(event.detail); });
+window.addEventListener('mouseup', event => {
+    if (event.button === 3 || event.button === 4) {
+        if (_getVisibleLibraryState()) {
+            event.preventDefault();
+            _navigateLibraryFolder(event.button === 3 ? 'back' : 'forward');
+        }
+    }
+}, { capture: true });
+window.addEventListener('auxclick', event => {
+    if ((event.button === 3 || event.button === 4) && _getVisibleLibraryState()) event.preventDefault();
+}, { capture: true });
+
+async function _moveLibraryItemIds(st, ids, folderId) {
+    const prevFolderId = st.folderId;
+    try {
+        await _libFolderRequest(st, 'move', { ids, folderId });
+        const modal = document.getElementById(st.cfg.modalId);
+        for (const id of ids) modal?._selectedItemIds?.delete(id);
+        await _refreshLibraryView(st);
+        if (st.mode === 'liveProject') {
+            window.reelsOnLibraryFolderChanged?.([prevFolderId, folderId].filter(Boolean));
+        }
+    } catch (e) {
+        showToast?.(e.message, 'error');
+    }
+}
+
+async function _moveSelectedToParent(st) {
+    const modal = document.getElementById(st.cfg.modalId);
+    const ids = (modal?._visibleSummaries || []).filter(t => modal._selectedItemIds?.has(t.id)).map(t => t.id);
+    if (!ids.length) { showToast?.(`请先勾选要移出的${st.cfg.itemNoun}`, 'info'); return; }
+    await _moveLibraryItemIds(st, ids, _getParentFolder(st, st.folderId));
+}
+
+function _pickTargetFolder(st, options = {}) {
     return new Promise(resolve => {
         const excludeIds = new Set(options.excludeFolderIds || []);
-        const folders = _tplFolderData.folders || [];
+        const folders = st.folderData.folders || [];
         const byParent = new Map();
         for (const f of folders) {
             if (!f || !f.id || excludeIds.has(f.id)) continue;
@@ -2294,9 +2806,9 @@ function _pickLibraryTargetFolder(options = {}) {
             if (!byParent.has(p)) byParent.set(p, []);
             byParent.get(p).push(f);
         }
-        const flattened = [{ id: '', label: '🏠 主工程库（根目录）', depth: 0 }];
+        const flattened = [{ id: '', label: `🏠 ${st.cfg.homeLabel}（根目录）`, depth: 0 }];
         const walk = (parentId, depth) => {
-            const list = _sortTemplateSummaries(byParent.get(parentId) || []);
+            const list = _sortLibraryItems(st, byParent.get(parentId) || []);
             for (const f of list) {
                 flattened.push({ id: f.id, label: `📁 ${f.name}`, depth });
                 walk(f.id, depth + 1);
@@ -2310,14 +2822,14 @@ function _pickLibraryTargetFolder(options = {}) {
             <div style="width:420px;max-width:92vw;max-height:76vh;background:#161626;border:1px solid rgba(255,255,255,0.14);border-radius:12px;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 20px 50px rgba(0,0,0,0.65);">
                 <div style="padding:12px 16px;border-bottom:1px solid rgba(255,255,255,0.08);display:flex;justify-content:space-between;align-items:center;">
                     <span style="font-size:14px;font-weight:700;color:#fff;">${_tplEscapeHtml(options.title || '选择目标文件夹')}</span>
-                    <button id="tpl-pick-close" style="background:none;border:none;color:#94a3b8;font-size:18px;cursor:pointer;">✕</button>
+                    <button data-close style="background:none;border:none;color:#94a3b8;font-size:18px;cursor:pointer;">✕</button>
                 </div>
                 <div style="flex:1;overflow-y:auto;padding:10px 12px;display:flex;flex-direction:column;gap:4px;">
                     ${flattened.map(item => `
                         <button type="button" class="tpl-pick-folder-row" data-folder-id="${_tplEscapeHtml(item.id)}" style="text-align:left;padding:7px 10px 7px ${10 + item.depth * 18}px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:6px;color:#e2e8f0;font-size:12px;cursor:pointer;display:flex;align-items:center;gap:6px;"
                                 onmouseenter="this.style.background='rgba(99,102,241,0.22)'" onmouseleave="this.style.background='rgba(255,255,255,0.03)'">
                             <span>${_tplEscapeHtml(item.label)}</span>
-                            ${item.id === (_tplFolderId || '') ? '<span style="margin-left:auto;font-size:10px;color:#94a3b8;">当前位置</span>' : ''}
+                            ${item.id === (st.folderId || '') ? '<span style="margin-left:auto;font-size:10px;color:#94a3b8;">当前位置</span>' : ''}
                         </button>
                     `).join('')}
                 </div>
@@ -2325,7 +2837,7 @@ function _pickLibraryTargetFolder(options = {}) {
         `;
         document.body.appendChild(ov);
         const done = (val) => { ov.remove(); resolve(val); };
-        ov.querySelector('#tpl-pick-close').onclick = () => done(null);
+        ov.querySelector('[data-close]').onclick = () => done(null);
         ov.addEventListener('click', e => { if (e.target === ov) done(null); });
         ov.querySelectorAll('.tpl-pick-folder-row').forEach(btn => {
             btn.onclick = () => done(btn.dataset.folderId ?? '');
@@ -2333,80 +2845,68 @@ function _pickLibraryTargetFolder(options = {}) {
     });
 }
 
-let _tplFolderHistory=[{id:'',scrollTop:0}],_tplFolderHistoryIndex=0,_tplLastNavigation={direction:'',time:0};
-async function _openTemplateFolder(id,options={}){
-    if(id&&!_tplFolderData.folders.some(folder=>folder.id===id))id='';
-    const container=document.getElementById('tpl-grid-container');
-    if(!options.fromHistory&&id!==_tplFolderId){
-        _tplFolderHistory[_tplFolderHistoryIndex]={id:_tplFolderId,scrollTop:container?.scrollTop||0};
-        _tplFolderHistory=_tplFolderHistory.slice(0,_tplFolderHistoryIndex+1);_tplFolderHistory.push({id,scrollTop:0});_tplFolderHistoryIndex++;
-    }
-    _tplFolderId=id;document.getElementById('template-library-modal')?._selectedTemplateIds?.clear();
-    await _refreshTemplateList();if(container&&Number.isFinite(options.scrollTop))container.scrollTop=options.scrollTop;
-}
-async function _navigateTemplateFolder(direction){
-    const modal=document.getElementById('template-library-modal');if(!modal||getComputedStyle(modal).display==='none')return false;
-    const now=Date.now();if(_tplLastNavigation.direction===direction&&now-_tplLastNavigation.time<100)return false;
-    const next=_tplFolderHistoryIndex+(direction==='back'?-1:1);if(next<0||next>=_tplFolderHistory.length)return false;
-    _tplLastNavigation={direction,time:now};const container=document.getElementById('tpl-grid-container');
-    _tplFolderHistory[_tplFolderHistoryIndex]={id:_tplFolderId,scrollTop:container?.scrollTop||0};_tplFolderHistoryIndex=next;
-    const entry=_tplFolderHistory[next];await _openTemplateFolder(entry.id,{fromHistory:true,scrollTop:entry.scrollTop});return true;
-}
-window.addEventListener('videokit-template-navigation',event=>{_navigateTemplateFolder(event.detail);});
-window.addEventListener('mouseup',event=>{if(event.button===3||event.button===4){const modal=document.getElementById('template-library-modal');if(modal&&getComputedStyle(modal).display!=='none'){event.preventDefault();_navigateTemplateFolder(event.button===3?'back':'forward');}}},{capture:true});
-window.addEventListener('auxclick',event=>{if(event.button===3||event.button===4){const modal=document.getElementById('template-library-modal');if(modal&&getComputedStyle(modal).display!=='none')event.preventDefault();}},{capture:true});
-
-async function _moveTemplateIds(ids, folderId) {
-    const prevFolderId = _tplFolderId;
-    try {
-        await _templateFolderRequest('move', { ids, folderId });
-        for (const id of ids) document.getElementById('template-library-modal')?._selectedTemplateIds?.delete(id);
-        await _refreshTemplateList();
-        window.reelsOnLibraryFolderChanged?.([prevFolderId, folderId].filter(Boolean));
-    } catch (e) {
-        showToast?.(e.message, 'error');
-    }
-}
-async function _moveSelectedTemplatesToRoot() {
-    const modal = document.getElementById('template-library-modal');
-    const ids = (modal?._templateSummaries || []).filter(t => modal._selectedTemplateIds?.has(t.id)).map(t => t.id);
-    if (!ids.length) { showToast?.('请先勾选要移出的工程', 'info'); return; }
-    await _moveTemplateIds(ids, _getParentFolderId(_tplFolderId));
-}
-function _renderTemplateFolderCard(folder, all) {
-    const directMembers = all.filter(t => _tplFolderData.assignments[t.id] === folder.id);
-    const childFolders = (_tplFolderData.folders || []).filter(f => f && f.parentId === folder.id);
-    const descIds = _collectTplDescendantFolderIds(folder.id, _tplFolderData.folders);
+function _renderFolderCard(st, folder, all) {
+    const directMembers = all.filter(t => st.folderData.assignments[t.id] === folder.id);
+    const childFolders = (st.folderData.folders || []).filter(f => f && f.parentId === folder.id);
+    const descIds = _collectTplDescendantFolderIds(folder.id, st.folderData.folders);
     const previewMembers = directMembers.length > 0
         ? directMembers
-        : all.filter(t => descIds.has(_tplFolderData.assignments[t.id] || ''));
+        : all.filter(t => descIds.has(st.folderData.assignments[t.id] || ''));
     const recent = [...previewMembers].sort((a, b) => (Date.parse(b.updatedAt || b.createdAt) || 0) - (Date.parse(a.updatedAt || a.createdAt) || 0));
     const images = Array.from({ length: 4 }, (_, i) => `<div class="tpl-folder-preview" style="aspect-ratio:9/16;width:100%;min-height:0;overflow:hidden;border-radius:7px;background:#ffffff08;display:flex;align-items:center;justify-content:center;color:#8a6da055;">${recent[i]?.thumbnail ? `<img draggable="false" loading="lazy" decoding="async" src="${_tplEscapeHtml(recent[i].thumbnail)}" style="display:block;width:100%;height:100%;object-fit:contain;">` : '🎬'}</div>`).join('');
     const date = new Date(Math.max(Date.parse(folder.updatedAt || folder.createdAt) || 0, ...previewMembers.map(t => Date.parse(t.updatedAt || t.createdAt) || 0))).toLocaleDateString('zh-CN');
     const countLabel = childFolders.length > 0 && directMembers.length > 0
-        ? `${childFolders.length} 子文件夹 · ${directMembers.length} 工程`
-        : (childFolders.length > 0 ? `${childFolders.length} 个子文件夹` : `${directMembers.length} 个工程`);
-    return `<div class="tpl-folder-card" draggable="true" tabindex="0" role="button" aria-label="${_tplEscapeHtml(folder.name)}，${countLabel}" title="双击打开文件夹 · 右键菜单 · F2 修改名称" data-folder-id="${_tplEscapeHtml(folder.id)}" style="cursor:pointer;min-width:0;border-radius:18px;border:1px solid #ffffff12;overflow:hidden;background:#08080c;">
+        ? `${childFolders.length} 子文件夹 · ${directMembers.length} ${st.cfg.itemNoun}`
+        : (childFolders.length > 0 ? `${childFolders.length} 个子文件夹` : `${directMembers.length} 个${st.cfg.itemNoun}`);
+    const modal = document.getElementById(st.cfg.modalId);
+    const showCheck = !modal?._onSelectCallback;
+    const safeFid = _tplEscapeHtml(folder.id);
+    return `<div class="tpl-folder-card" draggable="true" tabindex="0" role="button" aria-label="${_tplEscapeHtml(folder.name)}，${countLabel}" title="单击多选 · 双击打开文件夹 · 右键菜单 · F2 改名" data-folder-id="${safeFid}" style="position:relative;cursor:pointer;min-width:0;border-radius:18px;border:1px solid #ffffff12;overflow:hidden;background:#08080c;transition:box-shadow .16s,border-color .16s;">
         <div class="tpl-folder-cover" style="aspect-ratio:9/16;position:relative;padding:calc(8px * var(--tpl-scale,1)) calc(12px * var(--tpl-scale,1)) calc(12px * var(--tpl-scale,1));box-sizing:border-box;background:#08080c;">
-            <div class="tpl-folder-mark" style="position:absolute;top:0;left:0;right:0;height:8px;background:linear-gradient(90deg,#8152b8,#39234f);"></div>
+            <div class="tpl-folder-mark" style="position:absolute;top:0;left:0;right:0;height:8px;background:linear-gradient(90deg,${st.mode === 'liveProject' ? '#10b981,#0f766e' : '#8152b8,#39234f'});"></div>
+            ${showCheck ? `<button type="button" class="tpl-card-check tpl-folder-check" data-folder-id="${safeFid}" title="勾选/取消多选文件夹" aria-label="多选文件夹"></button>` : ''}
             <div style="position:relative;height:100%;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));grid-template-rows:repeat(2,minmax(0,1fr));gap:calc(8px * var(--tpl-scale,1));align-content:start;max-width:100%;margin:0 auto;">${images}</div>
         </div>
         <div class="tpl-card-info tpl-folder-info" style="padding:calc(12px * var(--tpl-scale,1)) calc(10px * var(--tpl-scale,1));background:#242424;"><div class="tpl-folder-name" title="双击修改名称" style="font-size:calc(12px * var(--tpl-scale,1));font-weight:500;line-height:1.5;text-align:center;color:#eee;overflow-wrap:anywhere;">${_tplEscapeHtml(folder.name)}</div>
         <div class="tpl-meta" style="font-size:calc(10px * var(--tpl-scale,1));color:#999;margin-top:calc(9px * var(--tpl-scale,1));padding-top:calc(7px * var(--tpl-scale,1));border-top:1px solid #ffffff12;text-align:center;line-height:1.6;"><div>${_tplEscapeHtml(date)}</div><div>${_tplEscapeHtml(countLabel)}</div></div></div></div>`;
 }
-function _bindTemplateFolderCards(container) {
+
+function _dragIdsFromEvent(event) {
+    try {
+        const ids = JSON.parse(event.dataTransfer.getData('application/x-videokit-items') || event.dataTransfer.getData('application/x-videokit-templates'));
+        if (Array.isArray(ids) && ids.length && ids.every(id => typeof id === 'string')) return [...new Set(ids)];
+    } catch (_) {}
+    const id = event.dataTransfer.getData('text/plain');
+    return id ? [id] : [];
+}
+
+function _bindFolderCards(st, modal, container) {
     for (const card of container.querySelectorAll('.tpl-folder-card')) {
-        card.addEventListener('dblclick', () => _openTemplateFolder(card.dataset.folderId));
+        card.querySelector('.tpl-folder-check')?.addEventListener('click', event => {
+            event.preventDefault();
+            event.stopPropagation();
+            _applyCardSelectionAction(st, modal, 'f:' + (card.dataset.folderId || ''), {
+                fromCheckbox: true,
+                shiftKey: event.shiftKey,
+                ctrlKey: event.ctrlKey,
+                metaKey: event.metaKey,
+            });
+        });
+        card.addEventListener('dblclick', () => _openLibraryFolder(st, card.dataset.folderId));
         card.addEventListener('keydown', event => {
             if (event.target.isContentEditable) return;
-            if (event.key === 'Enter') { event.preventDefault(); _openTemplateFolder(card.dataset.folderId); }
-            else if (event.key === 'F2') { event.preventDefault(); _renameTemplateFolder(card.dataset.folderId); }
+            if (event.key === 'Enter') { event.preventDefault(); _openLibraryFolder(st, card.dataset.folderId); }
+            else if (event.key === 'F2') { event.preventDefault(); _renameLibraryFolder(st, card.dataset.folderId); }
         });
-        card.querySelector('.tpl-folder-name')?.addEventListener('dblclick', event => { event.stopPropagation(); _renameTemplateFolder(card.dataset.folderId); });
+        card.querySelector('.tpl-folder-name')?.addEventListener('dblclick', event => {
+            event.stopPropagation();
+            _renameLibraryFolder(st, card.dataset.folderId);
+        });
         card.addEventListener('contextmenu', event => {
             if (event.target.isContentEditable) return;
-            event.preventDefault(); event.stopPropagation();
-            _showTemplateFolderContextMenu(event, card);
+            event.preventDefault();
+            event.stopPropagation();
+            _showFolderContextMenu(st, event, card);
         });
         card.addEventListener('dragover', event => {
             if (Array.from(event.dataTransfer.types).includes('application/x-videokit-folder')) return;
@@ -2416,284 +2916,479 @@ function _bindTemplateFolderCards(container) {
         card.addEventListener('dragleave', () => card.style.outline = '');
         card.addEventListener('drop', event => {
             if (Array.from(event.dataTransfer.types).includes('application/x-videokit-folder')) return;
-            event.preventDefault(); event.stopPropagation(); card.style.outline = '';
-            const ids = _templateDragIds(event);
-            if (ids.length) _moveTemplateIds(ids, card.dataset.folderId);
+            event.preventDefault();
+            event.stopPropagation();
+            card.style.outline = '';
+            const ids = _dragIdsFromEvent(event);
+            if (ids.length) _moveLibraryItemIds(st, ids, card.dataset.folderId);
         });
     }
-    const bindBreadcrumbDropTarget = (el, targetFolderId) => {
+    const bindDropTarget = (el, targetFolderId) => {
         if (!el) return;
-        if (!el.classList.contains('is-current') && el.id !== 'tpl-folder-home') {
-            el.onclick = () => _openTemplateFolder(targetFolderId);
+        if (!el.classList.contains('is-current') && el.dataset.role !== 'folder-home') {
+            el.onclick = () => _openLibraryFolder(st, targetFolderId);
         }
         el.ondragover = event => { event.preventDefault(); event.dataTransfer.dropEffect = 'move'; el.style.background = '#6366f144'; };
-        el.ondragleave = () => { el.style.background = el.id === 'tpl-folder-home' ? '#ffffff08' : ''; };
+        el.ondragleave = () => { el.style.background = el.dataset.role === 'folder-home' ? '#ffffff08' : ''; };
         el.ondrop = async event => {
-            event.preventDefault(); event.stopPropagation();
-            el.style.background = el.id === 'tpl-folder-home' ? '#ffffff08' : '';
+            event.preventDefault();
+            event.stopPropagation();
+            el.style.background = el.dataset.role === 'folder-home' ? '#ffffff08' : '';
             const folderDragId = event.dataTransfer.getData('application/x-videokit-folder');
             if (folderDragId) {
-                if (folderDragId !== targetFolderId) await _moveFolderIds([folderDragId], targetFolderId);
+                if (folderDragId !== targetFolderId) await _moveLibraryFolderIds(st, [folderDragId], targetFolderId);
                 return;
             }
-            const ids = _templateDragIds(event);
-            if (ids.length) await _moveTemplateIds(ids, targetFolderId);
+            const ids = _dragIdsFromEvent(event);
+            if (ids.length) await _moveLibraryItemIds(st, ids, targetFolderId);
         };
     };
-    bindBreadcrumbDropTarget(document.getElementById('tpl-folder-home'), '');
-    for (const chip of document.querySelectorAll('#tpl-breadcrumbs .tpl-breadcrumb-chip')) {
-        bindBreadcrumbDropTarget(chip, chip.dataset.folderId || '');
+    bindDropTarget(modal.querySelector('[data-role="folder-home"]'), '');
+    for (const chip of modal.querySelectorAll('[data-role="breadcrumbs"] .tpl-breadcrumb-chip')) {
+        bindDropTarget(chip, chip.dataset.folderId || '');
     }
 }
 
 let _tplInlineEditing = null;
-function _editTemplateNameInPlace(title,save) {
-    if(_tplInlineEditing){_tplInlineEditing.focus();return;}
-    _tplInlineEditing=title;
-    const original=title.textContent,oldStyle=title.getAttribute('style');
-    const card=title.closest('.tpl-card,.tpl-folder-card'),wasDraggable=card?.getAttribute('draggable');
-    if(card)card.draggable=false;
-    title.contentEditable='plaintext-only';title.spellcheck=false;title.setAttribute('role','textbox');title.setAttribute('aria-label','修改名称');
-    Object.assign(title.style,{cursor:'text',outline:'1px solid #8999e8',borderRadius:'4px',background:'#6366f11a',minHeight:'1.5em',userSelect:'text'});
-    let done=false;
-    const stop=event=>event.stopPropagation();
-    const clean=()=>{title.removeAttribute('contenteditable');title.removeAttribute('role');title.removeAttribute('aria-label');if(oldStyle===null)title.removeAttribute('style');else title.setAttribute('style',oldStyle);if(card){if(wasDraggable===null)card.removeAttribute('draggable');else card.setAttribute('draggable',wasDraggable);}title.removeEventListener('blur',blur);title.removeEventListener('keydown',key);for(const type of ['click','dblclick','mousedown','dragstart'])title.removeEventListener(type,stop);_tplInlineEditing=null;};
-    const finish=async cancel=>{if(done)return;done=true;const name=title.textContent.replace(/[\r\n]+/g,' ').trim();clean();if(cancel || !name || name===original){title.textContent=original;return;}if(name.length>200){title.textContent=original;if(typeof showToast==='function')showToast('名称最多200字','warning');return;}title.textContent=name;try{await save(name);}catch(error){title.textContent=original;if(typeof showToast==='function')showToast('重命名失败：'+error.message,'error');}};
-    const blur=()=>finish(false);
-    const key=event=>{event.stopPropagation();if(event.isComposing)return;if(event.key==='Enter'){event.preventDefault();finish(false);}else if(event.key==='Escape'){event.preventDefault();finish(true);}};
-    title.addEventListener('blur',blur);title.addEventListener('keydown',key);
-    for(const type of ['click','dblclick','mousedown','dragstart'])title.addEventListener(type,stop);
-    title.focus();const range=document.createRange();range.selectNodeContents(title);range.collapse(false);const selection=window.getSelection();selection.removeAllRanges();selection.addRange(range);
+function _editNameInPlace(title, save) {
+    if (_tplInlineEditing) { _tplInlineEditing.focus(); return; }
+    _tplInlineEditing = title;
+    const original = title.textContent, oldStyle = title.getAttribute('style');
+    const card = title.closest('.tpl-card,.tpl-folder-card'), wasDraggable = card?.getAttribute('draggable');
+    if (card) card.draggable = false;
+    title.contentEditable = 'plaintext-only'; title.spellcheck = false;
+    title.setAttribute('role', 'textbox'); title.setAttribute('aria-label', '修改名称');
+    Object.assign(title.style, { cursor: 'text', outline: '1px solid #8999e8', borderRadius: '4px', background: '#6366f11a', minHeight: '1.5em', userSelect: 'text' });
+    let done = false;
+    const stop = event => event.stopPropagation();
+    const clean = () => {
+        title.removeAttribute('contenteditable'); title.removeAttribute('role'); title.removeAttribute('aria-label');
+        if (oldStyle === null) title.removeAttribute('style'); else title.setAttribute('style', oldStyle);
+        if (card) { if (wasDraggable === null) card.removeAttribute('draggable'); else card.setAttribute('draggable', wasDraggable); }
+        title.removeEventListener('blur', blur); title.removeEventListener('keydown', key);
+        for (const type of ['click', 'dblclick', 'mousedown', 'dragstart']) title.removeEventListener(type, stop);
+        _tplInlineEditing = null;
+    };
+    const finish = async cancel => {
+        if (done) return;
+        done = true;
+        const name = title.textContent.replace(/[\r\n]+/g, ' ').trim();
+        clean();
+        if (cancel || !name || name === original) { title.textContent = original; return; }
+        if (name.length > 200) { title.textContent = original; showToast?.('名称最多200字', 'warning'); return; }
+        title.textContent = name;
+        try { await save(name); } catch (error) { title.textContent = original; showToast?.('重命名失败：' + error.message, 'error'); }
+    };
+    const blur = () => finish(false);
+    const key = event => {
+        event.stopPropagation();
+        if (event.isComposing) return;
+        if (event.key === 'Enter') { event.preventDefault(); finish(false); }
+        else if (event.key === 'Escape') { event.preventDefault(); finish(true); }
+    };
+    title.addEventListener('blur', blur);
+    title.addEventListener('keydown', key);
+    for (const type of ['click', 'dblclick', 'mousedown', 'dragstart']) title.addEventListener(type, stop);
+    title.focus();
+    const range = document.createRange(); range.selectNodeContents(title); range.collapse(false);
+    const selection = window.getSelection(); selection.removeAllRanges(); selection.addRange(range);
 }
 
-function _templateDragIds(event) {
-    try {const ids=JSON.parse(event.dataTransfer.getData('application/x-videokit-templates'));if(Array.isArray(ids)&&ids.length&&ids.every(id=>typeof id==='string'))return [...new Set(ids)];}catch(_){}
-    const id=event.dataTransfer.getData('text/plain');return id?[id]:[];
-}
-function _paintTemplateSelection() {
-    const modal=document.getElementById('template-library-modal');if(!modal || modal._onSelectCallback)return;
-    for(const card of modal.querySelectorAll('.tpl-card')) {
-        const selected=modal._selectedTemplateIds?.has(card.dataset.id);
-        card.classList.toggle('tpl-selected',!!selected);card.setAttribute('aria-selected',String(!!selected));
-        card.style.boxShadow=selected?'inset 0 0 0 2px #8b9cff,0 0 0 1px #8b9cff':'';
-        card.style.background=selected?'rgba(99,102,241,.18)':'rgba(255,255,255,.03)';
-        const cb=card.querySelector('.tpl-card-check');
-        if(cb){cb.textContent=selected?'✓':'';}
+function _paintLibrarySelection(st) {
+    const modal = document.getElementById(st.cfg.modalId);
+    if (!modal || modal._onSelectCallback) return;
+    for (const card of modal.querySelectorAll('.tpl-card')) {
+        const selected = modal._selectedItemIds?.has(card.dataset.id);
+        card.classList.toggle('tpl-selected', !!selected);
+        card.setAttribute('aria-selected', String(!!selected));
+        card.style.boxShadow = selected ? 'inset 0 0 0 2px #8b9cff,0 0 0 1px #8b9cff' : '';
+        card.style.background = selected ? 'rgba(99,102,241,.18)' : 'rgba(255,255,255,.03)';
+        const cb = card.querySelector('.tpl-card-check');
+        if (cb) cb.textContent = selected ? '✓' : '';
     }
-    _updateTemplatePresetSelectionUI();
+    for (const card of modal.querySelectorAll('.tpl-folder-card')) {
+        const selected = modal._selectedFolderIds?.has(card.dataset.folderId);
+        card.classList.toggle('tpl-selected', !!selected);
+        card.setAttribute('aria-selected', String(!!selected));
+        card.style.boxShadow = selected ? 'inset 0 0 0 2px #8b9cff,0 0 0 1px #8b9cff' : '';
+        const cb = card.querySelector('.tpl-folder-check');
+        if (cb) cb.textContent = selected ? '✓' : '';
+    }
+    _updateLibrarySelectionUI(st);
 }
-function _initTemplateMarquee(container) {
-    const modal=document.getElementById('template-library-modal');if(modal._onSelectCallback)return;
-    container._marqueeController?.abort();const controller=new AbortController();container._marqueeController=controller;
-    const signal=controller.signal;
-    for(const card of container.querySelectorAll('.tpl-card'))card.addEventListener('click',event=>{
-        if(event.target.closest('button,input,label,[contenteditable]') || container._marqueeActive)return;
-        const selected=modal._selectedTemplateIds;
-        if(event.ctrlKey || event.metaKey){if(selected.has(card.dataset.id))selected.delete(card.dataset.id);else selected.add(card.dataset.id);}
-        else if(event.shiftKey)selected.add(card.dataset.id);
-        else{selected.clear();selected.add(card.dataset.id);}
-        _paintTemplateSelection();
-    },{signal});
-    container.addEventListener('mousedown',event=>{
-        if(event.button!==0 || event.target.closest('.tpl-card,.tpl-folder-card,button,input,select,[contenteditable]'))return;
-        if(_tplInlineEditing){event.preventDefault();_tplInlineEditing.blur();return;}
+
+function _initLibraryMarquee(st, modal, container) {
+    if (modal._onSelectCallback) return;
+    container._marqueeController?.abort();
+    const controller = new AbortController();
+    container._marqueeController = controller;
+    const signal = controller.signal;
+    for (const card of container.querySelectorAll('.tpl-card, .tpl-folder-card')) {
+        card.addEventListener('click', event => {
+            if (event.target.closest('button,input,label,[contenteditable]') || container._marqueeActive) return;
+            const key = card.classList.contains('tpl-folder-card')
+                ? ('f:' + (card.dataset.folderId || ''))
+                : ('t:' + (card.dataset.id || ''));
+            _applyCardSelectionAction(st, modal, key, {
+                fromCheckbox: false,
+                shiftKey: event.shiftKey,
+                ctrlKey: event.ctrlKey,
+                metaKey: event.metaKey,
+            });
+        }, { signal });
+    }
+    container.addEventListener('mousedown', event => {
+        if (event.button !== 0 || event.target.closest('.tpl-card,.tpl-folder-card,button,input,select,[contenteditable]')) return;
+        if (_tplInlineEditing) { event.preventDefault(); _tplInlineEditing.blur(); return; }
         event.preventDefault();
-        const rect=container.getBoundingClientRect(),startX=event.clientX,startY=event.clientY-rect.top+container.scrollTop;
-        const keep=event.ctrlKey||event.metaKey||event.shiftKey?new Set(modal._selectedTemplateIds):new Set();
-        const box=document.createElement('div');Object.assign(box.style,{position:'fixed',pointerEvents:'none',zIndex:'999998',background:'rgba(99,102,241,.16)',border:'1px solid #a5b4fc',display:'none'});document.body.appendChild(box);
-        container._marqueeActive=true;let x=startX,y=event.clientY,raf=0,active=true;
-        const oldSelect=document.body.style.userSelect;document.body.style.userSelect='none';
-        const update=()=>{
-            const bounds=container.getBoundingClientRect(),anchorY=bounds.top+startY-container.scrollTop;
-            const left=Math.max(bounds.left,Math.min(startX,x)),right=Math.min(bounds.right,Math.max(startX,x));
-            const top=Math.max(bounds.top,Math.min(anchorY,y)),bottom=Math.min(bounds.bottom,Math.max(anchorY,y));
-            Object.assign(box.style,{display:'block',left:left+'px',top:top+'px',width:Math.max(0,right-left)+'px',height:Math.max(0,bottom-top)+'px'});
-            modal._selectedTemplateIds=new Set(keep);
-            const contentY=y-bounds.top+container.scrollTop,selectionTop=Math.min(startY,contentY),selectionBottom=Math.max(startY,contentY),selectionLeft=Math.min(startX,x),selectionRight=Math.max(startX,x);
-            for(const card of container.querySelectorAll('.tpl-card')){const r=card.getBoundingClientRect(),cardTop=r.top-bounds.top+container.scrollTop,cardBottom=r.bottom-bounds.top+container.scrollTop;if(selectionRight>selectionLeft&&selectionBottom>selectionTop&&r.right>selectionLeft&&r.left<selectionRight&&cardBottom>selectionTop&&cardTop<selectionBottom)modal._selectedTemplateIds.add(card.dataset.id);}
-            _paintTemplateSelection();
+        const rect = container.getBoundingClientRect(), startX = event.clientX, startY = event.clientY - rect.top + container.scrollTop;
+        const preserve = event.ctrlKey || event.metaKey || event.shiftKey;
+        const keepItems = preserve ? new Set(modal._selectedItemIds) : new Set();
+        const keepFolders = preserve ? new Set(modal._selectedFolderIds) : new Set();
+        const box = document.createElement('div');
+        Object.assign(box.style, { position: 'fixed', pointerEvents: 'none', zIndex: '999998', background: 'rgba(99,102,241,.16)', border: '1px solid #a5b4fc', display: 'none' });
+        document.body.appendChild(box);
+        container._marqueeActive = true;
+        let x = startX, y = event.clientY, raf = 0, active = true;
+        const oldSelect = document.body.style.userSelect;
+        document.body.style.userSelect = 'none';
+        const update = () => {
+            const bounds = container.getBoundingClientRect(), anchorY = bounds.top + startY - container.scrollTop;
+            const left = Math.max(bounds.left, Math.min(startX, x)), right = Math.min(bounds.right, Math.max(startX, x));
+            const top = Math.max(bounds.top, Math.min(anchorY, y)), bottom = Math.min(bounds.bottom, Math.max(anchorY, y));
+            Object.assign(box.style, { display: 'block', left: left + 'px', top: top + 'px', width: Math.max(0, right - left) + 'px', height: Math.max(0, bottom - top) + 'px' });
+            modal._selectedItemIds = new Set(keepItems);
+            modal._selectedFolderIds = new Set(keepFolders);
+            const contentY = y - bounds.top + container.scrollTop;
+            const sTop = Math.min(startY, contentY), sBot = Math.max(startY, contentY), sLeft = Math.min(startX, x), sRight = Math.max(startX, x);
+            for (const card of container.querySelectorAll('.tpl-card, .tpl-folder-card')) {
+                const r = card.getBoundingClientRect(), cTop = r.top - bounds.top + container.scrollTop, cBot = r.bottom - bounds.top + container.scrollTop;
+                if (sRight > sLeft && sBot > sTop && r.right > sLeft && r.left < sRight && cBot > sTop && cTop < sBot) {
+                    if (card.classList.contains('tpl-folder-card')) modal._selectedFolderIds.add(card.dataset.folderId);
+                    else modal._selectedItemIds.add(card.dataset.id);
+                }
+            }
+            _paintLibrarySelection(st);
         };
-        const move=event=>{x=event.clientX;y=event.clientY;update();};
-        const tick=()=>{if(!active)return;const bounds=container.getBoundingClientRect();if(y<bounds.top+35)container.scrollTop-=14;else if(y>bounds.bottom-35)container.scrollTop+=14;update();raf=requestAnimationFrame(tick);};
-        const finish=()=>{if(!active)return;active=false;cancelAnimationFrame(raf);box.remove();document.body.style.userSelect=oldSelect;document.removeEventListener('mousemove',move);document.removeEventListener('mouseup',finish);setTimeout(()=>container._marqueeActive=false,0);};
-        document.addEventListener('mousemove',move);document.addEventListener('mouseup',finish,{once:true});signal.addEventListener('abort',finish,{once:true});
-        update();raf=requestAnimationFrame(tick);
-    },{signal});
+        const move = ev => { x = ev.clientX; y = ev.clientY; update(); };
+        const tick = () => {
+            if (!active) return;
+            const bounds = container.getBoundingClientRect();
+            if (y < bounds.top + 35) container.scrollTop -= 14;
+            else if (y > bounds.bottom - 35) container.scrollTop += 14;
+            update();
+            raf = requestAnimationFrame(tick);
+        };
+        const finish = () => {
+            if (!active) return;
+            active = false; cancelAnimationFrame(raf); box.remove();
+            document.body.style.userSelect = oldSelect;
+            document.removeEventListener('mousemove', move); document.removeEventListener('mouseup', finish);
+            setTimeout(() => container._marqueeActive = false, 0);
+        };
+        document.addEventListener('mousemove', move);
+        document.addEventListener('mouseup', finish, { once: true });
+        signal.addEventListener('abort', finish, { once: true });
+        update();
+        raf = requestAnimationFrame(tick);
+    }, { signal });
 }
 
-let _tplContextMenuCleanup=null;
-function _closeTemplateContextMenu(){if(_tplContextMenuCleanup)_tplContextMenuCleanup();}
-function _showTemplateFolderContextMenu(event, card) {
+let _tplContextMenuCleanup = null;
+function _closeTemplateContextMenu() { if (_tplContextMenuCleanup) _tplContextMenuCleanup(); }
+
+function _showFolderContextMenu(st, event, card) {
     _closeTemplateContextMenu();
+    const modal = document.getElementById(st.cfg.modalId);
     const folderId = card.dataset.folderId || '';
-    const descIds = _collectTplDescendantFolderIds(folderId, _tplFolderData.folders);
-    const items = [
-        ['📂 打开文件夹', () => _openTemplateFolder(folderId)],
-        ['📑 应用本文件夹全部标签', () => window.reelsApplyFolderById(folderId)],
-        ['📁 在此新建子文件夹', () => _newTemplateFolder(folderId)],
-        ['', null],
-        ['✏️ 重命名文件夹', () => _renameTemplateFolder(folderId)],
-        ['📦 移动到其他文件夹...', async () => {
-            const target = await _pickLibraryTargetFolder({ title: '移动文件夹到...', excludeFolderIds: [...descIds] });
-            if (target !== null) await _moveFolderIds([folderId], target);
-        }],
-        ['🗑️ 删除空文件夹', () => _deleteTemplateFolder(folderId)],
-    ];
-    _showTemplateTextMenu(event, items, card);
-}
-
-async function _splitSavedTemplateIntoFolder(id, fallbackName = '') {
-    try {
-        const resp = await apiFetch(`${API_BASE}/templates/get`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ id }),
-        });
-        const parsed = await resp.json();
-        const tplData = parsed.data || parsed;
-        if (!tplData || !tplData.projectData) throw new Error(parsed.error || '工程缺少数据');
-        const folderBaseName = String(tplData.name || fallbackName || '拆分工程').trim() || '拆分工程';
-        const extracted = _extractTabsFromProjectPayload(tplData, folderBaseName);
-        if (!extracted || extracted.mode !== 'multi-tab' || extracted.items.length <= 1) {
-            showToast?.('该工程内部只有 1 个标签页，无需拆分', 'info');
-            return false;
-        }
-        const parentFolderId = _tplFolderData?.assignments?.[id] ?? _tplFolderId ?? '';
-        showToast?.(`已识别内部 ${extracted.items.length} 个标签页，正在拆分存入文件夹...`, 'info');
-        const res = await _archiveGroupsToLibrary(extracted.items, {
-            folderMode: 'new-folder',
-            folderName: folderBaseName,
-            parentFolderId,
-            splitByGroup: true,
-            bindWorkspace: false,
-            captureThumbnails: true,
-            syncPresetAssets: false,
-            style: extracted.style,
-            exportOpts: extracted.exportOpts,
-            watermarks: extracted.watermarks,
-            backgroundLibrary: extracted.backgroundLibrary,
-        });
-        _tplFolderId = res.rootFolderId;
-        await _refreshTemplateList();
-        showToast?.(`✅ 已拆分出 ${res.savedResults.length} 个独立标签卡片到「${res.rootFolderPath}」`, 'success', 5000);
-        return true;
-    } catch (err) {
-        showToast?.(`拆分工程标签失败：${err.message}`, 'error');
-        return false;
+    if (modal && !modal._selectedFolderIds?.has(folderId)) {
+        modal._selectedItemIds?.clear();
+        modal._selectedFolderIds = new Set([folderId]);
+        _paintLibrarySelection(st);
     }
+    const selFolders = [...(modal?._selectedFolderIds || [folderId])];
+    const selTotal = (modal?._selectedItemIds?.size || 0) + selFolders.length;
+    const descIds = _collectTplDescendantFolderIds(folderId, st.folderData.folders);
+    const items = [
+        ['📂 进入文件夹', () => _openLibraryFolder(st, folderId)],
+        ...(st.mode === 'liveProject' ? [
+            ['⚡ 打开本文件夹全部工程', () => window.reelsApplyFolderById(folderId)],
+            ['📄 在此新建空白标签', () => _createBlankLiveProjectDialog(st, folderId)],
+        ] : []),
+        ['📁 在此新建子文件夹', () => _newLibraryFolder(st, folderId)],
+        ['', null],
+        ['✏️ 重命名文件夹', () => _renameLibraryFolder(st, folderId)],
+        selTotal > 1
+            ? [`📦 批量移动所选 ${selTotal} 项到...`, () => _batchMoveLibrarySelection(st)]
+            : ['📦 移动到其他文件夹...', async () => {
+                const target = await _pickTargetFolder(st, { title: '移动文件夹到...', excludeFolderIds: [...descIds] });
+                if (target !== null) await _moveLibraryFolderIds(st, [folderId], target);
+            }],
+        selTotal > 1
+            ? [`🗑️ 批量删除所选 (${selTotal} 项)`, () => _batchDeleteLibrarySelection(st)]
+            : ['🗑️ 删除空文件夹', () => _deleteLibraryFolder(st, folderId)],
+    ];
+    _showContextMenu(event, items, card, st);
 }
 
-function _showTemplateContextMenu(event, card) {
+function _showItemContextMenu(st, event, card) {
     _closeTemplateContextMenu();
-    const modal = document.getElementById('template-library-modal'), id = card.dataset.id, name = card.dataset.name || '';
-    if (!modal._selectedTemplateIds.has(id)) { modal._selectedTemplateIds = new Set([id]); _paintTemplateSelection(); }
-    const selectedIds = (modal._templateSummaries || []).filter(t => modal._selectedTemplateIds.has(t.id)).map(t => t.id);
+    const modal = document.getElementById(st.cfg.modalId);
+    const id = card.dataset.id, name = card.dataset.name || '';
+    if (!modal._selectedItemIds.has(id)) {
+        modal._selectedItemIds = new Set([id]);
+        modal._selectedFolderIds?.clear();
+        _paintLibrarySelection(st);
+    }
+    const selectedIds = (modal._visibleSummaries || []).filter(t => modal._selectedItemIds.has(t.id)).map(t => t.id);
     const activeIds = selectedIds.length ? selectedIds : [id];
-    const items = [
-        ['✅ 载入到工作区', () => _loadTemplateInCurrentWindow(id)],
-        ['📥 追加到当前工作区', () => _loadTemplateInCurrentWindow(id, { append: true })],
-        ...(activeIds.length > 1 ? [[`📑 应用所选 ${activeIds.length} 个标签到工作区`, () => tplApplySelectedProjects()]] : []),
-        ['🪄 识别并拆分内部标签页', () => _splitSavedTemplateIntoFolder(id, name)],
+
+    const items = st.mode === 'template' ? [
+        ['📂 载入副本到工作区（不修改原模板）', () => _loadTemplateInCurrentWindow(id)],
+        ['📥 追加副本到当前工作区', () => _loadTemplateInCurrentWindow(id, { append: true })],
         ['🪟 在新窗口打开', () => _openTemplateInWindow(id, name)],
+        ['📤 另存一份到「🗂️ 工程项目」', async () => {
+            const res = await _libApiRequest(_getLibState('liveProject'), 'import-from-templates', { templateIds: activeIds, copyAllFolders: false });
+            showToast?.(`✅ 已复制 ${res.importedCount || 1} 份到实时工程项目`, 'success');
+            window.reelsRefreshTemplateLibraryIfOpen?.('liveProject');
+        }],
+        ['', null],
+        ['📦 移动到模板文件夹...', async () => {
+            const target = await _pickTargetFolder(st, { title: `移动 ${activeIds.length} 个模板到...` });
+            if (target !== null) await _moveLibraryItemIds(st, activeIds, target);
+        }],
+        ...(st.folderId ? [['↩ 移出到上级', () => _moveLibraryItemIds(st, activeIds, _getParentFolder(st, st.folderId))]] : []),
+        ['导出模板 (.vktpl)', () => _exportLibraryItem(st, id, name)],
+        ['打包导出模板和素材 (.vkpkg)', () => _exportArchiveLibraryItem(st, id)],
+        ['✏️ 重命名', () => _renameLibraryItem(st, id)],
+        activeIds.length > 1
+            ? [`🗑️ 批量删除所选 ${activeIds.length} 个模板`, () => _batchDeleteLibrarySelection(st)]
+            : ['🗑️ 删除模板', () => _deleteLibraryItem(st, id, name)],
+    ] : [
+        ['⚡ 打开并编辑此工程', () => _applyLiveProjectIdsToWorkspace(st, [id], { folderId: st.folderId })],
+        ['📥 追加打开到当前工作区', () => _applyLiveProjectIdsToWorkspace(st, [id], { folderId: st.folderId, loadMode: 'append' })],
+        ...(activeIds.length > 1 ? [[`✅ 打开所选 ${activeIds.length} 个工程`, () => _applySelectedLiveProjects(st)]] : []),
+        ['📄 同级新建空白标签', () => _createBlankLiveProjectDialog(st, st.folderId)],
+        ['📑 复制一份新工程', async () => {
+            const src = await _libApiRequest(st, 'get', { id });
+            await _libApiRequest(st, 'save', { name: `${src.name || name} (副本)`, folderId: st.folderId || '', thumbnail: src.thumbnail || '', projectData: JSON.parse(JSON.stringify(src.projectData)) });
+            await _refreshLibraryView(st);
+            showToast?.('📑 已复制生成新实时工程', 'success');
+        }],
+        ['🔒 另存为封存模板（存入模板库）', async () => {
+            await _sealSelectedLiveProjectsToTemplates(st);
+        }],
         ['', null],
         ['📦 移动到文件夹...', async () => {
-            const target = await _pickLibraryTargetFolder({ title: `移动 ${activeIds.length} 个工程到...` });
-            if (target !== null) await _moveTemplateIds(activeIds, target);
+            const target = await _pickTargetFolder(st, { title: `移动 ${activeIds.length} 个工程到...` });
+            if (target !== null) await _moveLibraryItemIds(st, activeIds, target);
         }],
-        ...(_tplFolderId ? [[`↩ 移出到${_getParentFolderId(_tplFolderId) ? '上级文件夹' : '主工程库'}`, () => _moveTemplateIds(activeIds, _getParentFolderId(_tplFolderId))]] : []),
-        ['导出工程配置', () => _exportTemplate(id, name)],
-        ['打包导出工程和素材', () => _exportArchiveTemplate(id, name)],
-        ['重命名', () => _renameTemplate(id)],
-        ['删除模板', () => _deleteTemplate(id, name)],
+        ...(st.folderId ? [['↩ 移出到上级', () => _moveLibraryItemIds(st, activeIds, _getParentFolder(st, st.folderId))]] : []),
+        ['导出工程文件 (.vktpl)', () => _exportLibraryItem(st, id, name)],
+        ['打包导出工程和素材 (.vkpkg)', () => _exportArchiveLibraryItem(st, id)],
+        ['✏️ 重命名', () => _renameLibraryItem(st, id)],
+        activeIds.length > 1
+            ? [`🗑️ 批量删除所选 ${activeIds.length} 个工程`, () => _batchDeleteLibrarySelection(st)]
+            : ['🗑️ 彻底删除工程', () => _deleteLibraryItem(st, id, name)],
     ];
-    _showTemplateTextMenu(event, items, card);
+    _showContextMenu(event, items, card, st);
 }
-function _showTemplateTextMenu(event,items,focusTarget){
+
+function _showContextMenu(event, items, focusTarget, st = null) {
     _closeTemplateContextMenu();
-    const menu=document.createElement('div');menu.id='tpl-context-menu';menu.setAttribute('role','menu');
-    Object.assign(menu.style,{position:'fixed',zIndex:'999999',minWidth:'190px',padding:'5px',borderRadius:'8px',background:'#17171e',border:'1px solid #ffffff24',boxShadow:'0 6px 20px #0007',color:'#eee',fontSize:'12px'});
-    const controller=new AbortController(),signal=controller.signal;
-    const close=()=>{controller.abort();menu.remove();_tplContextMenuCleanup=null;};_tplContextMenuCleanup=close;
-    for(const [label,run] of items){if(!run){const divider=document.createElement('div');divider.style.cssText='height:1px;background:#ffffff12;margin:5px 3px;';menu.appendChild(divider);continue;}const button=document.createElement('button');button.type='button';button.textContent=label;button.setAttribute('role','menuitem');Object.assign(button.style,{display:'block',width:'100%',padding:'8px 12px',textAlign:'left',border:0,borderRadius:'4px',background:'transparent',color:label==='删除模板'?'#f59b9b':'#eee',font:'inherit',cursor:'pointer'});button.onmouseenter=()=>button.style.background='#ffffff0c';button.onmouseleave=()=>button.style.background='transparent';button.onclick=async e=>{e.stopPropagation();close();try{await run();}catch(error){if(typeof showToast==='function')showToast(error.message,'error');}};menu.appendChild(button);}
-    menu.addEventListener('mousedown',e=>e.stopPropagation());menu.addEventListener('contextmenu',e=>e.preventDefault());document.body.appendChild(menu);
-    const box=menu.getBoundingClientRect();menu.style.left=Math.max(6,Math.min(event.clientX,window.innerWidth-box.width-6))+'px';menu.style.top=Math.max(6,Math.min(event.clientY,window.innerHeight-box.height-6))+'px';
-    document.addEventListener('mousedown',e=>{if(!menu.contains(e.target))close();},{capture:true,signal});
-    document.addEventListener('keydown',e=>{if(e.key==='Escape'){e.preventDefault();e.stopPropagation();close();focusTarget?.focus?.();}else if(e.key==='ArrowDown'||e.key==='ArrowUp'){e.preventDefault();const buttons=[...menu.querySelectorAll('button')],index=buttons.indexOf(document.activeElement),next=e.key==='ArrowDown'?index+1:index-1;buttons[(next+buttons.length)%buttons.length].focus();}},{capture:true,signal});
-    window.addEventListener('resize',close,{once:true,signal});document.getElementById('tpl-grid-container')?.addEventListener('scroll',close,{once:true,signal});
-    menu.firstElementChild.focus();
-}
-
-function _templateHomeIcon(){return '<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" style="flex-shrink:0"><path d="M12 3 2 11h3v10h5v-6h4v6h5V11h3L12 3Z"/></svg>';}
-function _showTemplateBlankMenu(event){
-    const mode=localStorage.getItem('videokit_template_sort') || 'manual';
-    const direction=localStorage.getItem('videokit_template_sort_direction') || 'asc';
-    const items=[['新建文件夹',()=>_newTemplateFolder()],['',null]];
-    for(const [key,label] of [['manual','手动排序'],['name','按名称排序'],['type','按类型排序'],['modified','按修改日期排序'],['size','按大小排序']])items.push([(mode===key?'✓ ':'')+label,()=>_setTemplateSort(key)]);
-    items.push(['',null]);
-    for(const [key,label] of [['asc','升序'],['desc','降序']])items.push([(direction===key?'✓ ':'')+label,()=>{localStorage.setItem('videokit_template_sort_direction',key);_refreshTemplateList();}]);
-    _showTemplateTextMenu(event,items);
-}
-
-function _layoutTemplateMixedGrid(grid){
-    if(!grid?.isConnected)return;
-    const gap=Math.max(2,Math.round(12*_getTemplateZoom()/100));
-    const infos=Array.from(grid.querySelectorAll(':scope > .tpl-card > .tpl-card-info,:scope > .tpl-folder-card > .tpl-card-info'));
-    let infoHeight=0;
-    for(const info of infos){let height=20;for(const child of info.children){const css=getComputedStyle(child);height+=child.getBoundingClientRect().height+(parseFloat(css.marginTop)||0)+(parseFloat(css.marginBottom)||0);}infoHeight=Math.max(infoHeight,Math.ceil(height));}
-    for(const info of infos)if(info.style.minHeight!==infoHeight+'px')info.style.minHeight=infoHeight+'px';
-    const rows=Array.from(grid.children).map(card=>[card,Math.max(1,Math.ceil(card.getBoundingClientRect().height+gap))]);
-    for(const [card,span] of rows){const value='span '+span;if(card.style.gridRowEnd!==value)card.style.gridRowEnd=value;}
-}
-function _bindTemplateMixedGridLayout(container){
-    container._tplLayoutObserver?.disconnect();if(container._tplLayoutFrame)cancelAnimationFrame(container._tplLayoutFrame);
-    const grid=container.querySelector('#tpl-card-grid');if(!grid)return;
-    const observer=new ResizeObserver(()=>{if(container._tplLayoutFrame)return;container._tplLayoutFrame=requestAnimationFrame(()=>{container._tplLayoutFrame=0;_layoutTemplateMixedGrid(grid);});});
-    container._tplLayoutObserver=observer;observer.observe(grid);for(const card of grid.children)observer.observe(card);
-    _layoutTemplateMixedGrid(grid);
-}
-
-function _initTemplateLibrarySizing(modal){
-    if(!document.getElementById('tpl-library-fixed-text-style')){
-        const style=document.createElement('style');style.id='tpl-library-fixed-text-style';style.textContent=`
-        #tpl-card-grid>.tpl-card,#tpl-card-grid>.tpl-folder-card{display:flex;flex-direction:column;}
-        #tpl-card-grid .tpl-template-cover,#tpl-card-grid .tpl-folder-cover{width:min(100%,var(--tpl-card-size))!important;aspect-ratio:9/16;margin-inline:auto;flex-shrink:0;min-height:0;box-sizing:border-box;}
-        #tpl-card-grid .tpl-folder-cover{padding:6px 4px 4px!important;}
-        #tpl-card-grid .tpl-folder-cover>div:not(.tpl-folder-mark){gap:4px!important;align-items:center;}
-        #tpl-card-grid .tpl-card-info{padding:10px 8px!important;box-sizing:border-box;width:100%;}
-        #tpl-card-grid .tpl-name,#tpl-card-grid .tpl-folder-name{font-size:12px!important;line-height:1.5!important;}
-        #tpl-card-grid .tpl-meta{font-size:10px!important;line-height:1.4!important;margin-top:8px!important;padding-top:7px!important;gap:3px!important;}
-        #tpl-card-grid .tpl-meta>span,#tpl-card-grid .tpl-meta>div{white-space:nowrap;}
-        #template-library-modal .tpl-library-header{position:relative;flex-wrap:nowrap;gap:12px;flex-shrink:0;min-width:0;}
-        #template-library-modal .tpl-library-header>div:first-child{flex-shrink:0;white-space:nowrap;}
-        #template-library-modal .tpl-library-actions{flex:1;min-width:0;overflow-x:auto;overflow-y:hidden;flex-wrap:nowrap;scrollbar-width:thin;}
-        #template-library-modal .tpl-library-actions>button,#template-library-modal .tpl-library-actions>span{flex-shrink:0;white-space:nowrap;}
-        #template-library-modal #tpl-library-close{z-index:2;}
-        #tpl-grid-container{min-height:0;}
-        `;document.head.appendChild(style);
+    const menu = document.createElement('div');
+    menu.id = 'tpl-context-menu';
+    menu.setAttribute('role', 'menu');
+    Object.assign(menu.style, { position: 'fixed', zIndex: '999999', minWidth: '210px', padding: '5px', borderRadius: '8px', background: '#17171e', border: '1px solid #ffffff24', boxShadow: '0 6px 20px #0007', color: '#eee', fontSize: '12px' });
+    const controller = new AbortController(), signal = controller.signal;
+    const close = () => { controller.abort(); menu.remove(); _tplContextMenuCleanup = null; };
+    _tplContextMenuCleanup = close;
+    for (const [label, run] of items) {
+        if (!run) {
+            const divider = document.createElement('div');
+            divider.style.cssText = 'height:1px;background:#ffffff12;margin:5px 3px;';
+            menu.appendChild(divider);
+            continue;
+        }
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.textContent = label;
+        button.setAttribute('role', 'menuitem');
+        const isDanger = label.includes('删除');
+        Object.assign(button.style, { display: 'block', width: '100%', padding: '8px 12px', textAlign: 'left', border: 0, borderRadius: '4px', background: 'transparent', color: isDanger ? '#f59b9b' : '#eee', font: 'inherit', cursor: 'pointer' });
+        button.onmouseenter = () => button.style.background = '#ffffff0c';
+        button.onmouseleave = () => button.style.background = 'transparent';
+        button.onclick = async e => { e.stopPropagation(); close(); try { await run(); } catch (error) { showToast?.(error.message, 'error'); } };
+        menu.appendChild(button);
     }
-    const panel=modal.querySelector('.modal-content');
-    const closeButton=panel.querySelector('#tpl-library-close');if(closeButton)panel.querySelector('.tpl-library-header').appendChild(closeButton);
-    let widthRatio=.90,heightRatio=.88;
-    try{const saved=JSON.parse(localStorage.getItem('videokit_template_window_size')||'null');if(saved?.widthRatio&&saved?.heightRatio){widthRatio=Math.max(.4,Math.min(.96,saved.widthRatio));heightRatio=Math.max(.4,Math.min(.96,saved.heightRatio));}}catch(_){}
-    const fit=()=>{panel.style.width=(innerWidth*widthRatio)+'px';panel.style.height=(innerHeight*heightRatio)+'px';};fit();
-    if(modal._windowSizeObserver)return;
-    window.addEventListener('resize',fit);
-    let timer=0;modal._windowSizeObserver=new ResizeObserver(()=>{clearTimeout(timer);timer=setTimeout(()=>{if(!panel.isConnected||modal.style.display==='none')return;const rect=panel.getBoundingClientRect();widthRatio=rect.width/innerWidth;heightRatio=rect.height/innerHeight;localStorage.setItem('videokit_template_window_size',JSON.stringify({widthRatio,heightRatio}));},200);});modal._windowSizeObserver.observe(panel);
+    menu.addEventListener('mousedown', e => e.stopPropagation());
+    menu.addEventListener('contextmenu', e => e.preventDefault());
+    document.body.appendChild(menu);
+    const box = menu.getBoundingClientRect();
+    menu.style.left = Math.max(6, Math.min(event.clientX, window.innerWidth - box.width - 6)) + 'px';
+    menu.style.top = Math.max(6, Math.min(event.clientY, window.innerHeight - box.height - 6)) + 'px';
+    document.addEventListener('mousedown', e => { if (!menu.contains(e.target)) close(); }, { capture: true, signal });
+    document.addEventListener('keydown', e => {
+        if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); close(); focusTarget?.focus?.(); }
+    }, { capture: true, signal });
+    window.addEventListener('resize', close, { once: true, signal });
+    if (st) document.getElementById(st.cfg.modalId)?.querySelector('[data-role="grid-container"]')?.addEventListener('scroll', close, { once: true, signal });
+    menu.firstElementChild?.focus?.();
 }
 
-function _updateRenamedLibraryCard(kind,id,name){
-    const modal=document.getElementById('template-library-modal'),container=document.getElementById('tpl-grid-container');
-    if(!modal || !container)return;
-    const scrollTop=container.scrollTop,now=new Date().toISOString();
-    if(kind==='template'){
-        for(const list of [modal._allTemplateSummaries,modal._templateSummaries]){const item=list?.find(t=>t.id===id);if(item){item.name=name;item.updatedAt=now;}}
-        const card=Array.from(container.querySelectorAll('.tpl-card')).find(c=>c.dataset.id===id);
-        if(card){card.dataset.name=name;const title=card.querySelector('.tpl-name');title.textContent=name;title.title=name;const date=card.querySelector('.tpl-meta')?.firstElementChild;if(date)date.textContent=new Date(now).toLocaleDateString('zh-CN');}
-    }else{
-        const folder=_tplFolderData.folders.find(f=>f.id===id);if(folder){folder.name=name;folder.updatedAt=now;}
-        const card=Array.from(container.querySelectorAll('.tpl-folder-card')).find(c=>c.dataset.folderId===id);
-        if(card){card.querySelector('.tpl-folder-name').textContent=name;card.setAttribute('aria-label',name);const date=card.querySelector('.tpl-meta')?.firstElementChild;if(date)date.textContent=new Date(now).toLocaleDateString('zh-CN');}
+function _templateHomeIcon() {
+    return '<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" style="flex-shrink:0"><path d="M12 3 2 11h3v10h5v-6h4v6h5V11h3L12 3Z"/></svg>';
+}
+
+function _showBlankContextMenu(st, event) {
+    const mode = localStorage.getItem(st.cfg.sortKey) || 'manual';
+    const direction = localStorage.getItem(st.cfg.sortDirKey) || 'asc';
+    const modal = document.getElementById(st.cfg.modalId);
+    const hasSelection = ((modal?._selectedItemIds?.size || 0) + (modal?._selectedFolderIds?.size || 0)) > 0;
+    const items = [
+        ...(st.mode === 'liveProject' ? [['📄 新建空白标签', () => _createBlankLiveProjectDialog(st)]] : []),
+        ['📁 新建文件夹', () => _newLibraryFolder(st)],
+        ['', null],
+        ['☑ 全选当前页 (Ctrl+A)', () => _selectAllLibraryItems(st, { forceAll: true })],
+        ['🔁 反选当前页', () => _invertLibrarySelection(st)],
+        ...(hasSelection ? [['☐ 清空选择 (Esc)', () => _clearLibrarySelection(st)]] : []),
+        [modal?._multiSelectMode ? '✓ 多选模式：点击卡片即勾选' : '☑️ 开启多选模式', () => _toggleMultiSelectMode(st)],
+        ['', null],
+    ];
+    for (const [key, label] of [['manual', '手动排序'], ['name', '按名称排序'], ['type', '按类型排序'], ['modified', '按修改日期排序'], ['size', '按大小排序']]) {
+        items.push([(mode === key ? '✓ ' : '') + label, () => { localStorage.setItem(st.cfg.sortKey, key); _refreshLibraryView(st); }]);
     }
-    _layoutTemplateMixedGrid(container.querySelector('#tpl-card-grid'));
-    container.scrollTop=scrollTop;
+    items.push(['', null]);
+    for (const [key, label] of [['asc', '升序'], ['desc', '降序']]) {
+        items.push([(direction === key ? '✓ ' : '') + label, () => { localStorage.setItem(st.cfg.sortDirKey, key); _refreshLibraryView(st); }]);
+    }
+    _showContextMenu(event, items, null, st);
+}
+
+function _layoutLibraryMixedGrid(st, grid) {
+    if (!grid?.isConnected) return;
+    const gap = Math.max(2, Math.round(12 * _getLibZoom(st) / 100));
+    const infos = Array.from(grid.querySelectorAll(':scope > .tpl-card > .tpl-card-info,:scope > .tpl-folder-card > .tpl-card-info'));
+    let infoHeight = 0;
+    for (const info of infos) {
+        let height = 20;
+        for (const child of info.children) {
+            const css = getComputedStyle(child);
+            height += child.getBoundingClientRect().height + (parseFloat(css.marginTop) || 0) + (parseFloat(css.marginBottom) || 0);
+        }
+        infoHeight = Math.max(infoHeight, Math.ceil(height));
+    }
+    for (const info of infos) if (info.style.minHeight !== infoHeight + 'px') info.style.minHeight = infoHeight + 'px';
+    const rows = Array.from(grid.children).map(card => [card, Math.max(1, Math.ceil(card.getBoundingClientRect().height + gap))]);
+    for (const [card, span] of rows) {
+        const value = 'span ' + span;
+        if (card.style.gridRowEnd !== value) card.style.gridRowEnd = value;
+    }
+}
+
+function _bindMixedGridLayout(st, container) {
+    container._tplLayoutObserver?.disconnect();
+    if (container._tplLayoutFrame) cancelAnimationFrame(container._tplLayoutFrame);
+    const grid = container.querySelector(`.${st.cfg.prefix}-card-grid`);
+    if (!grid) return;
+    const observer = new ResizeObserver(() => {
+        if (container._tplLayoutFrame) return;
+        container._tplLayoutFrame = requestAnimationFrame(() => {
+            container._tplLayoutFrame = 0;
+            _layoutLibraryMixedGrid(st, grid);
+        });
+    });
+    container._tplLayoutObserver = observer;
+    observer.observe(grid);
+    for (const card of grid.children) observer.observe(card);
+    _layoutLibraryMixedGrid(st, grid);
+}
+
+function _initLibraryWindowSizing(st, modal) {
+    if (!document.getElementById('vk-library-fixed-text-style')) {
+        const style = document.createElement('style');
+        style.id = 'vk-library-fixed-text-style';
+        style.textContent = `
+        .vk-lib-grid>.tpl-card,.vk-lib-grid>.tpl-folder-card{display:flex;flex-direction:column;}
+        .vk-lib-grid .tpl-template-cover,.vk-lib-grid .tpl-folder-cover{width:min(100%,var(--tpl-card-size))!important;aspect-ratio:9/16;margin-inline:auto;flex-shrink:0;min-height:0;box-sizing:border-box;}
+        .vk-lib-grid .tpl-folder-cover{padding:6px 4px 4px!important;}
+        .vk-lib-grid .tpl-folder-cover>div:not(.tpl-folder-mark){gap:4px!important;align-items:center;}
+        .vk-lib-grid .tpl-card-info{padding:10px 8px!important;box-sizing:border-box;width:100%;}
+        .vk-lib-grid .tpl-name,.vk-lib-grid .tpl-folder-name{font-size:12px!important;line-height:1.5!important;}
+        .vk-lib-grid .tpl-meta{font-size:10px!important;line-height:1.4!important;margin-top:8px!important;padding-top:7px!important;gap:3px!important;}
+        .vk-lib-grid .tpl-meta>span,.vk-lib-grid .tpl-meta>div{white-space:nowrap;}
+        .vk-lib-header{position:relative;flex-wrap:nowrap;gap:12px;flex-shrink:0;min-width:0;}
+        .vk-lib-header>div:first-child{flex-shrink:0;white-space:nowrap;}
+        .vk-lib-actions{flex:1;min-width:0;overflow-x:auto;overflow-y:hidden;flex-wrap:nowrap;scrollbar-width:thin;}
+        .vk-lib-actions>button,.vk-lib-actions>span{flex-shrink:0;white-space:nowrap;}
+        .vk-selection-bar .vk-sel-btn:hover:not(:disabled){filter:brightness(1.14);}
+        .tpl-card-check{position:absolute;left:8px;top:8px;z-index:4;width:24px;height:24px;border-radius:7px;border:1.5px solid rgba(226,232,240,0.68);background:rgba(15,23,42,0.82);color:#fff;font-size:13px;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 6px rgba(0,0,0,0.45);transition:transform .12s,border-color .15s,background .15s;}
+        .tpl-card-check:hover{transform:scale(1.08);border-color:#93c5fd;background:rgba(30,41,59,0.95);}
+        .vk-multi-select-on .tpl-card-check{border-color:rgba(110,231,183,0.9);box-shadow:0 0 0 2px rgba(16,185,129,0.28);}
+        .tpl-card.tpl-selected .tpl-card-check,.tpl-folder-card.tpl-selected .tpl-card-check{background:#6366f1;border-color:#c7d2fe;}
+        .tpl-folder-card.tpl-selected{background:rgba(99,102,241,0.14)!important;}
+        `;
+        document.head.appendChild(style);
+    }
+    const panel = modal.querySelector('.vk-lib-panel');
+    const closeButton = modal.querySelector('[data-act="close"]');
+    if (closeButton && panel) panel.querySelector('.vk-lib-header')?.appendChild(closeButton);
+    let widthRatio = .90, heightRatio = .88;
+    try {
+        const saved = JSON.parse(localStorage.getItem(st.cfg.winSizeKey) || 'null');
+        if (saved?.widthRatio && saved?.heightRatio) {
+            widthRatio = Math.max(.4, Math.min(.96, saved.widthRatio));
+            heightRatio = Math.max(.4, Math.min(.96, saved.heightRatio));
+        }
+    } catch (_) {}
+    const fit = () => { if (panel) { panel.style.width = (innerWidth * widthRatio) + 'px'; panel.style.height = (innerHeight * heightRatio) + 'px'; } };
+    fit();
+    if (modal._windowSizeObserver || !panel) return;
+    window.addEventListener('resize', fit);
+    let timer = 0;
+    modal._windowSizeObserver = new ResizeObserver(() => {
+        clearTimeout(timer);
+        timer = setTimeout(() => {
+            if (!panel.isConnected || modal.style.display === 'none') return;
+            const rect = panel.getBoundingClientRect();
+            widthRatio = rect.width / innerWidth;
+            heightRatio = rect.height / innerHeight;
+            localStorage.setItem(st.cfg.winSizeKey, JSON.stringify({ widthRatio, heightRatio }));
+        }, 200);
+    });
+    modal._windowSizeObserver.observe(panel);
+}
+
+function _updateRenamedCard(st, kind, id, name) {
+    const modal = document.getElementById(st.cfg.modalId);
+    const container = modal?.querySelector('[data-role="grid-container"]');
+    if (!modal || !container) return;
+    const scrollTop = container.scrollTop, now = new Date().toISOString();
+    if (kind !== 'folder') {
+        for (const list of [modal._allSummaries, modal._visibleSummaries]) {
+            const item = list?.find(t => t.id === id);
+            if (item) { item.name = name; item.updatedAt = now; }
+        }
+        const card = Array.from(container.querySelectorAll('.tpl-card')).find(c => c.dataset.id === id);
+        if (card) {
+            card.dataset.name = name;
+            const title = card.querySelector('.tpl-name');
+            if (title) { title.textContent = name; title.title = name; }
+            const date = card.querySelector('.tpl-meta')?.firstElementChild;
+            if (date) date.textContent = new Date(now).toLocaleDateString('zh-CN');
+        }
+    } else {
+        const folder = st.folderData.folders.find(f => f.id === id);
+        if (folder) { folder.name = name; folder.updatedAt = now; }
+        const card = Array.from(container.querySelectorAll('.tpl-folder-card')).find(c => c.dataset.folderId === id);
+        if (card) {
+            const nameEl = card.querySelector('.tpl-folder-name');
+            if (nameEl) nameEl.textContent = name;
+            card.setAttribute('aria-label', name);
+            const date = card.querySelector('.tpl-meta')?.firstElementChild;
+            if (date) date.textContent = new Date(now).toLocaleDateString('zh-CN');
+        }
+    }
+    _layoutLibraryMixedGrid(st, container.querySelector(`.${st.cfg.prefix}-card-grid`));
+    container.scrollTop = scrollTop;
 }

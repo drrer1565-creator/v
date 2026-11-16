@@ -4535,6 +4535,12 @@ const NA_PRAYER_EMBLEM_META = Object.freeze({
     na_xmas_nativity_manger: { emoji: '⛪', label: '🌟 圣婴马槽剪影', group: '圣诞贺卡', accent: '#D97706' },
     na_xmas_gingerbread_man: { emoji: '🍪', label: '🍪 姜饼人甜心', group: '圣诞贺卡', accent: '#B45309' },
     na_xmas_robin_holly:  { emoji: '🐦', label: '🐦 冬季红胸知更鸟', group: '圣诞贺卡', accent: '#DC2626' },
+    na_thx_maple:         { emoji: '🍁', label: '🍁 极简赤陶秋枫', group: '感恩节与秋日', accent: '#A65238' },
+    na_thx_wheat:         { emoji: '🌾', label: '🌾 感恩金麦穗', group: '感恩节与秋日', accent: '#C68B59' },
+    na_thx_acorn:         { emoji: '🌰', label: '🌰 森系胡桃橡果', group: '感恩节与秋日', accent: '#7C5338' },
+    na_thx_heirloom_pumpkin: { emoji: '🎃', label: '🎃 奶油赤陶南瓜', group: '感恩节与秋日', accent: '#C97B55' },
+    na_thx_autumn_mug:    { emoji: '☕', label: '☕ 秋日热饮陶杯', group: '感恩节与秋日', accent: '#6B4F3E' },
+    na_thx_olive_wreath:  { emoji: '🌿', label: '🌿 感恩鼠尾草橄榄环', group: '感恩节与秋日', accent: '#788972' },
 });
 
 function _drawNaFlowerPetals(ctx, count, dist, rx, ry, fill, innerFill = null, centerR = 0.25) {
@@ -5372,6 +5378,68 @@ function _drawNaEmblemArtwork(ctx, rawId, cx, cy, r = 24, opts = {}) {
             ctx.fillStyle = '#EA580C'; ctx.beginPath(); ctx.ellipse(3, 2, 5.5, 5.2, 0, 0, Math.PI * 2); ctx.fill();
             ctx.fillStyle = '#F59E0B'; ctx.beginPath(); ctx.moveTo(8, -2); ctx.lineTo(14, -1); ctx.lineTo(8, 1); ctx.closePath(); ctx.fill();
             ctx.fillStyle = '#111827'; ctx.beginPath(); ctx.arc(4.5, -2.5, 1.4, 0, Math.PI * 2); ctx.fill();
+            break;
+        }
+        case 'na_thx_maple': {
+            ctx.fillStyle = '#A65238'; ctx.strokeStyle = '#6E3320'; ctx.lineWidth = 1.2;
+            ctx.beginPath();
+            ctx.moveTo(0, -15); ctx.lineTo(3.8, -6.5); ctx.lineTo(12.5, -8.5); ctx.lineTo(8, -0.5);
+            ctx.lineTo(13.5, 4); ctx.lineTo(4.5, 6); ctx.lineTo(1.2, 14.5); ctx.lineTo(-1.2, 14.5);
+            ctx.lineTo(-4.5, 6); ctx.lineTo(-13.5, 4); ctx.lineTo(-8, -0.5); ctx.lineTo(-12.5, -8.5);
+            ctx.lineTo(-3.8, -6.5); ctx.closePath(); ctx.fill(); ctx.stroke();
+            ctx.strokeStyle = '#F5EFE6'; ctx.lineWidth = 1.1;
+            ctx.beginPath(); ctx.moveTo(0, -10); ctx.lineTo(0, 12); ctx.moveTo(0, 0); ctx.lineTo(8, -4.5); ctx.moveTo(0, 0); ctx.lineTo(-8, -4.5); ctx.stroke();
+            break;
+        }
+        case 'na_thx_wheat': {
+            ctx.strokeStyle = '#9C6635'; ctx.lineWidth = 1.8;
+            ctx.beginPath(); ctx.moveTo(-6, 14); ctx.quadraticCurveTo(0, 0, 7, -13); ctx.stroke();
+            ctx.fillStyle = '#DFB67E'; ctx.strokeStyle = '#8C5A2B'; ctx.lineWidth = 1.0;
+            for (const [gx, gy, rot] of [[-2, 5, -0.5], [2, 5, 0.5], [0, -1, -0.5], [4, -1, 0.5], [2, -7, -0.5], [6, -7, 0.5], [6, -12, 0.1]]) {
+                ctx.save(); ctx.translate(gx, gy); ctx.rotate(rot);
+                ctx.beginPath(); ctx.ellipse(0, 0, 2.3, 4.3, 0, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+                ctx.restore();
+            }
+            break;
+        }
+        case 'na_thx_acorn': {
+            ctx.strokeStyle = '#5E3C28'; ctx.lineWidth = 2.0;
+            ctx.beginPath(); ctx.moveTo(0, -10); ctx.quadraticCurveTo(2, -14, 5, -15); ctx.stroke();
+            ctx.fillStyle = '#D29B65'; ctx.strokeStyle = '#7C4E28'; ctx.lineWidth = 1.2;
+            ctx.beginPath(); ctx.ellipse(0, 4, 8.5, 9.5, 0, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+            ctx.fillStyle = '#6B4732';
+            ctx.beginPath(); ctx.ellipse(0, -3.5, 10.2, 5.5, 0, Math.PI, Math.PI * 2); ctx.closePath(); ctx.fill(); ctx.stroke();
+            break;
+        }
+        case 'na_thx_heirloom_pumpkin': {
+            ctx.strokeStyle = '#7C8363'; ctx.lineWidth = 2.2;
+            ctx.beginPath(); ctx.moveTo(0, -8); ctx.quadraticCurveTo(2, -13, 5, -14); ctx.stroke();
+            ctx.fillStyle = '#C97B55'; ctx.strokeStyle = '#7A3B22'; ctx.lineWidth = 1.2;
+            ctx.beginPath(); ctx.ellipse(0, 2, 12.5, 9.5, 0, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+            ctx.fillStyle = '#D9916C';
+            ctx.beginPath(); ctx.ellipse(0, 2, 6.2, 9.6, 0, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+            break;
+        }
+        case 'na_thx_autumn_mug': {
+            ctx.strokeStyle = '#6B4F3E'; ctx.lineWidth = 2.2;
+            ctx.beginPath(); ctx.arc(8, 2, 4.8, -Math.PI * 0.5, Math.PI * 0.5); ctx.stroke();
+            ctx.fillStyle = '#F3ECE1'; ctx.strokeStyle = '#6B4F3E'; ctx.lineWidth = 1.4;
+            _roundRect(ctx, -9, -3, 17, 15, 3); ctx.fill(); ctx.stroke();
+            ctx.fillStyle = '#6B4732';
+            ctx.beginPath(); ctx.ellipse(-0.5, -3, 7.5, 2.2, 0, 0, Math.PI * 2); ctx.fill();
+            ctx.strokeStyle = '#C68B59'; ctx.lineWidth = 1.3;
+            ctx.beginPath(); ctx.moveTo(-3.5, -8); ctx.quadraticCurveTo(-5, -11.5, -2.5, -14); ctx.moveTo(2.5, -8); ctx.quadraticCurveTo(1, -11.5, 3.5, -14); ctx.stroke();
+            break;
+        }
+        case 'na_thx_olive_wreath': {
+            ctx.strokeStyle = '#687A62'; ctx.lineWidth = 1.8;
+            ctx.beginPath(); ctx.arc(0, 0, 11.5, -Math.PI * 0.35, Math.PI * 1.35); ctx.stroke();
+            ctx.fillStyle = '#8A9A86'; ctx.strokeStyle = '#4F5E4A'; ctx.lineWidth = 0.9;
+            for (const a of [-0.6, 0.1, 0.8, 1.5, 2.2, 2.9, 3.6]) {
+                ctx.save(); ctx.rotate(a); ctx.translate(11.5, 0);
+                ctx.beginPath(); ctx.ellipse(0, 0, 2.2, 4.0, 0.35, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+                ctx.restore();
+            }
             break;
         }
     }
@@ -10652,6 +10720,42 @@ const ReelsBrushEngine = {
             baseColor: '#EDE0C8',
             tornEdge: true,
         },
+        thx_oat_linen_letterpress: {
+            label: '🌾 感恩节极简燕麦亚麻棉纸卡 (Pinterest暖燕麦棉纸+细香槟金边框)',
+            tileStyle: 'ivory_letterpress',
+            baseColor: '#F6F1E7',
+            tornEdge: false,
+        },
+        thx_terracotta_botanical: {
+            label: '🍂 感恩节焦糖陶红亚麻卡 (暖赤陶外框+象牙棉纸内页+秋日高雅)',
+            tileStyle: null,
+            baseColor: '#9E472A',
+            tornEdge: false,
+        },
+        thx_sage_gratitude_frame: {
+            label: '🌿 感恩节鼠尾草绿静谧祷告笺 (莫兰迪灰绿框+极简燕麦卡心)',
+            tileStyle: null,
+            baseColor: '#7D8B74',
+            tornEdge: false,
+        },
+        thx_spiced_amber_hearth: {
+            label: '🕯️ 感恩节暖秋琥珀壁炉祈祷卡 (暖胡桃暮光渐变+麦金单线框)',
+            tileStyle: null,
+            baseColor: '#4A2C1D',
+            tornEdge: false,
+        },
+        thx_espresso_gold_minimal: {
+            label: '☕ 深萃可可极简烫金秋日卡 (醇厚可可棕底+纤细暖金双框)',
+            tileStyle: null,
+            baseColor: '#2B211B',
+            tornEdge: false,
+        },
+        thx_heirloom_kraft_twine: {
+            label: '📦 感恩节极简牛皮手撕信札 (温润天然牛皮纸+燕麦单线框)',
+            tileStyle: 'kraft_paper',
+            baseColor: '#CBB18D',
+            tornEdge: true,
+        },
     },
 
     _backingTileCache: {},
@@ -10910,6 +11014,12 @@ const ReelsBrushEngine = {
             xmas_advent_violet_gold: 'dark_film_matte',
             xmas_evergreen_crimson_plaid: 'xmas_pine_snow',
             xmas_silent_night_hymnal: 'newspaper_sepia',
+            thx_oat_linen_letterpress: 'torn_cream_paper',
+            thx_terracotta_botanical: 'torn_cream_paper',
+            thx_sage_gratitude_frame: 'torn_cream_paper',
+            thx_spiced_amber_hearth: 'kraft_sticker',
+            thx_espresso_gold_minimal: 'dark_film_matte',
+            thx_heirloom_kraft_twine: 'kraft_sticker',
             vet_stars_stripes_board: 'vet_stars_stripes_ribbon',
             vet_honor_medal_board: 'vet_honor_medal_banner',
             vet_dogtag_steel_board: 'vet_dogtag_steel',
@@ -11843,6 +11953,137 @@ const ReelsBrushEngine = {
                     ctx.lineWidth = 1.1;
                     _roundRect(ctx, rx + inset + 6, ry + inset + 6, rw - (inset + 6) * 2, rh - (inset + 6) * 2, Math.max(2, r - 10));
                     ctx.stroke();
+                } else if (styleId.startsWith('thx_')) {
+                    const thxModY = ((rawScrollY % 48) + 48) % 48;
+                    const drawThxPaperWeave = (dotColor, lineColor, padInset) => {
+                        const weaveStep = 48;
+                        ctx.save();
+                        ctx.beginPath();
+                        _roundRect(ctx, rx + padInset, ry + padInset, Math.max(10, rw - padInset * 2), Math.max(10, rh - padInset * 2), Math.max(4, r - 6));
+                        ctx.clip();
+                        ctx.translate(0, thxModY);
+                        if (lineColor) {
+                            ctx.strokeStyle = lineColor;
+                            ctx.lineWidth = 1;
+                            ctx.beginPath();
+                            for (let ly = ry - weaveStep; ly < ry + rh + weaveStep; ly += weaveStep) {
+                                ctx.moveTo(rx + padInset + 10, ly);
+                                ctx.lineTo(rx + rw - padInset - 10, ly);
+                            }
+                            ctx.stroke();
+                        }
+                        if (dotColor) {
+                            ctx.fillStyle = dotColor;
+                            const spanX = Math.max(24, rw - padInset * 2 - 24);
+                            for (let wy = ry - weaveStep; wy < ry + rh + weaveStep; wy += weaveStep) {
+                                for (let c = 0; c < 4; c++) {
+                                    const wx = rx + padInset + 12 + (((c * 173 + Math.round(wy) * 37) % spanX + spanX) % spanX);
+                                    ctx.beginPath();
+                                    ctx.arc(wx, wy + 16 + (c % 2) * 14, 1.15, 0, Math.PI * 2);
+                                    ctx.fill();
+                                }
+                            }
+                        }
+                        ctx.restore();
+                    };
+
+                    if (styleId === 'thx_oat_linen_letterpress') {
+                        drawThxPaperWeave('rgba(158, 71, 42, 0.08)', 'rgba(156, 128, 96, 0.11)', 22);
+                        const inset = 16;
+                        ctx.strokeStyle = '#C6A982';
+                        ctx.lineWidth = 1.6;
+                        _roundRect(ctx, rx + inset, ry + inset, rw - inset * 2, rh - inset * 2, Math.max(4, r - 6));
+                        ctx.stroke();
+                        ctx.fillStyle = '#9E472A';
+                        for (const [dx, dy] of [[rx + inset + 8, ry + inset + 8], [rx + rw - inset - 8, ry + inset + 8], [rx + inset + 8, ry + rh - inset - 8], [rx + rw - inset - 8, ry + rh - inset - 8]]) {
+                            ctx.beginPath(); ctx.arc(dx, dy, 2.2, 0, Math.PI * 2); ctx.fill();
+                        }
+                    } else if (styleId === 'thx_terracotta_botanical') {
+                        const tg = ctx.createLinearGradient(rx, ry, rx, ry + rh);
+                        tg.addColorStop(0, '#A85235');
+                        tg.addColorStop(1, '#843A22');
+                        ctx.fillStyle = tg;
+                        ctx.fillRect(rx, ry, rw, rh);
+
+                        const matPad = Math.max(16, Math.min(26, Math.min(rw, rh) * 0.042));
+                        ctx.fillStyle = '#FAF6F0';
+                        _roundRect(ctx, rx + matPad, ry + matPad, rw - matPad * 2, rh - matPad * 2, Math.max(6, r - 4));
+                        ctx.fill();
+                        drawThxPaperWeave('rgba(158, 71, 42, 0.10)', 'rgba(198, 139, 89, 0.08)', matPad + 6);
+                        ctx.strokeStyle = '#C68B59';
+                        ctx.lineWidth = 1.6;
+                        _roundRect(ctx, rx + matPad, ry + matPad, rw - matPad * 2, rh - matPad * 2, Math.max(6, r - 4));
+                        ctx.stroke();
+                    } else if (styleId === 'thx_sage_gratitude_frame') {
+                        const sg = ctx.createLinearGradient(rx, ry, rx, ry + rh);
+                        sg.addColorStop(0, '#8A9A86');
+                        sg.addColorStop(1, '#687763');
+                        ctx.fillStyle = sg;
+                        ctx.fillRect(rx, ry, rw, rh);
+
+                        const matPad = Math.max(16, Math.min(26, Math.min(rw, rh) * 0.042));
+                        ctx.fillStyle = '#FBF9F5';
+                        _roundRect(ctx, rx + matPad, ry + matPad, rw - matPad * 2, rh - matPad * 2, Math.max(6, r - 4));
+                        ctx.fill();
+                        drawThxPaperWeave('rgba(104, 119, 99, 0.11)', 'rgba(138, 154, 134, 0.08)', matPad + 6);
+                        ctx.strokeStyle = 'rgba(110, 125, 102, 0.55)';
+                        ctx.lineWidth = 1.4;
+                        _roundRect(ctx, rx + matPad + 4, ry + matPad + 4, rw - (matPad + 4) * 2, rh - (matPad + 4) * 2, Math.max(4, r - 6));
+                        ctx.stroke();
+                    } else if (styleId === 'thx_spiced_amber_hearth') {
+                        const hg = ctx.createRadialGradient(
+                            rx + rw * 0.5, ry + rh * 0.48, Math.min(rw, rh) * 0.08,
+                            rx + rw * 0.5, ry + rh * 0.5, Math.max(rw, rh) * 0.78
+                        );
+                        hg.addColorStop(0, '#6B3F26');
+                        hg.addColorStop(0.55, '#412517');
+                        hg.addColorStop(1, '#22120B');
+                        ctx.fillStyle = hg;
+                        ctx.fillRect(rx, ry, rw, rh);
+
+                        drawThxPaperWeave('rgba(223, 182, 126, 0.14)', null, 18);
+                        const inset = 15;
+                        ctx.strokeStyle = '#C68B59';
+                        ctx.lineWidth = 1.6;
+                        _roundRect(ctx, rx + inset, ry + inset, rw - inset * 2, rh - inset * 2, Math.max(4, r - 6));
+                        ctx.stroke();
+                    } else if (styleId === 'thx_espresso_gold_minimal') {
+                        const eg = ctx.createLinearGradient(rx, ry, rx, ry + rh);
+                        eg.addColorStop(0, '#362922');
+                        eg.addColorStop(1, '#241B16');
+                        ctx.fillStyle = eg;
+                        ctx.fillRect(rx, ry, rw, rh);
+
+                        drawThxPaperWeave('rgba(198, 156, 109, 0.11)', 'rgba(198, 156, 109, 0.05)', 22);
+                        const inset = 15;
+                        ctx.strokeStyle = '#C69C6D';
+                        ctx.lineWidth = 1.6;
+                        _roundRect(ctx, rx + inset, ry + inset, rw - inset * 2, rh - inset * 2, Math.max(4, r - 6));
+                        ctx.stroke();
+                        ctx.strokeStyle = 'rgba(198, 156, 109, 0.42)';
+                        ctx.lineWidth = 1;
+                        _roundRect(ctx, rx + inset + 6, ry + inset + 6, rw - (inset + 6) * 2, rh - (inset + 6) * 2, Math.max(2, r - 10));
+                        ctx.stroke();
+                    } else if (styleId === 'thx_heirloom_kraft_twine') {
+                        const kg = ctx.createRadialGradient(rx + rw * 0.5, ry + rh * 0.5, Math.min(rw, rh) * 0.15, rx + rw * 0.5, ry + rh * 0.5, Math.max(rw, rh) * 0.76);
+                        kg.addColorStop(0, 'rgba(255, 250, 240, 0.22)');
+                        kg.addColorStop(1, 'rgba(104, 72, 42, 0.28)');
+                        ctx.fillStyle = kg;
+                        ctx.fillRect(rx, ry, rw, rh);
+
+                        drawThxPaperWeave('rgba(104, 72, 42, 0.13)', 'rgba(245, 239, 230, 0.10)', 20);
+                        const inset = 14;
+                        ctx.strokeStyle = '#F5EFE6';
+                        ctx.lineWidth = 2.0;
+                        _roundRect(ctx, rx + inset, ry + inset, rw - inset * 2, rh - inset * 2, Math.max(4, r - 6));
+                        ctx.stroke();
+                        ctx.strokeStyle = 'rgba(158, 71, 42, 0.55)';
+                        ctx.lineWidth = 1.2;
+                        ctx.setLineDash([8, 6]);
+                        _roundRect(ctx, rx + inset + 5, ry + inset + 5, rw - (inset + 5) * 2, rh - (inset + 5) * 2, Math.max(3, r - 9));
+                        ctx.stroke();
+                        ctx.setLineDash([]);
+                    }
                 } else if (styleId === 'vet_stars_stripes_board') {
                     // 🇺🇸 US Stars & Stripes patriotic frame + deep navy interior + subtle red/white header bunting & gold rule
                     const bgGrad = ctx.createLinearGradient(rx, ry, rx, ry + rh);

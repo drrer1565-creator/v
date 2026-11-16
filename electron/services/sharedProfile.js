@@ -137,16 +137,24 @@ function getCandidateQueueLibraryDirs() {
     ]);
 }
 
-function getCandidateTemplateDirs() {
+function _getCandidateUserDataSubdirs(subdir) {
     const currentUserData = getAppUserDataDir();
     if (isIsolatedTestProfile(currentUserData)) {
-        return currentUserData ? [path.join(path.resolve(currentUserData), 'videokit-templates')] : [];
+        return currentUserData ? [path.join(path.resolve(currentUserData), subdir)] : [];
     }
     return uniqueNormalizedPaths([
-        path.join(getStandardInstalledUserDataDir(), 'videokit-templates'),
-        currentUserData ? path.join(currentUserData, 'videokit-templates') : '',
-        getPortableDataDir() ? path.join(getPortableDataDir(), 'videokit-templates') : '',
+        path.join(getStandardInstalledUserDataDir(), subdir),
+        currentUserData ? path.join(currentUserData, subdir) : '',
+        getPortableDataDir() ? path.join(getPortableDataDir(), subdir) : '',
     ]);
+}
+
+function getCandidateTemplateDirs() {
+    return _getCandidateUserDataSubdirs('videokit-templates');
+}
+
+function getCandidateLiveProjectDirs() {
+    return _getCandidateUserDataSubdirs('videokit-live-projects');
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -612,8 +620,8 @@ function resolveSharedProfileFilePath(inputPath) {
         }
 
         // Also match by `videokit-presets/<subpath>`, `videokit-templates/<subpath>`,
-        // `projects/<subpath>`, or `queue-library/<subpath>` even if moved.
-        for (const marker of ['videokit-presets', 'videokit-templates', 'projects', 'queue-library']) {
+        // `videokit-live-projects/<subpath>`, `projects/<subpath>`, or `queue-library/<subpath>` even if moved.
+        for (const marker of ['videokit-presets', 'videokit-templates', 'videokit-live-projects', 'projects', 'queue-library']) {
             const regex = new RegExp(`(?:^|[\\\\/])${marker}[\\\\/](.+)$`, 'i');
             const match = resolved.match(regex);
             if (match && match[1]) {
@@ -639,6 +647,7 @@ module.exports = {
     getCandidateProjectDirs,
     getCandidateQueueLibraryDirs,
     getCandidateTemplateDirs,
+    getCandidateLiveProjectDirs,
     readChromiumLocalStorage,
     countWorkspaceTasks,
     readUnifiedBatchWorkspace,

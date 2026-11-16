@@ -1205,7 +1205,8 @@ function _initReelsModule() {
                     // 预览，时间线仍沿用切换前的轨道顺序，看起来像开关失效。
                     _updateTimelineForTask(task);
                     reelsUpdatePreview();
-                    if (typeof window.reelsSaveHistory === 'function') window.reelsSaveHistory();
+                    if (typeof _scheduleReelsHistorySave === 'function') _scheduleReelsHistorySave(280);
+                    else if (typeof window.reelsSaveHistory === 'function') window.reelsSaveHistory();
                 },
                 onOverlayChange(ov, options = {}) {
                     if (options && options.skipTimelineSync) {
@@ -1237,11 +1238,7 @@ function _initReelsModule() {
                     }
                     reelsUpdatePreview();
                     if (window.ReelsPreviewV2?.isOpen?.()) {
-                        if (typeof window.ReelsPreviewV2.requestRender === 'function') {
-                            window.ReelsPreviewV2.requestRender();
-                        } else if (typeof window.ReelsPreviewV2.render === 'function') {
-                            window.ReelsPreviewV2.render();
-                        }
+                        _requestReelsPreviewV2Render();
                     }
                 },
                 // 回调占位
@@ -4758,13 +4755,22 @@ function _isReelsDecorToggleEnabled() {
 }
 window._isReelsDecorToggleEnabled = _isReelsDecorToggleEnabled;
 
+function _requestReelsPreviewV2Render() {
+    if (!window.ReelsPreviewV2) return;
+    if (typeof window.ReelsPreviewV2.requestRender === 'function') {
+        window.ReelsPreviewV2.requestRender();
+    } else if (typeof window.ReelsPreviewV2.render === 'function') {
+        window.ReelsPreviewV2.render();
+    }
+}
+
 function reelsOnSubtitleToggleChange(checkbox) {
     const v2Toggle = document.querySelector('#reels-preview-v2-root [data-role="subs"]');
     if (v2Toggle && checkbox && v2Toggle !== checkbox) {
         v2Toggle.checked = checkbox.checked;
     }
     reelsUpdatePreview();
-    if (typeof window.ReelsPreviewV2?.render === 'function') window.ReelsPreviewV2.render();
+    _requestReelsPreviewV2Render();
     if (checkbox && !checkbox.checked) {
         const message = '已关闭字幕：预览不显示字幕，导出的视频也不会带字幕。';
         if (typeof showToast === 'function') showToast(message, 'warning');
@@ -4783,7 +4789,7 @@ function reelsOnOverlayToggleChange(checkbox) {
         v2Toggle.checked = checkbox.checked;
     }
     reelsUpdatePreview();
-    if (typeof window.ReelsPreviewV2?.render === 'function') window.ReelsPreviewV2.render();
+    _requestReelsPreviewV2Render();
     if (checkbox && !checkbox.checked) {
         const message = '已关闭覆层：预览不显示普通覆层，导出的视频也不会带普通覆层（不影响点缀与颗粒层）。';
         if (typeof showToast === 'function') showToast(message, 'warning');
@@ -4809,7 +4815,7 @@ function reelsOnDecorToggleChange(checkbox) {
         if (rdpMaster && rdpMaster !== checkbox) rdpMaster.checked = checked;
     }
     reelsUpdatePreview();
-    if (typeof window.ReelsPreviewV2?.render === 'function') window.ReelsPreviewV2.render();
+    _requestReelsPreviewV2Render();
     if (checkbox && !checked) {
         const message = '已关闭点缀与颗粒：预览不显示点缀层，导出的视频也不会带点缀层。';
         if (typeof showToast === 'function') showToast(message, 'warning');
@@ -10440,12 +10446,12 @@ function reelsUpdateActiveFolderBar() {
         bar.innerHTML = '';
         return;
     }
-    const label = status.folderPath || '主工程库';
+    const label = status.folderPath || '主工程区';
     const scopeHint = `${status.openTabCount || 0} 个标签`;
     bar.style.display = 'flex';
     bar.innerHTML = `
-        <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;" title="当前工作区仅显示该文件夹标签：${_escapeReelsTaskText(label)}">📂 <b>${_escapeReelsTaskText(label)}</b> · ${scopeHint}</span>
-        <button type="button" class="btn" style="padding:1px 6px;font-size:10px;background:rgba(99,102,241,0.28);color:#e0e7ff;border:1px solid rgba(165,180,252,0.4);border-radius:4px;cursor:pointer;flex-shrink:0;" onclick="openTemplateLibrary()" title="在工程管理库查看缩略图与多级文件夹">🗂️ 管理</button>
+        <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;" title="当前实时工程文件夹：${_escapeReelsTaskText(label)}">🗂️ <b>${_escapeReelsTaskText(label)}</b> · ${scopeHint} <span style="color:#6ee7b7;font-size:10px;">· 🟢实时保存</span></span>
+        <button type="button" class="btn" style="padding:1px 6px;font-size:10px;background:rgba(16,185,129,0.24);color:#d1fae5;border:1px solid rgba(52,211,153,0.45);border-radius:4px;cursor:pointer;flex-shrink:0;" onclick="typeof window.openProjectLibrary==='function'?window.openProjectLibrary():openTemplateLibrary()" title="在实时工程项目中查看缩略图、新建文件夹与空白标签">🗂️ 工程项目</button>
     `;
 }
 window.reelsUpdateActiveFolderBar = reelsUpdateActiveFolderBar;
@@ -10632,9 +10638,7 @@ async function _preFetchTaskMediaDurations(task) {
 
 function reelsSelectTask(idx, options = {}) {
     // ── 保存当前任务的覆层 ──
-    if (_reelsState.overlayPanel && typeof _reelsState.overlayPanel._flushPendingScopeSync === 'function') {
-        _reelsState.overlayPanel._flushPendingScopeSync();
-    }
+    _flushAllPendingReelsEdits();
     const prevTask = _reelsState.tasks[_reelsState.selectedIdx];
     if (prevTask && _reelsState.overlayProxy && _reelsState.overlayProxy.overlayMgr) {
         if (_reelsState._coverEditMode && prevTask.cover) {
@@ -14589,6 +14593,9 @@ async function reelsStartExport(options = {}) {
 }
 
 async function _reelsStartExportImpl(options = {}) {
+    if (typeof _flushAllPendingReelsEdits === 'function') {
+        _flushAllPendingReelsEdits();
+    }
     // Freeze the task-list numbering before selection, validation or matrix
     // expansion; the selected-job index is not the row the user sees.
     const taskListRows = new Map();
@@ -16844,6 +16851,7 @@ function reelsSaveProject(event) {
         return;
     }
     if (!window.ReelsProject) { alert('项目管理模块未加载'); return; }
+    _flushAllPendingReelsEdits();
     _syncCurrentOverlayEditorToSelectedTask();
     const style = _readStyleFromUI();
     _persistSubtitleStyleByScope(style);
@@ -17119,25 +17127,57 @@ document.addEventListener('keydown',event=>{
     event.preventDefault();event.stopImmediatePropagation();
     if(key==='y'||event.shiftKey)window.reelsRedo();else window.reelsUndo();
 },true);
-let _reelsHistoryRangeGesture=false,_reelsHistoryPending=null;
-function _flushReelsHistory(){if(_reelsHistoryPending!==null){clearTimeout(_reelsHistoryPending);_reelsHistoryPending=null;window.reelsSaveHistory();}}
+let _reelsHistoryRangeGesture=false,_reelsHistoryPending=null,_reelsHistoryIdleId=null,_reelsHistoryDirty=false;
+let _reelsStyleScopePersistTimer=null,_reelsPendingSubtitleStyle=null,_reelsLastStyleDirtyEl=null,_reelsLastStyleDirtySig=null,_reelsStyleDirtyResetTimer=null;
+function _flushPendingSubtitleScopePersist(){
+    if(_reelsStyleScopePersistTimer!==null){clearTimeout(_reelsStyleScopePersistTimer);_reelsStyleScopePersistTimer=null;}
+    if(_reelsPendingSubtitleStyle){const pending=_reelsPendingSubtitleStyle;_reelsPendingSubtitleStyle=null;_persistSubtitleStyleByScope(pending);}
+}
+function _scheduleSubtitleScopePersist(style){
+    _reelsPendingSubtitleStyle=_cloneSubtitleStyle(style);
+    if(_reelsStyleScopePersistTimer!==null)clearTimeout(_reelsStyleScopePersistTimer);
+    _reelsStyleScopePersistTimer=setTimeout(()=>{_reelsStyleScopePersistTimer=null;if(_reelsPendingSubtitleStyle){const pending=_reelsPendingSubtitleStyle;_reelsPendingSubtitleStyle=null;_persistSubtitleStyleByScope(pending);}},180);
+}
+function _flushAllPendingReelsEdits(){
+    _flushPendingSubtitleScopePersist();
+    if(_reelsState.overlayPanel&&typeof _reelsState.overlayPanel._flushPendingScopeSync==='function'){_reelsState.overlayPanel._flushPendingScopeSync();}
+    if(_reelsState.decorPanel&&typeof _reelsState.decorPanel._flushPendingDecorSync==='function'){_reelsState.decorPanel._flushPendingDecorSync();}
+    _flushReelsHistory();
+}
+window._flushAllPendingReelsEdits=_flushAllPendingReelsEdits;
+function _scheduleReelsHistorySave(delayMs=280){
+    _reelsHistoryDirty=true;
+    clearTimeout(_reelsHistoryPending);
+    if(_reelsHistoryIdleId!==null&&typeof cancelIdleCallback==='function'){cancelIdleCallback(_reelsHistoryIdleId);_reelsHistoryIdleId=null;}
+    _reelsHistoryPending=setTimeout(()=>{
+        _reelsHistoryPending=null;
+        const commit=()=>{_reelsHistoryIdleId=null;_reelsHistoryDirty=false;if(!_isRestoringHistory)window.reelsSaveHistory?.();};
+        if(typeof requestIdleCallback==='function'){_reelsHistoryIdleId=requestIdleCallback(commit,{timeout:220});}else{commit();}
+    },delayMs);
+}
+window._scheduleReelsHistorySave=_scheduleReelsHistorySave;
+function _flushReelsHistory(){
+    if(_reelsHistoryPending!==null){clearTimeout(_reelsHistoryPending);_reelsHistoryPending=null;}
+    if(_reelsHistoryIdleId!==null&&typeof cancelIdleCallback==='function'){cancelIdleCallback(_reelsHistoryIdleId);_reelsHistoryIdleId=null;}
+    if(_reelsHistoryDirty){_reelsHistoryDirty=false;window.reelsSaveHistory?.();}
+}
+window._flushReelsHistory=_flushReelsHistory;
 for(const name of ['pointerdown','beforeinput'])document.addEventListener(name,event=>{
     if(!_reelsHistoryEventInEditor(event)||_isRestoringHistory)return;
     if(name==='pointerdown'&&!event.target?.closest?.('input,textarea,select,button,canvas,[onclick],[contenteditable]'))return;
-    const isHeavyTaskList = (_reelsState?.tasks?.length || 0) > 60;
-    const needsImmediatePreSnapshot = name !== 'pointerdown' || !isHeavyTaskList || Boolean(event.target?.closest?.('canvas,input[type="range"]'));
-    if(_reelsHistoryPending===null && needsImmediatePreSnapshot)window.reelsSaveHistory();
+    // Skip blocking pointerdown on full project cloning once a baseline snapshot already exists.
+    if(_reelsHistoryPending===null&&!_reelsHistoryDirty&&_reelsHistoryStack.length===0)window.reelsSaveHistory();
     if(name==='pointerdown'&&event.target?.type==='range')_reelsHistoryRangeGesture=true;
 },true);
-for(const name of ['input','change','click','pointerup'])document.addEventListener(name,event=>{
+for(const name of ['input','change','click','pointerup','pointercancel'])document.addEventListener(name,event=>{
+    if(name==='pointercancel'){_reelsHistoryRangeGesture=false;return;}
     if(!_reelsHistoryEventInEditor(event)||_isRestoringHistory)return;
     if(name==='pointerup')_reelsHistoryRangeGesture=false;
     if(_reelsHistoryRangeGesture)return;
     if(name==='click'&&!event.target?.closest?.('input,select,button,[onclick]'))return;
-    clearTimeout(_reelsHistoryPending);
-    _reelsHistoryPending=setTimeout(()=>{_reelsHistoryPending=null;if(!_isRestoringHistory)window.reelsSaveHistory();},name==='input'?350:0);
+    _scheduleReelsHistorySave(name==='input'?400:280);
 });
-setTimeout(()=>window.reelsSaveHistory?.(),2000);
+setTimeout(()=>{if(_reelsHistoryStack.length===0)window.reelsSaveHistory?.();},2000);
 
 // ═══════════════════════════════════════════════════════
 // Font Upload
@@ -17241,6 +17281,16 @@ function reelsMarkStyleDirty(e) {
         el.id === 'reels-subtitle-toggle' || el.id === 'reels-overlay-toggle' ||
         el.id === 'reels-decor-toggle' || el.id === 'reels-show-subtitle-range') return;
 
+    const isDiscrete = el.type === 'checkbox' || el.type === 'radio' || el.tagName === 'SELECT';
+    if (isDiscrete) {
+        const sig = (el.type === 'checkbox' || el.type === 'radio') ? String(el.checked) : String(el.value ?? '');
+        if (e?.type === 'change' && _reelsLastStyleDirtyEl === el && _reelsLastStyleDirtySig === sig) return;
+        _reelsLastStyleDirtyEl = el;
+        _reelsLastStyleDirtySig = sig;
+        if (_reelsStyleDirtyResetTimer !== null) clearTimeout(_reelsStyleDirtyResetTimer);
+        _reelsStyleDirtyResetTimer = setTimeout(() => { _reelsStyleDirtyResetTimer = null; _reelsLastStyleDirtyEl = null; _reelsLastStyleDirtySig = null; }, 0);
+    }
+
     // User actively modified a style parameter, breaking the preset link
     const applyAll = typeof _isStyleApplyAllEnabled === 'function' ? _isStyleApplyAllEnabled() : true;
     let modified = false;
@@ -17281,10 +17331,24 @@ function reelsMarkStyleDirty(e) {
     }
 
     // 只有用户真实改动某个样式控件时才写入当前作用域；预览/任务切换不写。
-    // input/change 在控件值更新后触发，这里读取到的是最终值。
-    _persistSubtitleStyleByScope(_readStyleFromUI());
+    // 连续滑块 input 拖动时仅先更新当前任务与全局基线，防抖同步同组其余任务，松手/change 再立即落盘。
+    const currentStyle = _readStyleFromUI();
+    const activeScope = typeof _getSubtitleStyleScope === 'function' ? _getSubtitleStyleScope() : 'task';
+    if (e?.type === 'input' && activeScope !== 'task' && (_reelsState?.tasks?.length || 0) > 1) {
+        const selectedTask = _getSelectedTask();
+        if (selectedTask) selectedTask.subtitleStyle = _cloneSubtitleStyle(currentStyle);
+        if (activeScope === 'all') _reelsState.globalSubtitleStyle = _cloneSubtitleStyle(currentStyle);
+        _scheduleSubtitleScopePersist(currentStyle);
+    } else {
+        _reelsPendingSubtitleStyle = null;
+        if (_reelsStyleScopePersistTimer !== null) { clearTimeout(_reelsStyleScopePersistTimer); _reelsStyleScopePersistTimer = null; }
+        _persistSubtitleStyleByScope(currentStyle);
+    }
     if (window.ReelsPreviewV2?.isOpen?.()) {
-        window.ReelsPreviewV2.render?.();
+        _requestReelsPreviewV2Render();
+    }
+    if (e?.type !== 'input' && typeof window.reelsMarkLiveProjectTabDirty === 'function') {
+        window.reelsMarkLiveProjectTabDirty(activeScope === 'all' ? 'all' : 'active');
     }
 }
 

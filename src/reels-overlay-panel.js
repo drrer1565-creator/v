@@ -11,6 +11,31 @@
  *   - 变换: X/Y/宽/高/旋转/不透明度
  */
 
+function _isDiscreteOverlayControl(el) {
+    return Boolean(el && (el.type === 'checkbox' || el.type === 'radio' || el.tagName === 'SELECT'));
+}
+
+/** Avoid running duplicate input + change handlers on discrete controls in the same click turn. */
+function _bindDiscreteAwareSync(el, handler) {
+    if (!el || typeof el.addEventListener !== 'function') return;
+    let lastDiscreteSig = null;
+    let resetTimer = null;
+    const invoke = (e) => {
+        if (_isDiscreteOverlayControl(el)) {
+            const sig = (el.type === 'checkbox' || el.type === 'radio') ? String(el.checked) : String(el.value ?? '');
+            if (e?.type === 'change' && sig === lastDiscreteSig) return;
+            lastDiscreteSig = sig;
+            if (resetTimer && typeof clearTimeout === 'function') clearTimeout(resetTimer);
+            if (typeof setTimeout === 'function') {
+                resetTimer = setTimeout(() => { resetTimer = null; lastDiscreteSig = null; }, 0);
+            }
+        }
+        handler(e);
+    };
+    el.addEventListener('input', invoke);
+    el.addEventListener('change', invoke);
+}
+
 /** 四舍五入到1位小数，避免浮点精度问题 (如 19.700000000000003) */
 function _ropRound(v) {
     return Math.round((parseFloat(v) || 0) * 10) / 10;
@@ -1527,13 +1552,19 @@ class ReelsOverlayPanel {
                                         <option value="bald_eagle_crest">🦅 美国白头海雕金章</option>
                                         <option value="veteran_poppy">🌺 阵亡将士纪念红罂粟花</option>
                                         <option value="military_dog_tag">🏷️ 美军银色纪念狗牌</option>
+                                        <option value="maple_leaf">🍁 极简赤陶秋枫叶 (Pinterest)</option>
+                                        <option value="wheat_stalk">🌾 感恩金麦穗</option>
+                                        <option value="acorn">🌰 森系简约橡果</option>
+                                        <option value="minimal_pumpkin">🎃 奶油赤陶线条南瓜</option>
+                                        <option value="warm_mug">☕ 暖秋手冲热饮杯</option>
+                                        <option value="olive_branch">🌿 静谧感恩橄榄枝</option>
                                         <option value="image">🖼 自定义图片 (PNG/WebP/GIF)</option>
                                         <option value="char">| 文本光标</option>
                                     </select>
 
                                     <details class="rop-scroll-subacc" id="rop-scroll-acc-tw-icons">
                                         <summary>
-                                            <span>✒️ 内置笔尖小图标库 (27款 · 含自定义传图)</span>
+                                            <span>✒️ 内置笔尖小图标库 (33款 · 含自定义传图)</span>
                                             <span class="rop-acc-badge">点击展开</span>
                                         </summary>
                                         <div class="rop-scroll-subacc-body">
@@ -1565,6 +1596,12 @@ class ReelsOverlayPanel {
                                                 <button type="button" class="rop-scroll-tw-icon-chip" data-kind="bald_eagle_crest" data-angle="0" style="display:flex;align-items:center;gap:4px;padding:3px 5px;font-size:10px;border-radius:4px;border:1px solid rgba(255,255,255,0.12);background:rgba(255,255,255,0.04);color:#eee;cursor:pointer;"><canvas class="rop-tw-icon-canvas" data-kind="bald_eagle_crest" width="20" height="20" style="width:18px;height:18px;flex-shrink:0;"></canvas><span>白头鹰</span></button>
                                                 <button type="button" class="rop-scroll-tw-icon-chip" data-kind="veteran_poppy" data-angle="-6" style="display:flex;align-items:center;gap:4px;padding:3px 5px;font-size:10px;border-radius:4px;border:1px solid rgba(255,255,255,0.12);background:rgba(255,255,255,0.04);color:#eee;cursor:pointer;"><canvas class="rop-tw-icon-canvas" data-kind="veteran_poppy" width="20" height="20" style="width:18px;height:18px;flex-shrink:0;"></canvas><span>虞美人</span></button>
                                                 <button type="button" class="rop-scroll-tw-icon-chip" data-kind="military_dog_tag" data-angle="-6" style="display:flex;align-items:center;gap:4px;padding:3px 5px;font-size:10px;border-radius:4px;border:1px solid rgba(255,255,255,0.12);background:rgba(255,255,255,0.04);color:#eee;cursor:pointer;"><canvas class="rop-tw-icon-canvas" data-kind="military_dog_tag" width="20" height="20" style="width:18px;height:18px;flex-shrink:0;"></canvas><span>军狗牌</span></button>
+                                                <button type="button" class="rop-scroll-tw-icon-chip" data-kind="maple_leaf" data-angle="-6" style="display:flex;align-items:center;gap:4px;padding:3px 5px;font-size:10px;border-radius:4px;border:1px solid rgba(255,255,255,0.12);background:rgba(255,255,255,0.04);color:#eee;cursor:pointer;"><canvas class="rop-tw-icon-canvas" data-kind="maple_leaf" width="20" height="20" style="width:18px;height:18px;flex-shrink:0;"></canvas><span>极简枫叶</span></button>
+                                                <button type="button" class="rop-scroll-tw-icon-chip" data-kind="wheat_stalk" data-angle="0" style="display:flex;align-items:center;gap:4px;padding:3px 5px;font-size:10px;border-radius:4px;border:1px solid rgba(255,255,255,0.12);background:rgba(255,255,255,0.04);color:#eee;cursor:pointer;"><canvas class="rop-tw-icon-canvas" data-kind="wheat_stalk" width="20" height="20" style="width:18px;height:18px;flex-shrink:0;"></canvas><span>感恩麦穗</span></button>
+                                                <button type="button" class="rop-scroll-tw-icon-chip" data-kind="acorn" data-angle="-4" style="display:flex;align-items:center;gap:4px;padding:3px 5px;font-size:10px;border-radius:4px;border:1px solid rgba(255,255,255,0.12);background:rgba(255,255,255,0.04);color:#eee;cursor:pointer;"><canvas class="rop-tw-icon-canvas" data-kind="acorn" width="20" height="20" style="width:18px;height:18px;flex-shrink:0;"></canvas><span>森系橡果</span></button>
+                                                <button type="button" class="rop-scroll-tw-icon-chip" data-kind="minimal_pumpkin" data-angle="0" style="display:flex;align-items:center;gap:4px;padding:3px 5px;font-size:10px;border-radius:4px;border:1px solid rgba(255,255,255,0.12);background:rgba(255,255,255,0.04);color:#eee;cursor:pointer;"><canvas class="rop-tw-icon-canvas" data-kind="minimal_pumpkin" width="20" height="20" style="width:18px;height:18px;flex-shrink:0;"></canvas><span>线条南瓜</span></button>
+                                                <button type="button" class="rop-scroll-tw-icon-chip" data-kind="warm_mug" data-angle="0" style="display:flex;align-items:center;gap:4px;padding:3px 5px;font-size:10px;border-radius:4px;border:1px solid rgba(255,255,255,0.12);background:rgba(255,255,255,0.04);color:#eee;cursor:pointer;"><canvas class="rop-tw-icon-canvas" data-kind="warm_mug" width="20" height="20" style="width:18px;height:18px;flex-shrink:0;"></canvas><span>暖秋热饮</span></button>
+                                                <button type="button" class="rop-scroll-tw-icon-chip" data-kind="olive_branch" data-angle="0" style="display:flex;align-items:center;gap:4px;padding:3px 5px;font-size:10px;border-radius:4px;border:1px solid rgba(255,255,255,0.12);background:rgba(255,255,255,0.04);color:#eee;cursor:pointer;"><canvas class="rop-tw-icon-canvas" data-kind="olive_branch" width="20" height="20" style="width:18px;height:18px;flex-shrink:0;"></canvas><span>橄榄枝</span></button>
                                             </div>
                                         </div>
                                     </details>
@@ -1820,6 +1857,14 @@ class ReelsOverlayPanel {
                                         <option value="old_photo_polaroid_frame">🖼️ 拍立得复古白边老照片框 (宽白边留白+深暖棕胶片底)</option>
                                         <option value="old_photo_film_strip">🎞️ 35mm 怀旧老照片胶卷齿孔框 (滚动胶卷齿孔+银盐底)</option>
                                         <option value="old_photo_archive_matte">🕰️ 馆藏老照片装裱灰黑卡框 (深炭卡纸垫板+黄铜角贴)</option>
+                                    </optgroup>
+                                    <optgroup label="🍂 感恩节 · Pinterest 极简秋日生活与祈祷画板">
+                                        <option value="thx_oat_linen_letterpress">🌾 感恩节极简燕麦亚麻棉纸卡 (暖燕麦棉纸+细香槟金边框)</option>
+                                        <option value="thx_terracotta_botanical">🍂 感恩节焦糖陶红亚麻卡 (暖赤陶外框+象牙棉纸内页)</option>
+                                        <option value="thx_sage_gratitude_frame">🌿 感恩节鼠尾草绿静谧祷告笺 (莫兰迪灰绿框+燕麦卡心)</option>
+                                        <option value="thx_spiced_amber_hearth">🕯️ 感恩节暖秋琥珀壁炉祈祷卡 (暖胡桃暮光渐变+麦金单框)</option>
+                                        <option value="thx_espresso_gold_minimal">☕ 深萃可可极简烫金秋日卡 (醇厚可可棕底+纤细暖金双框)</option>
+                                        <option value="thx_heirloom_kraft_twine">📦 感恩节极简牛皮手撕信札 (温润牛皮纸+燕麦单线框)</option>
                                     </optgroup>
                                 </select>
                                 <label>颜色</label><input type="color" id="rop-scroll-bg-color" class="rop-color" value="#000000">
@@ -3088,10 +3133,10 @@ class ReelsOverlayPanel {
                 }
                 if ((fid === 'rop-scroll-end-time' || fid === 'rop-end') && this._selectedOv?.type === 'scroll') this._selectedOv.scroll_end_auto = false;
                 const structuralChange = fid === 'rop-name' || fid === 'rop-disabled';
-                this._syncToOverlay({ commit: e?.type !== 'input', structuralChange });
+                const commit = _isDiscreteOverlayControl(el) ? true : (e?.type !== 'input');
+                this._syncToOverlay({ commit, structuralChange });
             };
-            el.addEventListener('input', syncField);
-            el.addEventListener('change', syncField);
+            _bindDiscreteAwareSync(el, syncField);
         }
 
         // Reset is a single-task undoable operation, regardless of shared style scope.
@@ -3113,7 +3158,8 @@ class ReelsOverlayPanel {
             this._val('rop-end', label);
             this._val('rop-scroll-end-time', label);
             this.videoCanvas?.onOverlayChange?.(ov);
-            if (typeof window.reelsSaveHistory === 'function') window.reelsSaveHistory();
+            if (typeof window._scheduleReelsHistorySave === 'function') window._scheduleReelsHistorySave(280);
+            else if (typeof window.reelsSaveHistory === 'function') window.reelsSaveHistory();
             this._requestRender();
         });
 
@@ -3404,6 +3450,10 @@ class ReelsOverlayPanel {
                     xmas_evergreen_crimson_plaid: { body: '#1B2E22', stroke: '#FFFDF7', sw: 1.4, title: '#991B1B', ts: '#FFFDF7' },
                     xmas_silent_night_hymnal: { body: '#2E1B12', stroke: '#EDE0C8', sw: 1.4, title: '#7F1D1D', ts: '#EDE0C8' },
                     vet_poppy_memorial_board: { body: '#1C1917', stroke: '#FAF6EE', sw: 1.5, title: '#991B1B', ts: '#FAF6EE' },
+                    thx_oat_linen_letterpress: { body: '#2C221E', stroke: '#F6F1E7', sw: 1.2, title: '#9E472A', ts: '#F6F1E7' },
+                    thx_terracotta_botanical: { body: '#2B1D17', stroke: '#FAF6F0', sw: 1.2, title: '#9E472A', ts: '#FAF6F0' },
+                    thx_sage_gratitude_frame: { body: '#233025', stroke: '#FBF9F5', sw: 1.2, title: '#4F614A', ts: '#FBF9F5' },
+                    thx_heirloom_kraft_twine: { body: '#291D15', stroke: '#EDE0C8', sw: 1.4, title: '#843A22', ts: '#EDE0C8' },
                 };
                 const darkBoards = {
                     kraft_clipboard: { body: '#FFFDF9', stroke: '#3E2723', sw: 2.5, title: '#FFE082', ts: '#3E2723' },
@@ -3420,6 +3470,8 @@ class ReelsOverlayPanel {
                     vet_stars_stripes_board: { body: '#FFFDF9', stroke: '#0A1931', sw: 2.2, title: '#FBBF24', ts: '#0A1931' },
                     vet_honor_medal_board: { body: '#FFF8EB', stroke: '#09152B', sw: 2.2, title: '#FDE047', ts: '#09152B' },
                     vet_dogtag_steel_board: { body: '#F8FAFC', stroke: '#0F172A', sw: 2.4, title: '#E2E8F0', ts: '#0F172A' },
+                    thx_spiced_amber_hearth: { body: '#FAF4EA', stroke: '#22120B', sw: 1.8, title: '#E5C28E', ts: '#22120B' },
+                    thx_espresso_gold_minimal: { body: '#F8F3EA', stroke: '#1B130F', sw: 1.8, title: '#DFB67E', ts: '#1B130F' },
                 };
                 const palette = lightBoards[preset] || darkBoards[preset];
                 if (palette) {
@@ -7709,7 +7761,10 @@ class ReelsOverlayPanel {
                 this._overlayChangeRaf = null;
             }
             this._pendingOverlayChangeFlush = null;
-            this._syncOverlayStyleToScopeTasks(ov, { immediate: true, structuralChange });
+            const runCommitSync = () => {
+                this._syncOverlayStyleToScopeTasks(ov, { immediate: true, structuralChange });
+                invokeOnOverlayChange(true);
+            };
             if (typeof requestAnimationFrame === 'function') {
                 this._pendingOverlayChangeFlush = () => {
                     if (this._overlayChangeRaf && typeof cancelAnimationFrame === 'function') {
@@ -7717,15 +7772,15 @@ class ReelsOverlayPanel {
                         this._overlayChangeRaf = null;
                     }
                     this._pendingOverlayChangeFlush = null;
-                    invokeOnOverlayChange(true);
+                    runCommitSync();
                 };
                 this._overlayChangeRaf = requestAnimationFrame(() => {
                     this._overlayChangeRaf = null;
                     this._pendingOverlayChangeFlush = null;
-                    invokeOnOverlayChange(true);
+                    runCommitSync();
                 });
             } else {
-                invokeOnOverlayChange(true);
+                runCommitSync();
             }
         } else if (typeof setTimeout === 'function' && typeof clearTimeout === 'function') {
             if (this._scopeSyncTimer) clearTimeout(this._scopeSyncTimer);
@@ -7935,7 +7990,12 @@ class ReelsOverlayPanel {
             }
             if (task._batchTabId && typeof _batchTableState !== 'undefined' && Array.isArray(_batchTableState?.tabs)) {
                 const tab = _batchTableState.tabs.find(t => t && t.id === task._batchTabId);
-                if (tab) tab._dirty = true;
+                if (tab) {
+                    tab._dirty = true;
+                    if (!tab._fromSealedTemplate && (tab.libraryTemplateId || tab._isLiveProject || (tab.tasks && tab.tasks.length))) {
+                        tab._libraryDirty = true;
+                    }
+                }
             }
         }
         const persistSyncedTasks = (doTaskListRender) => {
@@ -8582,11 +8642,12 @@ class ReelsOverlayPanel {
             if (/vintage|newspaper|parchment|herbarium|hymnal|letterpress|复古|古书|报刊|手稿|圣诗/.test(hay)) { flags.add('vintage'); tags.push('复古纸张'); }
             if (/old_photo|老照片|拍立得|胶卷/.test(hay)) { flags.add('oldphoto'); tags.push('老照片'); }
             if (/prayer_bookmark|祈祷|羽化|书签/.test(hay)) { flags.add('prayer'); tags.push('祈祷羽化'); }
-            if (/xmas|christmas|advent|nativity|bethlehem|圣诞|将临期|伯利恒/.test(hay)) { flags.add('christmas'); tags.push('圣诞贺卡'); }
+            if (/(?:xmas|christmas|advent|nativity|bethlehem|圣诞|将临期|伯利恒)/.test(hay) && !(num >= 199 && num <= 214)) { flags.add('christmas'); tags.push('圣诞贺卡'); }
+            if (/thx|thanksgiving|感恩节|燕麦|赤陶|鼠尾草|麦穗|橡果/.test(hay) || (num >= 199 && num <= 214)) { flags.add('thanksgiving'); tags.push('感恩简约'); }
             if (/cross|us_|flag|eagle|praying|dove|vet_|十字|白头鹰|星条旗|美国|白鸽|祈祷手/.test(hay)) { flags.add('americana'); }
-            if (/flower|clover|butterfly|sunflower|morning_glory|tulip|stars_moon|rose|lily|daisy|carnation|daffodil|hydrangea|peony|violet|花|草|蝶|向日葵|月/.test(hay)) { flags.add('floral'); }
+            if (/flower|clover|butterfly|sunflower|morning_glory|tulip|stars_moon|rose|lily|daisy|carnation|daffodil|hydrangea|peony|violet|maple|wheat|olive|花|草|蝶|向日葵|月|枫|麦|橄榄/.test(hay)) { flags.add('floral'); }
             if (/dog|cat|cardinal|robin|sparrow|squirrel|rabbit|dinosaur|reindeer|红雀|知更鸟|鸟|狗|猫|松鼠|兔|恐龙|驯鹿/.test(hay)) { flags.add('animal'); }
-            if (/burger|pizza|coffee|ice_cream|donut|chips|xmas|christmas|heart|season|fireworks|easter|woman|car|bicycle|airplane|train|sailboat|bus|guitar|vinyl|music|mic|speaker|book|football|home|camera|palette|pumpkin|lighthouse|汉堡|披萨|咖啡|冰淇淋|甜甜圈|薯片|圣诞|烟花|彩蛋|独立女性|汽车|自行车|飞机|火车|帆船|大巴|吉他|黑胶|音符|麦克风|音响|圣经|橄榄球|家园|相机|调色盘|南瓜|灯塔/.test(hay)) { flags.add('life'); }
+            if (/burger|pizza|coffee|mug|ice_cream|donut|chips|xmas|christmas|heart|season|fireworks|easter|woman|car|bicycle|airplane|train|sailboat|bus|guitar|vinyl|music|mic|speaker|book|football|home|camera|palette|pumpkin|lighthouse|汉堡|披萨|咖啡|热饮|冰淇淋|甜甜圈|薯片|圣诞|烟花|彩蛋|独立女性|汽车|自行车|飞机|火车|帆船|大巴|吉他|黑胶|音符|麦克风|音响|圣经|橄榄球|家园|相机|调色盘|南瓜|灯塔/.test(hay)) { flags.add('life'); }
             if (st.scroll_typewriter_enabled) { flags.add('typewriter'); }
             const emblemId = (st.bg_top_mascot && st.bg_top_mascot !== 'none' && emblemMetaMap[st.bg_top_mascot])
                 ? st.bg_top_mascot
@@ -8596,7 +8657,8 @@ class ReelsOverlayPanel {
             if (st.scroll_tw_underline_enabled) tags.push('金线跟读');
             return {
                 isNew100: num >= 49 && num <= 148,
-                isChristmas: num >= 149 || /xmas|christmas|圣诞/.test(hay),
+                isChristmas: (num >= 149 && num <= 198) || /xmas|christmas|圣诞/.test(hay),
+                isThanksgiving: (num >= 199 && num <= 214) || (!(num >= 149 && num <= 198) && !/xmas|christmas|圣诞/.test(hay) && /thx|thanksgiving|感恩/.test(hay)),
                 flags,
                 tags: tags.slice(0, 3),
                 emblemEmoji: emblemInfo?.emoji || '',
@@ -8638,6 +8700,11 @@ class ReelsOverlayPanel {
                 label: '🎄 圣诞平安祷',
                 title: 'CHRISTMAS BLESSING',
                 body: 'Glory to God in the highest heaven,\nAnd peace on earth to those He loves.\nMay this Christmas fill your home with light,\nhope, warmth, and everlasting joy. Amen.',
+            },
+            thanksgiving_en: {
+                label: '🍂 感恩节祈祷',
+                title: 'GRATEFUL HEART',
+                body: 'Lord, thank You for quiet autumn mornings,\nthe warmth of table and family,\nand Your gentle faithfulness in every season.\nAmen.',
             },
             gratitude_en: {
                 label: '🙏 感恩祈福',
@@ -8682,11 +8749,13 @@ class ReelsOverlayPanel {
 
         const builtinCount = Object.keys(builtins).length;
         const new100Count = items.filter(it => it.isNew100).length;
+        const thanksgivingCount = items.filter(it => it.isThanksgiving).length;
         const christmasCount = items.filter(it => it.isChristmas).length;
         const customCount = items.filter(it => it.isCustom).length;
         const countBadgeText = `共 ${items.length} 款 · sc-01 ~ sc-${builtinCount}`;
 
         const FILTER_CHIPS = [
+            ['thanksgiving', '🍂 感恩节简约'],
             ['christmas', '🎄 圣诞贺卡'],
             ['kraft', '📦 牛皮纸'],
             ['minimal', '🤍 简约纸张'],
@@ -8741,6 +8810,7 @@ class ReelsOverlayPanel {
                 <aside class="rsl-aside">
                     <div class="rsl-aside-label">⚡ 快速筛选</div>
                     <button type="button" class="rsl-nav-btn active" data-group="all"><span>全部滚动样式</span><small>${items.length}</small></button>
+                    <button type="button" class="rsl-nav-btn" data-group="__thanksgiving__"><span>🍂 感恩节秋日简约专区</span><small>${thanksgivingCount}</small></button>
                     <button type="button" class="rsl-nav-btn" data-group="__christmas__"><span>🎄 圣诞卡片专区</span><small>${christmasCount}</small></button>
                     <button type="button" class="rsl-nav-btn" data-group="__new_100__"><span>✨ 新增100款祷告风</span><small>${new100Count}</small></button>
                     <button type="button" class="rsl-nav-btn" data-group="__favorites__"><span>⭐ 我的收藏</span><small class="rsl-fav-count">${favorites.size}</small></button>
@@ -8894,6 +8964,7 @@ class ReelsOverlayPanel {
                 if (!it) return;
                 let ok = true;
                 if (activeGroup === '__new_100__') ok = it.isNew100;
+                else if (activeGroup === '__thanksgiving__') ok = it.isThanksgiving;
                 else if (activeGroup === '__christmas__') ok = it.isChristmas;
                 else if (activeGroup === '__favorites__') ok = favorites.has(it.key);
                 else if (activeGroup === '__custom__') ok = it.isCustom;
@@ -12727,6 +12798,12 @@ class ReelsDecorPanel {
         this._activeCategory = 'all';
         this._syncing = false;
         this._hasSyncedCtaOnce = false;
+        this._decorRenderRaf = null;
+        this._decorUiRaf = null;
+        this._decorSyncTimer = null;
+        this._pendingDecorSyncOv = null;
+        this._pendingDecorStructural = false;
+        this._decorUiRefreshLinked = false;
         this._renderUI();
         this._bindEvents();
         this.refresh();
@@ -13464,8 +13541,7 @@ class ReelsDecorPanel {
         inputIds.forEach(id => {
             const el = this.container.querySelector('#' + id);
             if (!el) return;
-            el.addEventListener('input', () => this._syncToDecorOverlay());
-            el.addEventListener('change', () => this._syncToDecorOverlay());
+            _bindDiscreteAwareSync(el, () => this._syncToDecorOverlay());
         });
 
         // 快捷氛围暗底色块
@@ -13591,7 +13667,7 @@ class ReelsDecorPanel {
                     this.videoCanvas.overlayMgr.overlays.push(ov);
                 }
                 this._selectedDecorId = ov.id;
-                this._syncScopeAndRender(ov);
+                this._syncScopeAndRender(ov, { structuralChange: true });
                 this.refresh();
                 if (this.linkedOverlayPanel) this.linkedOverlayPanel._refreshList();
             });
@@ -14355,13 +14431,86 @@ class ReelsDecorPanel {
         ov.decor_color2 = this._getVal('rdp-color2') || '#FFFDF5';
 
         this._updateDecorAccordionBadges(ov);
-        this._renderLayerList();
-        this._syncScopeAndRender(ov);
-        if (this.linkedOverlayPanel) {
-            this.linkedOverlayPanel._refreshList();
-            if (this.linkedOverlayPanel._selectedOv?.id === ov.id) {
-                this.linkedOverlayPanel._syncFromOverlay(ov);
-            }
+        this._scheduleDecorUiRefresh({ refreshLinked: false });
+        this._syncScopeAndRender(ov, { structuralChange: false });
+        if (this.linkedOverlayPanel && this.linkedOverlayPanel._selectedOv?.id === ov.id) {
+            this.linkedOverlayPanel._syncFromOverlay(ov);
+        }
+    }
+
+    _requestDecorPreviewRender() {
+        const doRender = () => {
+            try { this.videoCanvas?.render?.(); } catch (_) {}
+            try {
+                if (typeof window !== 'undefined' && window.ReelsPreviewV2?.isOpen?.()) {
+                    if (typeof window.ReelsPreviewV2.requestRender === 'function') {
+                        window.ReelsPreviewV2.requestRender();
+                    } else if (typeof window.ReelsPreviewV2.render === 'function') {
+                        window.ReelsPreviewV2.render();
+                    }
+                }
+            } catch (_) {}
+        };
+        if (typeof requestAnimationFrame !== 'function') {
+            doRender();
+            return;
+        }
+        if (this._decorRenderRaf) return;
+        this._decorRenderRaf = requestAnimationFrame(() => {
+            this._decorRenderRaf = null;
+            doRender();
+        });
+    }
+
+    _scheduleDecorUiRefresh({ refreshLinked = false } = {}) {
+        if (refreshLinked) this._decorUiRefreshLinked = true;
+        if (typeof requestAnimationFrame !== 'function') {
+            const needLinked = this._decorUiRefreshLinked;
+            this._decorUiRefreshLinked = false;
+            this._renderLayerList();
+            if (needLinked && this.linkedOverlayPanel) this.linkedOverlayPanel._refreshList();
+            return;
+        }
+        if (this._decorUiRaf) return;
+        this._decorUiRaf = requestAnimationFrame(() => {
+            this._decorUiRaf = null;
+            const needLinked = this._decorUiRefreshLinked;
+            this._decorUiRefreshLinked = false;
+            this._renderLayerList();
+            if (needLinked && this.linkedOverlayPanel) this.linkedOverlayPanel._refreshList();
+        });
+    }
+
+    _scheduleDecorScopeSync(ov, { structuralChange = false, delayMs = 200 } = {}) {
+        this._pendingDecorSyncOv = ov || this._getSelectedDecor();
+        if (structuralChange) this._pendingDecorStructural = true;
+        if (typeof setTimeout !== 'function' || typeof clearTimeout !== 'function') {
+            this._flushPendingDecorSync();
+            return;
+        }
+        if (this._decorSyncTimer) clearTimeout(this._decorSyncTimer);
+        this._decorSyncTimer = setTimeout(() => {
+            this._decorSyncTimer = null;
+            this._flushPendingDecorSync();
+        }, delayMs);
+    }
+
+    _flushPendingDecorSync() {
+        if (this._decorSyncTimer && typeof clearTimeout === 'function') {
+            clearTimeout(this._decorSyncTimer);
+            this._decorSyncTimer = null;
+        }
+        if (!this._pendingDecorSyncOv && !this._pendingDecorStructural) return;
+        const ov = this._pendingDecorSyncOv || this._getSelectedDecor();
+        const structuralChange = Boolean(this._pendingDecorStructural);
+        this._pendingDecorSyncOv = null;
+        this._pendingDecorStructural = false;
+        this._syncDecorStackToScopeTasks({ structuralChange });
+        if (typeof this.videoCanvas?.onOverlayChange === 'function') {
+            this.videoCanvas.onOverlayChange(ov, { skipTimelineSync: !structuralChange });
+        }
+        if (typeof window !== 'undefined' && typeof window._scheduleReelsHistorySave === 'function') {
+            window._scheduleReelsHistorySave(280);
         }
     }
 
@@ -14454,6 +14603,13 @@ class ReelsDecorPanel {
         const ropDecorChk = document.getElementById('rop-decor-apply-all');
         if (ropDecorChk) ropDecorChk.checked = shouldSync;
 
+        if (this._decorSyncTimer && typeof clearTimeout === 'function') {
+            clearTimeout(this._decorSyncTimer);
+            this._decorSyncTimer = null;
+        }
+        this._pendingDecorSyncOv = null;
+        this._pendingDecorStructural = false;
+
         if (shouldSync) {
             this._syncDecorStackToScopeTasks();
         } else if (typeof _syncCurrentOverlayEditorToSelectedTask === 'function') {
@@ -14484,8 +14640,9 @@ class ReelsDecorPanel {
         return true;
     }
 
-    _syncDecorStackToScopeTasks() {
+    _syncDecorStackToScopeTasks(options = {}) {
         if (this._isSyncingDecorStack) return;
+        const structuralChange = options?.structuralChange !== false;
         const scope = this._getEffectiveDecorScope();
         if (scope === 'task') return;
 
@@ -14496,8 +14653,14 @@ class ReelsDecorPanel {
 
         this._isSyncingDecorStack = true;
         try {
-            if (typeof _syncCurrentOverlayEditorToSelectedTask === 'function') {
+            if (structuralChange && typeof _syncCurrentOverlayEditorToSelectedTask === 'function') {
                 try { _syncCurrentOverlayEditorToSelectedTask(); } catch (_) {}
+            } else if (selectedTask && this.videoCanvas?.overlayMgr) {
+                if (state?._coverEditMode && selectedTask.cover) {
+                    selectedTask.cover.overlays = [...(this.videoCanvas.overlayMgr.overlays || [])];
+                } else {
+                    selectedTask.overlays = [...(this.videoCanvas.overlayMgr.overlays || [])];
+                }
             }
             const sourceDecors = this._getDecorOverlays().map(d => {
                 const copy = JSON.parse(JSON.stringify(d, (key, val) => key === '_allOverlays' ? undefined : val));
@@ -14566,7 +14729,12 @@ class ReelsDecorPanel {
                             tabTouched = true;
                         }
                     }
-                    if (tabTouched && tab) tab._dirty = true;
+                    if (tabTouched && tab) {
+                        tab._dirty = true;
+                        if (!tab._fromSealedTemplate && (tab.libraryTemplateId || tab._isLiveProject || (tab.tasks && tab.tasks.length))) {
+                            tab._libraryDirty = true;
+                        }
+                    }
                 }
             }
 
@@ -14576,7 +14744,7 @@ class ReelsDecorPanel {
             if (typeof _batchAutoSave === 'function') {
                 try { _batchAutoSave({ skipSync: true }); } catch (_) {}
             }
-            if (typeof _renderTaskList === 'function') {
+            if (structuralChange && typeof _renderTaskList === 'function') {
                 try { _renderTaskList({ preserveScroll: true }); } catch (_) {}
             }
         } finally {
@@ -14584,14 +14752,31 @@ class ReelsDecorPanel {
         }
     }
 
-    _syncScopeAndRender(ov) {
-        this._syncDecorStackToScopeTasks();
-        if (typeof this.videoCanvas?.onOverlayChange === 'function') {
-            this.videoCanvas.onOverlayChange(ov);
+    _syncScopeAndRender(ov, options = {}) {
+        const structuralChange = Boolean(options?.structuralChange);
+        if (options?.immediate || typeof requestAnimationFrame !== 'function' || typeof setTimeout !== 'function') {
+            this._pendingDecorSyncOv = null;
+            this._pendingDecorStructural = false;
+            if (this._decorSyncTimer && typeof clearTimeout === 'function') {
+                clearTimeout(this._decorSyncTimer);
+                this._decorSyncTimer = null;
+            }
+            this._syncDecorStackToScopeTasks({ structuralChange: options?.structuralChange ?? true });
+            if (typeof this.videoCanvas?.onOverlayChange === 'function') {
+                this.videoCanvas.onOverlayChange(ov, { skipTimelineSync: !structuralChange });
+            }
+            return;
         }
+        this._requestDecorPreviewRender();
+        this._scheduleDecorScopeSync(ov, { structuralChange, delayMs: options?.delayMs ?? 200 });
     }
 
     _renderLayerList() {
+        if (this._decorUiRaf && typeof cancelAnimationFrame === 'function') {
+            cancelAnimationFrame(this._decorUiRaf);
+            this._decorUiRaf = null;
+            this._decorUiRefreshLinked = false;
+        }
         const listEl = this.container?.querySelector('#rdp-layer-list');
         if (!listEl) return;
         const decors = this._getDecorOverlays();

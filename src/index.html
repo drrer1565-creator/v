@@ -4890,8 +4890,11 @@
                   style="font-size:11px;padding:4px 8px;background:#255f85;color:#fff;font-weight:600;border:none;"
                   onclick="openAutoEditFromReels()" title="按文案自动裁切片段，拼接后送入批量 Reels">✂️ 文案拼接</button>
                 <button class="btn btn-secondary"
+                  style="font-size:11px;padding:4px 8px;background:linear-gradient(135deg,#059669,#10b981);color:#fff;font-weight:600;border:none;"
+                  onclick="typeof window.openProjectLibrary === 'function' ? window.openProjectLibrary() : openTemplateLibrary()" title="实时工程项目 — 每次建立标签即实时保存，支持新建文件夹、新建空白标签、拖拽整理与实时读取">🗂️ 工程项目</button>
+                <button class="btn btn-secondary"
                   style="font-size:11px;padding:4px 8px;background:linear-gradient(135deg,#6366f1,#8b5cf6);color:#fff;font-weight:600;border:none;"
-                  onclick="openTemplateLibrary()" title="工程管理库 — 多级文件夹分类、缩略图预览与多选应用标签">🗂️ 工程管理库</button>
+                  onclick="openTemplateLibrary()" title="视频模板库 — 像以前一样封存保存工程模板，载入模板不会自动覆盖原模板">📂 模板库</button>
                 <button class="btn btn-secondary"
                   style="font-size:11px;padding:4px 8px;background:linear-gradient(135deg,#0ea5e9,#2563eb);color:#fff;font-weight:600;border:none;"
                   onclick="typeof window.openCloudHubDialog === 'function' ? window.openCloudHubDialog() : alert('云端中控模块加载中...')" title="Cloudflare 远程 API Key 池同步 + Google Drive 每日工程(日期贴)一键下载加载">☁️ 云端中控 · 日期贴</button>
@@ -5904,6 +5907,12 @@
                               <button type="button" class="btn btn-secondary" style="padding:3px 7px;font-size:11px;border-color:#f59e0b;background:rgba(120,53,15,0.25);color:#fef08a;" onclick="reelsSetSpeechWritingTip('bald_eagle_crest')">🦅 白头海雕</button>
                               <button type="button" class="btn btn-secondary" style="padding:3px 7px;font-size:11px;border-color:#ef4444;background:rgba(153,27,27,0.22);color:#fecaca;" onclick="reelsSetSpeechWritingTip('veteran_poppy')">🌺 虞美人花</button>
                               <button type="button" class="btn btn-secondary" style="padding:3px 7px;font-size:11px;border-color:#94a3b8;background:rgba(51,65,85,0.28);color:#e2e8f0;" onclick="reelsSetSpeechWritingTip('military_dog_tag')">🏷️ 美军狗牌</button>
+                              <button type="button" class="btn btn-secondary" style="padding:3px 7px;font-size:11px;border-color:#c68b59;background:rgba(158,71,42,0.22);color:#f5efe6;" onclick="reelsSetSpeechWritingTip('maple_leaf')">🍁 极简秋枫</button>
+                              <button type="button" class="btn btn-secondary" style="padding:3px 7px;font-size:11px;border-color:#c68b59;background:rgba(198,139,89,0.20);color:#faf6f0;" onclick="reelsSetSpeechWritingTip('wheat_stalk')">🌾 感恩麦穗</button>
+                              <button type="button" class="btn btn-secondary" style="padding:3px 7px;font-size:11px;border-color:#9c6b43;background:rgba(107,71,50,0.25);color:#f5efe6;" onclick="reelsSetSpeechWritingTip('acorn')">🌰 森系橡果</button>
+                              <button type="button" class="btn btn-secondary" style="padding:3px 7px;font-size:11px;border-color:#c96d44;background:rgba(201,109,68,0.20);color:#faf6f0;" onclick="reelsSetSpeechWritingTip('minimal_pumpkin')">🎃 线条南瓜</button>
+                              <button type="button" class="btn btn-secondary" style="padding:3px 7px;font-size:11px;border-color:#a89078;background:rgba(94,70,56,0.25);color:#f5efe6;" onclick="reelsSetSpeechWritingTip('warm_mug')">☕ 暖秋热饮</button>
+                              <button type="button" class="btn btn-secondary" style="padding:3px 7px;font-size:11px;border-color:#8a9a86;background:rgba(120,137,114,0.22);color:#f5efe6;" onclick="reelsSetSpeechWritingTip('olive_branch')">🌿 感恩橄榄枝</button>
                               <button type="button" class="btn btn-secondary" style="padding:3px 7px;font-size:11px;" onclick="reelsUploadSpeechWritingImage()">🖼 上传图片</button>
                             </div>
                             <label style="display:flex;align-items:center;gap:6px;margin-bottom:6px;">
@@ -5941,6 +5950,12 @@
                                 <option value="bald_eagle_crest">🦅 美国白头海雕金章</option>
                                 <option value="veteran_poppy">🌺 阵亡将士纪念红罂粟花</option>
                                 <option value="military_dog_tag">🏷️ 美军银色纪念狗牌</option>
+                                <option value="maple_leaf">🍁 极简赤陶秋枫叶 (Pinterest)</option>
+                                <option value="wheat_stalk">🌾 感恩金麦穗</option>
+                                <option value="acorn">🌰 森系简约橡果</option>
+                                <option value="minimal_pumpkin">🎃 奶油赤陶线条南瓜</option>
+                                <option value="warm_mug">☕ 暖秋手冲热饮杯</option>
+                                <option value="olive_branch">🌿 静谧感恩橄榄枝</option>
                                 <option value="image">🖼 上传的图片</option>
                               </select>
                             </div>
@@ -8211,7 +8226,7 @@
           <div class="form-section">
             <h3 class="section-title">关于</h3>
             <div class="about-info">
-              <p><strong>VideoKit</strong> <span id="app-version-display">v4.6.2-beta.2</span></p>
+              <p><strong>VideoKit</strong> <span id="app-version-display">v4.6.2</span></p>
               <p>视频工具包-批量：音频生成-reels视频制作-多媒体转换</p>
               <div style="margin-top: 12px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
                 <button id="check-update-btn" class="btn btn-secondary" onclick="checkAppUpdate()"

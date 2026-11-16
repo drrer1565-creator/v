@@ -475,12 +475,202 @@ function registerAPIHandlers() {
     });
 }
 
+async function _handleLibraryRoute(ep, data = {}) {
+    const isLiveProject = ep.startsWith('live-projects/');
+    const prefix = isLiveProject ? 'live-projects/' : 'templates/';
+    const action = ep.slice(prefix.length);
+    const store = isLiveProject ? templateService.liveProjectStore : templateService.templateStore;
+    const itemLabel = isLiveProject ? '工程' : '模板';
+
+    if (isLiveProject && action === 'import-from-templates') {
+        return templateService.importTemplatesIntoLiveProjects(data || {});
+    }
+
+    switch (action) {
+        case 'folders/delete': return store.deleteEmptyFolder(data.id);
+        case 'folders/reorder': return store.reorderLibrary(data.order, data.parentId);
+        case 'folders/list': return store.readFolders();
+        case 'folders/create': return store.createFolder(data.name, data.parentId);
+        case 'folders/rename': return store.renameFolder(data.id, data.name);
+        case 'folders/move': return store.moveItemsToFolder(data.ids, data.folderId);
+        case 'folders/move-folders': return store.moveFolders(data.folderIds, data.targetParentId);
+        case 'list': return store.list();
+        case 'get-many': return store.getByIds(data.ids);
+        case 'reorder': return store.reorder(data.ids);
+        case 'thumbnail': return store.updateThumbnail(data.id, data.thumbnail);
+        case 'get':
+            if (!data.id) throw new Error(`缺少${itemLabel} ID`);
+            return store.get(data.id);
+        case 'save':
+            if (!data.name) throw new Error(`缺少${itemLabel}名称`);
+            if (!data.projectData) throw new Error('缺少工程数据');
+            return store.save(data);
+        case 'delete':
+            if (!data.id) throw new Error(`缺少${itemLabel} ID`);
+            return store.delete(data.id);
+        case 'rename':
+            if (!data.id || !data.name) throw new Error(`缺少${itemLabel} ID 或新名称`);
+            return store.rename(data.id, data.name);
+        case 'export-archive': {
+            if (!data.id) throw new Error(`缺少${itemLabel} ID`);
+            const tplData = store.get(data.id);
+            const exportId = `archive_${Date.now()}`;
+            const tmpDir = settingsService.getSecureTmpDir(exportId);
+            const assetsDir = path.join(tmpDir, 'Assets');
+            fs.mkdirSync(assetsDir, { recursive: true });
+
+            const assetMap = {};
+            function extractAndRewritePaths(obj) {
+                if (typeof obj === 'string') {
+                    let checkPath = obj;
+                    let uriPrefix = '';
+                    if (checkPath.startsWith('local-media://')) {
+                        uriPrefix = 'local-media://';
+                        checkPath = checkPath.replace('local-media://', '');
+                    }
+                    if (process.platform === 'win32' && checkPath.startsWith('/') && checkPath.includes(':')) {
+                        checkPath = checkPath.substring(1);
+                    }
+                    if (checkPath.startsWith('/') || /^[a-zA-Z]:[\\/]/.test(checkPath)) {
+                        try {
+                            if (fs.existsSync(checkPath) && fs.statSync(checkPath).isFile()) {
+                                if (!assetMap[checkPath]) {
+                                    const ext = path.extname(checkPath);
+                                    const base = path.basename(checkPath, ext);
+                                    const newName = `${base}_${Object.keys(assetMap).length}${ext}`;
+                                    assetMap[checkPath] = newName;
+                                    fs.copyFileSync(checkPath, path.join(assetsDir, newName));
+                                }
+                                return `${uriPrefix}Assets/${assetMap[checkPath]}`;
+                            }
+                        } catch (e) {}
+                    }
+                    return obj;
+                }
+                if (Array.isArray(obj)) {
+                    for (let i = 0; i < obj.length; i++) obj[i] = extractAndRewritePaths(obj[i]);
+                    return obj;
+                }
+                if (obj !== null && typeof obj === 'object') {
+                    for (const key of Object.keys(obj)) obj[key] = extractAndRewritePaths(obj[key]);
+                    return obj;
+                }
+                return obj;
+            }
+
+            const rewrittenProjectData = extractAndRewritePaths(tplData.projectData);
+            const exportObj = {
+                _format: 'videokit-template-archive',
+                _version: 1,
+                name: tplData.name,
+                description: tplData.description || '',
+                thumbnail: tplData.thumbnail || '',
+                tags: tplData.tags || [],
+                createdAt: tplData.createdAt,
+                projectData: rewrittenProjectData,
+            };
+
+            fs.writeFileSync(path.join(tmpDir, 'template.json'), JSON.stringify(exportObj, null, 2), 'utf-8');
+            const zipPath = settingsService.secureTmpFile(`Template_${tplData.name || 'Archive'}_${Date.now()}`, '.vkpkg');
+            const archiver = require('archiver');
+            await new Promise((resolve, reject) => {
+                const output = fs.createWriteStream(zipPath);
+                const archive = archiver('zip', { zlib: { level: 6 } });
+                output.on('close', resolve);
+                archive.on('error', reject);
+                archive.pipe(output);
+                archive.directory(tmpDir, false);
+                archive.finalize();
+            });
+            try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch (e) {}
+            return { message: '归档导出完成', zip_path: zipPath, name: tplData.name };
+        }
+        case 'import-archive': {
+            const zipPath = data.zip_path;
+            if (!zipPath || !fs.existsSync(zipPath)) throw new Error('无效的归档文件');
+            const extractDir = settingsService.getSecureTmpDir(`import_${Date.now()}`);
+            const extract = require('./services/safeExtract');
+            await extract(zipPath, { dir: extractDir });
+
+            const jsonPath = path.join(extractDir, 'template.json');
+            if (!fs.existsSync(jsonPath)) {
+                try { fs.rmSync(extractDir, { recursive: true, force: true }); } catch (e) {}
+                throw new Error('归档包内找不到 template.json，不是有效的模板包');
+            }
+            const parsed = JSON.parse(fs.readFileSync(jsonPath, 'utf-8'));
+            if (parsed._format !== 'videokit-template-archive') {
+                try { fs.rmSync(extractDir, { recursive: true, force: true }); } catch (e) {}
+                throw new Error('不支持的归档格式');
+            }
+
+            const electronApp = require('electron')?.app;
+            const userDataDir = (electronApp && typeof electronApp.getPath === 'function')
+                ? electronApp.getPath('userData')
+                : path.join(os.homedir(), '.videokit');
+            const assetBucket = isLiveProject ? 'videokit-live-projects' : 'videokit-templates';
+            const permAssetsDir = path.join(userDataDir, assetBucket, 'assets', `${isLiveProject ? 'prj' : 'tpl'}_${Date.now()}`);
+            fs.mkdirSync(permAssetsDir, { recursive: true });
+            const tmpAssetsDir = path.join(extractDir, 'Assets');
+            if (fs.existsSync(tmpAssetsDir)) {
+                fs.cpSync(tmpAssetsDir, permAssetsDir, { recursive: true });
+            }
+
+            function restorePaths(obj) {
+                if (typeof obj === 'string') {
+                    let checkPath = obj;
+                    let uriPrefix = '';
+                    if (checkPath.startsWith('local-media://')) {
+                        uriPrefix = 'local-media://';
+                        checkPath = checkPath.replace('local-media://', '');
+                    }
+                    if (checkPath.startsWith('Assets/')) {
+                        const rel = checkPath.replace('Assets/', '');
+                        const resolvedAsset = path.resolve(permAssetsDir, rel);
+                        const relToBase = path.relative(permAssetsDir, resolvedAsset);
+                        if (relToBase.startsWith('..') || path.isAbsolute(relToBase)) {
+                            return `${uriPrefix}${path.join(permAssetsDir, path.basename(rel))}`;
+                        }
+                        return `${uriPrefix}${resolvedAsset}`;
+                    }
+                    return obj;
+                }
+                if (Array.isArray(obj)) {
+                    for (let i = 0; i < obj.length; i++) obj[i] = restorePaths(obj[i]);
+                    return obj;
+                }
+                if (obj !== null && typeof obj === 'object') {
+                    for (const key of Object.keys(obj)) obj[key] = restorePaths(obj[key]);
+                    return obj;
+                }
+                return obj;
+            }
+
+            const res = store.save({
+                name: parsed.name,
+                description: parsed.description || '',
+                thumbnail: parsed.thumbnail || '',
+                tags: parsed.tags || [],
+                folderId: data.folderId,
+                projectData: restorePaths(parsed.projectData),
+            });
+            try { fs.rmSync(extractDir, { recursive: true, force: true }); } catch (e) {}
+            return { message: '导入成功', id: res.id, name: parsed.name };
+        }
+        default:
+            throw new Error(`未知的 API 接口: ${ep}`);
+    }
+}
+
 /**
  * API 路由分发
  */
 async function routeAPI(endpoint, data, progressSender = null, sender = null) {
     // 去除前导斜杠
     const ep = endpoint.replace(/^\/?(api\/)?/, '');
+
+    if (ep.startsWith('templates/') || ep.startsWith('live-projects/')) {
+        return await _handleLibraryRoute(ep, data);
+    }
 
     switch (ep) {
         // ==================== 健康检查 ====================
@@ -2760,199 +2950,6 @@ async function routeAPI(endpoint, data, progressSender = null, sender = null) {
 
         case 'status':
             return { status: 'ok', backend: 'nodejs', uptime: process.uptime() };
-
-        // ==================== 视频模板 / 工程管理库 ====================
-        case 'templates/folders/delete': return templateService.deleteEmptyTemplateFolder(data.id);
-        case 'templates/folders/reorder': return templateService.reorderTemplateLibrary(data.order, data.parentId);
-        case 'templates/folders/list': return templateService.readTemplateFolders();
-        case 'templates/folders/create': return templateService.createTemplateFolder(data.name, data.parentId);
-        case 'templates/folders/rename': return templateService.renameTemplateFolder(data.id, data.name);
-        case 'templates/folders/move': return templateService.moveTemplatesToFolder(data.ids, data.folderId);
-        case 'templates/folders/move-folders': return templateService.moveTemplateFolders(data.folderIds, data.targetParentId);
-
-        case 'templates/list':
-            return templateService.listTemplates();
-
-        case 'templates/get-many':
-            return templateService.getTemplatesByIds(data.ids);
-
-        case 'templates/reorder':
-            return templateService.reorderTemplates(data.ids);
-        case 'templates/thumbnail':
-            return templateService.updateTemplateThumbnail(data.id, data.thumbnail);
-
-        case 'templates/get':
-            if (!data.id) throw new Error('缺少模板 ID');
-            return templateService.getTemplate(data.id);
-
-        case 'templates/save':
-            if (!data.name) throw new Error('缺少模板名称');
-            if (!data.projectData) throw new Error('缺少工程数据');
-            return templateService.saveTemplate(data);
-
-        case 'templates/delete':
-            if (!data.id) throw new Error('缺少模板 ID');
-            return templateService.deleteTemplate(data.id);
-
-        case 'templates/rename':
-            if (!data.id || !data.name) throw new Error('缺少模板 ID 或新名称');
-            return templateService.renameTemplate(data.id, data.name);
-
-        case 'templates/export-archive': {
-            if (!data.id) throw new Error('缺少模板 ID');
-            const tplData = templateService.getTemplate(data.id);
-            const exportId = `archive_${Date.now()}`;
-            const tmpDir = settingsService.getSecureTmpDir(exportId);
-            const assetsDir = path.join(tmpDir, 'Assets');
-            fs.mkdirSync(assetsDir, { recursive: true });
-
-            const assetMap = {};
-            function extractAndRewritePaths(obj) {
-                if (typeof obj === 'string') {
-                    let checkPath = obj;
-                    let prefix = '';
-                    if (checkPath.startsWith('local-media://')) {
-                        prefix = 'local-media://';
-                        checkPath = checkPath.replace('local-media://', '');
-                    }
-                    // On Windows, if checkPath starts with "/" and a drive letter (e.g. "/C:"), strip the leading "/"
-                    if (process.platform === 'win32' && checkPath.startsWith('/') && checkPath.includes(':')) {
-                        checkPath = checkPath.substring(1);
-                    }
-                    if (checkPath.startsWith('/') || /^[a-zA-Z]:[\\/]/.test(checkPath)) {
-                        try {
-                            if (fs.existsSync(checkPath) && fs.statSync(checkPath).isFile()) {
-                                if (!assetMap[checkPath]) {
-                                    const ext = path.extname(checkPath);
-                                    const name = path.basename(checkPath, ext);
-                                    const newName = `${name}_${Object.keys(assetMap).length}${ext}`;
-                                    assetMap[checkPath] = newName;
-                                    fs.copyFileSync(checkPath, path.join(assetsDir, newName));
-                                }
-                                return `${prefix}Assets/${assetMap[checkPath]}`;
-                            }
-                        } catch (e) {}
-                    }
-                    return obj;
-                }
-                if (Array.isArray(obj)) {
-                    for (let i = 0; i < obj.length; i++) obj[i] = extractAndRewritePaths(obj[i]);
-                    return obj;
-                }
-                if (obj !== null && typeof obj === 'object') {
-                    for (const key of Object.keys(obj)) obj[key] = extractAndRewritePaths(obj[key]);
-                    return obj;
-                }
-                return obj;
-            }
-
-            const rewrittenProjectData = extractAndRewritePaths(tplData.projectData);
-            const exportObj = {
-                _format: 'videokit-template-archive',
-                _version: 1,
-                name: tplData.name,
-                description: tplData.description || '',
-                thumbnail: tplData.thumbnail || '',
-                tags: tplData.tags || [],
-                createdAt: tplData.createdAt,
-                projectData: rewrittenProjectData,
-            };
-
-            const jsonPath = path.join(tmpDir, 'template.json');
-            fs.writeFileSync(jsonPath, JSON.stringify(exportObj, null, 2), 'utf-8');
-
-            const zipPath = settingsService.secureTmpFile(`Template_${tplData.name || 'Archive'}_${Date.now()}`, '.vkpkg');
-            const archiver = require('archiver');
-            await new Promise((resolve, reject) => {
-                const output = fs.createWriteStream(zipPath);
-                const archive = archiver('zip', { zlib: { level: 6 } });
-                output.on('close', resolve);
-                archive.on('error', reject);
-                archive.pipe(output);
-                archive.directory(tmpDir, false);
-                archive.finalize();
-            });
-
-            try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch (e) {}
-
-            return { message: '归档导出完成', zip_path: zipPath, name: tplData.name };
-        }
-
-        case 'templates/import-archive': {
-            const zipPath = data.zip_path;
-            if (!zipPath || !fs.existsSync(zipPath)) throw new Error('无效的归档文件');
-            
-            const extractDir = settingsService.getSecureTmpDir(`import_${Date.now()}`);
-            const extract = require('./services/safeExtract');
-            await extract(zipPath, { dir: extractDir });
-
-            const jsonPath = path.join(extractDir, 'template.json');
-            if (!fs.existsSync(jsonPath)) {
-                try { fs.rmSync(extractDir, { recursive: true, force: true }); } catch (e) {}
-                throw new Error('归档包内找不到 template.json，不是有效的模板包');
-            }
-
-            const parsed = JSON.parse(fs.readFileSync(jsonPath, 'utf-8'));
-            if (parsed._format !== 'videokit-template-archive') {
-                try { fs.rmSync(extractDir, { recursive: true, force: true }); } catch (e) {}
-                throw new Error('不支持的归档格式');
-            }
-
-            const electronApp = require('electron')?.app;
-            const userDataDir = (electronApp && typeof electronApp.getPath === 'function')
-                ? electronApp.getPath('userData')
-                : path.join(os.homedir(), '.videokit');
-            const permAssetsDir = path.join(userDataDir, 'videokit-templates', 'assets', `tpl_${Date.now()}`);
-            fs.mkdirSync(permAssetsDir, { recursive: true });
-
-            const tmpAssetsDir = path.join(extractDir, 'Assets');
-            if (fs.existsSync(tmpAssetsDir)) {
-                fs.cpSync(tmpAssetsDir, permAssetsDir, { recursive: true });
-            }
-
-            function restorePaths(obj) {
-                if (typeof obj === 'string') {
-                    let checkPath = obj;
-                    let prefix = '';
-                    if (checkPath.startsWith('local-media://')) {
-                        prefix = 'local-media://';
-                        checkPath = checkPath.replace('local-media://', '');
-                    }
-                    if (checkPath.startsWith('Assets/')) {
-                        const rel = checkPath.replace('Assets/', '');
-                        const resolvedAsset = path.resolve(permAssetsDir, rel);
-                        const relToBase = path.relative(permAssetsDir, resolvedAsset);
-                        if (relToBase.startsWith('..') || path.isAbsolute(relToBase)) {
-                            return `${prefix}${path.join(permAssetsDir, path.basename(rel))}`;
-                        }
-                        return `${prefix}${resolvedAsset}`;
-                    }
-                    return obj;
-                }
-                if (Array.isArray(obj)) {
-                    for (let i = 0; i < obj.length; i++) obj[i] = restorePaths(obj[i]);
-                    return obj;
-                }
-                if (obj !== null && typeof obj === 'object') {
-                    for (const key of Object.keys(obj)) obj[key] = restorePaths(obj[key]);
-                    return obj;
-                }
-                return obj;
-            }
-
-            const restoredProjectData = restorePaths(parsed.projectData);
-
-            const res = templateService.saveTemplate({
-                name: parsed.name,
-                description: parsed.description || '',
-                thumbnail: parsed.thumbnail || '',
-                tags: parsed.tags || [],
-                projectData: restoredProjectData
-            });
-
-            try { fs.rmSync(extractDir, { recursive: true, force: true }); } catch (e) {}
-            return { message: '导入成功', id: res.id, name: parsed.name };
-        }
 
         // ==================== Wav2Lip 口型同步 ====================
         case 'wav2lip/check':

@@ -1,34 +1,30 @@
-# VideoKit 4.6.2-beta.2 (测试版)
+# VideoKit 4.6.2 (正式版)
 
-> 🧪 **测试版说明**：面向内测与早期验证发布，如需稳定生产环境可随时切换回正式版通道。
+## 本次 4.6.2 正式版核心更新
 
-## 本次 4.6.2-beta.2 核心更新
+### 1. 🗂️ 独立双库工作流：「工程项目」实时区 + 「模板库」封存区
+- 将日常工作与模板沉淀彻底分开：
+  - **🗂️ 工程项目**（`videokit-live-projects/`）：实时读取与自动保存，支持多级文件夹管理、**📄 新建空白标签**立即落盘、工作区一键收录、安全从模板库导入副本。
+  - **📂 模板库**（`videokit-templates/`）：恢复经典“封存工程”模式，显式保存/更新封存模板；载入工作区生成独立副本，编辑过程绝不自动覆写原封存模板。
+- 两套库均升级 **全选、多选与批量管理控制条**：支持 `全选 (Ctrl+A)`、`反选`、`清空 (Esc)`、`☑️ 多选模式` 开关（点击卡片/文件夹连续勾选）、**文件夹左上角复选框**、**`Shift` 连续区间选**、**空白处拖拽框选**，以及 **打开所选 / 追加打开 / 批量移动 / 批量封存 / 批量删除 (`Delete`)**。
 
-### 0. 🐛 修复批量导出 `_exportResolvedNames.slice is not a function` 报错
-- 修复 `_resolveReelsJobBaseNames` 返回普通对象导致全新启动批量导出时序列化 `resolvedBaseNames` 抛出 `_exportResolvedNames.slice is not a function` 的问题，并在命名解析与导出断点清单写入阶段统一归一化为数组。
-- 补充端到端回归测试覆盖 `reelsStartExport()` 与 `reelsResumeExportFromJournal('failed-only')`。
+### 2. 🍂 感恩节 / 秋日简约北美风格预设与逐行画笔效果
+- 新增 16 款极简感恩节字幕预设（`sub-229`～`sub-244`）与 16 款秋日生活/祈祷场景滚动卡片预设（`sc-199`～`sc-214`）。
+- 优化红色笔刷划出（`box_wipe`）动画前导游标与边缘虚化过渡表现。
 
-### 1. 🎨 自动着色关键词选色弹窗稳定修复
-- 修复 **🎨 自动着色**（自定义关键词等规则）中点击/拖动取色器 `<input type="color">`、编辑 Hex 色值或修改关键词时弹窗跳关、失焦的问题：
-  - 移除 `src/reels-overlay-panel.js` 中 `_syncToOverlay` 对规则列表 DOM 的无条件清空重建，规则列表仅在切换覆层、加载预设或增删/切换规则类型时重绘。
-  - `_commitAutoColorRules` 复用共享的 `_scheduleOverlayHostSync` 管道（全程由 `_panelSyncingOverlay` 护栏保护），防止 `onOverlayChange` 反向重入 `_syncFromOverlay`，并保留 `rAF` 渲染合并与拖动节流。
+### 3. ⚡ 操作流畅度优化与非阻塞磁盘写入
+- 优化界面颗粒效果切换、面板开关及属性编辑重绘调度，并在工程自动保存链路采用前端队列防抖与关闭前冲刷（`saveBatchWorkspace` / `flushWorkspaceSaves`），消除交互卡顿。
 
-### 2. 🛡️ 长文案（2 分钟 / 30 任务）批量渲染稳定性与内存治理
-- 优化 `ReelsExportScheduler`（`electron/services/reels-export-scheduler.js`）内存估算与并发上限（根据时长、多片段背景池与系统可用内存动态限流，安全限制并发 `maxActive <= 3` 并拦截低内存并发）。
-- 导出与滚动渲染期间自动绕过滚动卡片位图缓存，并在每条导出结束及隔离渲染器中主动释放画布与离屏表面资源，降低长批量渲染后段崩溃风险。
-
-### 3. 📌 导出进度持久化、断点续传与未完成单独重试
-- 新增每条任务的持久化导出日志记录，崩溃或中断后保留已完成结果，支持从记录继续渲染并仅针对失败/未完成任务单独重新导出（结合磁盘输出校验）。
-
-### 4. 🔔 导出完成系统通知 + 启动首帧样式防闪烁
-- 批量导出完成后触发原生系统通知（支持点击聚焦窗口/定位输出目录）、任务栏进度与完成提醒、应用内提示及音效反馈。
-- 构建阶段内联关键基础暗色主题样式到 HTML 首帧，修复冷启动瞬间出现未应用样式白屏/错位界面。
+### 4. 🛡️ 4.6.2 测试版修复与稳定能力全面转正
+- **🎨 自动着色关键词取色器修复**：点击/拖动取色或修改 Hex 色值不再跳关失焦。
+- **📌 长文案批量渲染治理与断点续传**：动态内存并发限流与画布释放，持久化每条导出日志支持断点继续渲染与仅重试未完成任务，任务完成触发原生系统通知。
+- **🐛 修复全新批量导出报错**：修复 `_resolveReelsJobBaseNames` 返回对象导致的 `_exportResolvedNames.slice is not a function` 异常。
 
 ---
 
 ### 安装包说明
-- Windows 安装版: `VideoKit-Setup-4.6.2-beta.2.exe`（自动检测覆盖升级并保留全部本地设置与工程数据）
-- Windows 压缩包: `VideoKit-Setup-4.6.2-beta.2.zip`
-- macOS Apple Silicon (M系列): `VideoKit-4.6.2-beta.2-macOS-arm64.dmg`
-- macOS Intel (x64): `VideoKit-4.6.2-beta.2-macOS-x64.dmg`
-- Linux AppImage: `VideoKit-4.6.2-beta.2-Linux-x86_64.AppImage`
+- Windows 安装版: `VideoKit-Setup-4.6.2.exe`（自动检测覆盖升级并保留全部本地设置与工程数据）
+- Windows 压缩包: `VideoKit-Setup-4.6.2.zip`
+- macOS Apple Silicon (M系列): `VideoKit-4.6.2-macOS-arm64.dmg`
+- macOS Intel (x64): `VideoKit-4.6.2-macOS-x64.dmg`
+- Linux AppImage: `VideoKit-4.6.2-Linux-x86_64.AppImage`

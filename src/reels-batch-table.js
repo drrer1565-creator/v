@@ -384,10 +384,11 @@ function _syncGroupedProjectionToTabs(activeTasks, forceAllTabs = false) {
             tab.id === _batchTableState.activeTabId ||
             (selectedTaskTabId && tab.id === selectedTaskTabId);
         if (!shouldResyncTab) continue;
-        const prevLibSnap = tab.libraryTemplateId ? _batchLibraryTasksSnapshot(existingTasks) : '';
+        const shouldTrackLive = Boolean(tab.libraryTemplateId || tab._isLiveProject || !tab._fromSealedTemplate);
+        const prevLibSnap = shouldTrackLive ? _batchLibraryTasksSnapshot(existingTasks) : '';
         tab.tasks = projGroup.map(_stripBatchGroupMeta);
         tab._dirty = true;
-        if (tab.libraryTemplateId && prevLibSnap !== _batchLibraryTasksSnapshot(tab.tasks)) {
+        if (shouldTrackLive && prevLibSnap !== _batchLibraryTasksSnapshot(tab.tasks) && (tab.libraryTemplateId || tab._isLiveProject || !_isBatchTabEmpty(tab))) {
             tab._libraryDirty = true;
         }
     }
@@ -604,7 +605,8 @@ function _syncTasksToActiveTab() {
         if (t.id) tabTasksMap.set(t.id, { task: t, index: i });
     });
 
-    const prevSnap = tab.libraryTemplateId ? _batchLibraryTasksSnapshot(tabTasks) : '';
+    const shouldTrackLive = Boolean(tab.libraryTemplateId || tab._isLiveProject || !tab._fromSealedTemplate);
+    const prevSnap = shouldTrackLive ? _batchLibraryTasksSnapshot(tabTasks) : '';
     const isExplicitSubsetMode = window._reelsSubsetSyncMode === true;
     let isSubset = isExplicitSubsetMode && activeTasks.length > 0 && activeTasks.every(t => t.id && tabTasksMap.has(t.id));
     if (isSubset && activeTasks.length < tabTasks.length) {
@@ -623,7 +625,7 @@ function _syncTasksToActiveTab() {
         tab.tasks = _cloneBatchTasks(activeTasks);
         console.log('[BatchTable._syncTasksToActiveTab] 保存全部 tasks 到 tab, 长度:', tab.tasks.length);
     }
-    if (tab.libraryTemplateId && prevSnap !== _batchLibraryTasksSnapshot(tab.tasks)) {
+    if (shouldTrackLive && prevSnap !== _batchLibraryTasksSnapshot(tab.tasks) && (tab.libraryTemplateId || tab._isLiveProject || !_isBatchTabEmpty(tab))) {
         tab._libraryDirty = true;
     }
 }
@@ -671,12 +673,20 @@ function _switchToTab(tabId, opts = {}) {
     if (!opts.noRender) _renderBatchTable();
 }
 
-function _addTab(name, group = '') {
+function _addTab(name, group = '', options = {}) {
     const id = 'tab_' + _batchTableState.nextTabId++;
+    const isTemplateWin = typeof window !== 'undefined' && window.location?.hash?.startsWith('#template=');
+    const isLive = !isTemplateWin && options.live !== false;
+    const folderId = options.folderId !== undefined
+        ? String(options.folderId || '').trim()
+        : String(_batchTableState.activeLibraryFolderId || '').trim();
     const tab = {
         id,
         name: name || `标签${_batchTableState.tabs.length + 1}`,
         group: String(group || '').trim(),
+        ...(folderId ? { libraryFolderId: folderId } : {}),
+        _isLiveProject: isLive,
+        _libraryDirty: isLive,
         materialDir: '',
         lastRefreshTime: null,
         tasks: [],
@@ -685,6 +695,10 @@ function _addTab(name, group = '') {
     _normalizeBatchTabState();
     _switchToTab(id);
     _batchAutoSave();
+    if (isLive && typeof apiFetch === 'function') {
+        _syncWorkspaceTabsBackToLibraryFolder({ silent: true, onlyDirty: true, autoCreateNew: true, allowEmptyTabs: true, skipFlushWorkspace: true }).catch(() => {});
+    }
+    return tab;
 }
 
 function _removeTab(tabId, options = {}) {
@@ -734,7 +748,7 @@ function _removeTab(tabId, options = {}) {
     window.reelsUpdateActiveFolderBar?.();
     _batchAutoSave({ skipSync: true });
     if (deleteFromLib && typeof apiFetch === 'function') {
-        apiFetch(`${API_BASE}/templates/delete`, {
+        apiFetch(`${API_BASE}/live-projects/delete`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ id: removedTplId }),
@@ -742,7 +756,7 @@ function _removeTab(tabId, options = {}) {
             if (_batchTableState.libraryFolderTotalCount > 0) _batchTableState.libraryFolderTotalCount--;
             window.reelsRefreshTemplateLibraryIfOpen?.();
             if (_batchTableState.visible) _renderBatchTable();
-        }).catch(err => console.warn('[BatchTable] 从工程库删除失败:', err));
+        }).catch(err => console.warn('[BatchTable] 从工程项目删除失败:', err));
     }
 }
 
@@ -862,7 +876,7 @@ async function _renameTab(tabId) {
         });
         if (tab.libraryTemplateId && typeof apiFetch === 'function') {
             try {
-                await apiFetch(`${API_BASE}/templates/rename`, {
+                await apiFetch(`${API_BASE}/live-projects/rename`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ id: tab.libraryTemplateId, name: tab.name }),
@@ -874,10 +888,16 @@ async function _renameTab(tabId) {
             } catch (e) {
                 console.warn('[BatchTable] 同步重命名工程卡片失败:', e);
             }
+        } else if (!tab._fromSealedTemplate && !window.location?.hash?.startsWith('#template=')) {
+            tab._isLiveProject = true;
+            tab._libraryDirty = true;
         }
         _renderBatchTable();
         if (typeof _renderTaskList === 'function') _renderTaskList({ preserveScroll: true });
         _batchAutoSave();
+        if (tab._isLiveProject && !tab.libraryTemplateId && typeof apiFetch === 'function') {
+            _syncWorkspaceTabsBackToLibraryFolder({ silent: true, onlyDirty: true, autoCreateNew: true, allowEmptyTabs: true }).catch(() => {});
+        }
     }
 }
 
@@ -1852,7 +1872,7 @@ function _syncLibraryThumbCacheFromList(list = []) {
 
 function _buildLibraryFolderPath(folderId = '', folders = []) {
     const cleanId = String(folderId || '').trim();
-    if (!cleanId) return '主工程库';
+    if (!cleanId) return '主工程区';
     const byId = new Map((Array.isArray(folders) ? folders : []).filter(f => f && f.id).map(f => [f.id, f]));
     const names = [];
     const seen = new Set();
@@ -1864,7 +1884,7 @@ function _buildLibraryFolderPath(folderId = '', folders = []) {
         names.unshift(f.name || '未命名文件夹');
         curId = String(f.parentId || '').trim();
     }
-    return names.length ? `主工程库 / ${names.join(' / ')}` : '主工程库';
+    return names.length ? `主工程区 / ${names.join(' / ')}` : '主工程区';
 }
 
 function _computeLibraryFolderDirectTemplates(folderId = '', allTemplates = [], foldersData = {}) {
@@ -1888,7 +1908,7 @@ async function _fetchLibraryTemplatesByIds(ids = []) {
     const cleanIds = [...new Set((Array.isArray(ids) ? ids : []).filter(Boolean))];
     if (!cleanIds.length || typeof apiFetch !== 'function') return [];
     try {
-        const resp = await apiFetch(`${API_BASE}/templates/get-many`, {
+        const resp = await apiFetch(`${API_BASE}/live-projects/get-many`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ ids: cleanIds }),
@@ -1902,7 +1922,7 @@ async function _fetchLibraryTemplatesByIds(ids = []) {
     const out = [];
     for (const id of cleanIds) {
         try {
-            const r = await apiFetch(`${API_BASE}/templates/get`, {
+            const r = await apiFetch(`${API_BASE}/live-projects/get`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ id }),
@@ -1956,6 +1976,8 @@ function _buildTabFromLibraryTemplate(tplData, summary = {}, folderId = '') {
             tasks,
             _dirty: false,
             _libraryDirty: false,
+            _isLiveProject: true,
+            _fromSealedTemplate: false,
         },
         restored,
     };
@@ -1964,7 +1986,7 @@ function _buildTabFromLibraryTemplate(tplData, summary = {}, folderId = '') {
 async function reelsRefreshLibraryThumbCache() {
     if (typeof apiFetch !== 'function') return false;
     try {
-        const resp = await apiFetch(`${API_BASE}/templates/list`, {
+        const resp = await apiFetch(`${API_BASE}/live-projects/list`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: '{}',
@@ -2258,6 +2280,8 @@ window.reelsBindSavedGroupsToWorkspace = function(savedEntries = [], options = {
             tab.libraryFolderId = String(match.libraryFolderId || '').trim();
             tab.libraryUpdatedAt = String(match.updatedAt || new Date().toISOString()).trim();
             tab._libraryDirty = false;
+            tab._isLiveProject = true;
+            tab._fromSealedTemplate = false;
             (tab.tasks || []).forEach(t => { if (t && tab.libraryTemplateId) t._libraryTemplateId = tab.libraryTemplateId; });
         }
         nextTabs.push(tab);
@@ -2288,6 +2312,8 @@ window.reelsBindSavedGroupsToWorkspace = function(savedEntries = [], options = {
             tasks: cleanTasks,
             _dirty: false,
             _libraryDirty: false,
+            _isLiveProject: true,
+            _fromSealedTemplate: false,
         });
     }
 
@@ -2334,21 +2360,38 @@ window.reelsBindSavedGroupsToWorkspace = function(savedEntries = [], options = {
     return true;
 };
 
+function _markLiveWorkspaceTabsDirty(scope = 'active') {
+    if (typeof window !== 'undefined' && window.location?.hash?.startsWith('#template=')) return;
+    const activeTab = _getActiveTab();
+    for (const tab of (_batchTableState.tabs || [])) {
+        if (!tab || tab._fromSealedTemplate) continue;
+        const isLive = Boolean(tab.libraryTemplateId || tab._isLiveProject || (Array.isArray(tab.tasks) && tab.tasks.length > 0 && !_isBatchTabEmpty(tab)));
+        if (!isLive) continue;
+        if (scope === 'all' || tab === activeTab || !tab.hidden) {
+            tab._libraryDirty = true;
+        }
+    }
+    _scheduleLibraryFolderAutoSync();
+}
+window.reelsMarkLiveProjectTabDirty = _markLiveWorkspaceTabsDirty;
+
 function _scheduleLibraryFolderAutoSync() {
     if (typeof window === 'undefined' || window._templateThumbnailCaptureActive) return;
+    if (window.location?.hash?.startsWith('#template=')) return;
     if (typeof apiFetch !== 'function' || typeof API_BASE !== 'string' || !API_BASE) return;
     const hasPending = (_batchTableState.tabs || []).some(tab => {
-        if (!tab) return false;
+        if (!tab || tab._fromSealedTemplate) return false;
         if (tab.libraryTemplateId && tab._libraryDirty) return true;
-        return !!_batchTableState.activeLibraryFolderId && !tab.libraryTemplateId && Array.isArray(tab.tasks) && tab.tasks.length > 0 && !_isBatchTabEmpty(tab);
+        if (tab._isLiveProject && tab._libraryDirty) return true;
+        return !tab.libraryTemplateId && Array.isArray(tab.tasks) && tab.tasks.length > 0 && !_isBatchTabEmpty(tab);
     });
     if (!hasPending) return;
     clearTimeout(_libraryAutoSyncTimer);
     _libraryAutoSyncTimer = setTimeout(() => {
         _libraryAutoSyncTimer = null;
-        if (window._templateThumbnailCaptureActive) return;
-        _syncWorkspaceTabsBackToLibraryFolder({ silent: true, onlyDirty: true, autoCreateNew: !!_batchTableState.activeLibraryFolderId }).catch(() => {});
-    }, 1800);
+        if (window._templateThumbnailCaptureActive || window.location?.hash?.startsWith('#template=')) return;
+        _syncWorkspaceTabsBackToLibraryFolder({ silent: true, onlyDirty: true, autoCreateNew: true, allowEmptyTabs: true }).catch(() => {});
+    }, 900);
 }
 
 window.reelsClearLibraryFolderScope = function() {
@@ -2363,16 +2406,27 @@ window.reelsClearLibraryFolderScope = function() {
 };
 
 async function _syncWorkspaceTabsBackToLibraryFolder(options = {}) {
+    if (typeof window !== 'undefined' && window.location?.hash?.startsWith('#template=')) {
+        return { updated: 0, created: 0, failed: 0 };
+    }
+    if (options.flushWorkspace === true) {
+        _flushLiveWorkspaceToBatchTabs();
+    }
     const activeFolderId = String(_batchTableState.activeLibraryFolderId || '').trim();
     if (typeof apiFetch !== 'function' || !window.ReelsProject?.collectProjectData) {
         return { updated: 0, created: 0, failed: 0 };
     }
     const onlyDirty = options.onlyDirty !== false;
-    const autoCreateNew = options.autoCreateNew === true && !!activeFolderId;
+    const autoCreateNew = options.autoCreateNew === true;
+    const allowEmptyTabs = options.allowEmptyTabs === true;
     const targets = (_batchTableState.tabs || []).filter(tab => {
         if (!tab) return false;
         if (tab.libraryTemplateId) {
             return !onlyDirty || !!tab._libraryDirty;
+        }
+        if (tab._fromSealedTemplate) return false;
+        if (tab._isLiveProject) {
+            return allowEmptyTabs || (Array.isArray(tab.tasks) && tab.tasks.length > 0 && !_isBatchTabEmpty(tab));
         }
         return autoCreateNew && Array.isArray(tab.tasks) && tab.tasks.length > 0 && !_isBatchTabEmpty(tab);
     });
@@ -2391,7 +2445,10 @@ async function _syncWorkspaceTabsBackToLibraryFolder(options = {}) {
         const tabFolderId = String(tab.libraryFolderId || activeFolderId || '').trim();
         try {
             let thumb = String(window._reelsLibraryThumbCache?.[tab.libraryTemplateId] || '').trim();
-            if (!thumb && tab.tasks?.length && typeof window.captureTemplateThumbnailForTasks === 'function') {
+            if (!thumb && tab.id === _batchTableState.activeTabId && tab.tasks?.length && typeof window._captureVisibleTemplateThumbnail === 'function') {
+                thumb = window._captureVisibleTemplateThumbnail() || '';
+            }
+            if (!thumb && !options.silent && tab.tasks?.length && typeof window.captureTemplateThumbnailForTasks === 'function') {
                 thumb = await window.captureTemplateThumbnailForTasks(tab.tasks, '');
             }
             const projectData = window.ReelsProject.collectProjectData({
@@ -2410,7 +2467,7 @@ async function _syncWorkspaceTabsBackToLibraryFolder(options = {}) {
                 thumbnail: thumb,
                 projectData,
             };
-            const resp = await apiFetch(`${API_BASE}/templates/save`, {
+            const resp = await apiFetch(`${API_BASE}/live-projects/save`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(saveBody),
@@ -2419,6 +2476,8 @@ async function _syncWorkspaceTabsBackToLibraryFolder(options = {}) {
             const res = parsed.data || parsed;
             if (!res?.success && !res?.id) throw new Error(res?.error || parsed?.error || '同步保存失败');
             if (!tab.libraryTemplateId && res.id) tab.libraryTemplateId = res.id;
+            tab._isLiveProject = true;
+            tab._fromSealedTemplate = false;
             if (tabFolderId || activeFolderId) tab.libraryFolderId = tabFolderId || activeFolderId;
             tab.libraryUpdatedAt = new Date().toISOString();
             if (tab.libraryTemplateId && thumb) {
@@ -2428,11 +2487,11 @@ async function _syncWorkspaceTabsBackToLibraryFolder(options = {}) {
         } catch (err) {
             if (wasDirty) tab._libraryDirty = true;
             failed++;
-            console.warn('[BatchTable] 同步写回文件夹失败:', tab.name, err);
+            console.warn('[BatchTable] 实时同步工程项目失败:', tab.name, err);
         }
     }
     if ((updated > 0 || created > 0) && !options.silent && typeof showToast === 'function') {
-        showToast(`✅ 已同步 ${updated + created} 个标签到当前文件夹${failed ? `（${failed} 个失败）` : ''}`, failed ? 'warning' : 'success');
+        showToast(`✅ 已实时保存 ${updated + created} 个工程标签${failed ? `（${failed} 个失败）` : ''}`, failed ? 'warning' : 'success');
     }
     if (updated > 0 || created > 0) {
         if (created > 0 && activeFolderId) {
@@ -2441,7 +2500,7 @@ async function _syncWorkspaceTabsBackToLibraryFolder(options = {}) {
         }
         _batchAutoSave({ skipSync: true, skipLibrarySync: true });
         if (typeof window.reelsRefreshTemplateLibraryIfOpen === 'function') {
-            window.reelsRefreshTemplateLibraryIfOpen();
+            window.reelsRefreshTemplateLibraryIfOpen('liveProject');
         }
     }
     return { updated, created, failed };
@@ -2520,6 +2579,97 @@ window.reelsApplyLibraryProjects = async function(entries = [], options = {}) {
     return true;
 };
 
+/**
+ * 载入「模板库」中的封存模板：克隆生成独立工作区副本，绝不绑定模板 ID 也不触发实时写回。
+ */
+window.reelsApplySealedTemplate = async function(tplData, options = {}) {
+    if (!tplData || !tplData.projectData) return false;
+    const loadMode = options.loadMode === 'append' ? 'append' : 'replace';
+
+    if (loadMode === 'replace') {
+        _safeSyncBatchActiveTabIfPopulated();
+        if (_batchTableState.activeLibraryFolderId || (_batchTableState.tabs || []).some(t => t && (t.libraryTemplateId || t._isLiveProject) && t._libraryDirty)) {
+            await _syncWorkspaceTabsBackToLibraryFolder({ silent: true, onlyDirty: true, autoCreateNew: true, allowEmptyTabs: true });
+        } else if (options.confirmSwitch !== false) {
+            const hasLocalDirty = (_batchTableState.tabs || []).some(t => t && !t.libraryTemplateId && !t._fromSealedTemplate && !_isBatchTabEmpty(t));
+            if (hasLocalDirty && typeof confirm === 'function') {
+                if (!confirm('当前工作区有未归类工程任务，切换后将被封存模板副本替换（已存入「工程项目」的内容不会丢失）。是否继续？')) {
+                    return false;
+                }
+            }
+        }
+    }
+
+    const restored = (typeof window.ReelsProject?.applyProjectData === 'function')
+        ? window.ReelsProject.applyProjectData(tplData.projectData)
+        : { tasks: tplData.projectData.tasks || [], style: tplData.projectData.style, exportOpts: tplData.projectData.exportOpts, watermarks: tplData.projectData.watermarks };
+    if (restored.exportOpts && restored.exportOpts.subtitleStyleScopeVersion !== 2) {
+        restored.exportOpts = { ...restored.exportOpts, subtitleStyleScopeVersion: 2, subtitleStyleScope: 'task', subtitleStyleApplyAll: false };
+    }
+    const cleanName = String(tplData.name || '模板副本').trim() || '模板副本';
+    const tasks = (Array.isArray(restored.tasks) ? restored.tasks : []).map(task => {
+        const clean = _stripBatchGroupMeta(task);
+        delete clean._libraryTemplateId;
+        delete clean.id;
+        _ensureTaskId(clean);
+        const mediaBg = clean.bgPath || clean.videoPath || '';
+        if (mediaBg && window.electronAPI?.toFileUrl && !clean.bgSrcUrl) {
+            clean.bgSrcUrl = window.electronAPI.toFileUrl(mediaBg);
+        }
+        return clean;
+    });
+
+    const id = 'tab_' + _batchTableState.nextTabId++;
+    const sealedTab = {
+        id,
+        name: cleanName,
+        group: '',
+        hidden: false,
+        cloudKey: '',
+        cloudUrl: '',
+        libraryTemplateId: '',
+        libraryFolderId: '',
+        libraryUpdatedAt: '',
+        materialDir: '',
+        lastRefreshTime: null,
+        tasks,
+        _dirty: false,
+        _libraryDirty: false,
+        _isLiveProject: false,
+        _fromSealedTemplate: true,
+    };
+
+    if (loadMode === 'replace') {
+        _libraryFolderSyncGeneration++;
+        _batchTableState.activeLibraryFolderId = '';
+        _batchTableState.activeLibraryFolderPath = '';
+        _batchTableState.libraryScopeMode = '';
+        _batchTableState.libraryFolderTotalCount = 0;
+    }
+
+    _applyImportedTabsToState([sealedTab], {
+        tabs: [sealedTab],
+        activeTabId: sealedTab.id,
+        style: restored.style,
+        exportOpts: restored.exportOpts,
+        watermarks: restored.watermarks,
+    }, {
+        loadMode,
+        applyGlobalMeta: true,
+        duplicateStrategy: options.duplicateStrategy || 'append',
+    });
+
+    if (_reelsState) {
+        _reelsState.batchGroupCollapsed = { '__reels_existing_tasks__': false, [sealedTab.id]: false };
+        _reelsState.folderQueueCollapsed = {};
+        if (typeof _renderTaskList === 'function' && !_batchTableState.visible) _renderTaskList();
+    }
+    window.reelsUpdateActiveFolderBar?.();
+    if (_batchTableState.visible) _renderBatchTable();
+    _batchAutoSave({ skipSync: true, skipLibrarySync: true, forceFullSerialize: true });
+    return true;
+};
+
 async function _syncBatchTableWithActiveFolder(options = {}) {
     const isExplicit = !!(options.upgradeToFolderScope || options.forceFullFolder || options.showFeedback);
     if (_libraryFolderSyncPromise) {
@@ -2533,8 +2683,8 @@ async function _syncBatchTableWithActiveFolder(options = {}) {
         if (!folderId || typeof apiFetch !== 'function') return { synced: false };
 
         const [foldersResp, listResp] = await Promise.all([
-            apiFetch(`${API_BASE}/templates/folders/list`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }),
-            apiFetch(`${API_BASE}/templates/list`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }),
+            apiFetch(`${API_BASE}/live-projects/folders/list`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }),
+            apiFetch(`${API_BASE}/live-projects/list`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }),
         ]);
         if (syncGen !== _libraryFolderSyncGeneration || String(_batchTableState.activeLibraryFolderId || '').trim() !== folderId) {
             return { synced: false, stale: true };
@@ -2627,7 +2777,7 @@ async function _syncBatchTableWithActiveFolder(options = {}) {
                 changed = true;
             }
         }
-        // 保留当前工作区尚未存入库的新建有内容标签
+        // 保留当前工作区尚未存入库的新建标签
         for (const tab of (_batchTableState.tabs || [])) {
             if (!tab) continue;
             if (tab.libraryTemplateId) {
@@ -2635,7 +2785,7 @@ async function _syncBatchTableWithActiveFolder(options = {}) {
                     if (tab._libraryDirty) nextTabs.push(tab);
                     else changed = true;
                 }
-            } else if (Array.isArray(tab.tasks) && tab.tasks.length > 0 && !_isBatchTabEmpty(tab)) {
+            } else if (tab._isLiveProject || (Array.isArray(tab.tasks) && tab.tasks.length > 0 && !_isBatchTabEmpty(tab))) {
                 nextTabs.push(tab);
             }
         }
@@ -3041,8 +3191,8 @@ function reelsToggleBatchTable(options = {}) {
                 reelsSelectTask(idx);
             }
             _batchAutoSave({ skipSync: true, skipLibrarySync: true });
-            if (_batchTableState.activeLibraryFolderId || (_batchTableState.tabs || []).some(t => t && t.libraryTemplateId && t._libraryDirty)) {
-                _syncWorkspaceTabsBackToLibraryFolder({ silent: true, onlyDirty: true, autoCreateNew: !!_batchTableState.activeLibraryFolderId });
+            if (_batchTableState.activeLibraryFolderId || (_batchTableState.tabs || []).some(t => t && ((t.libraryTemplateId && t._libraryDirty) || (t._isLiveProject && t._libraryDirty)))) {
+                _syncWorkspaceTabsBackToLibraryFolder({ silent: true, onlyDirty: true, autoCreateNew: true, allowEmptyTabs: true });
             }
         } else {
             const snapshot = _batchTableState.editSessionSnapshot;
@@ -3500,19 +3650,21 @@ function _renderBatchTable() {
     const boundFolderPath = String(_batchTableState.activeLibraryFolderPath || '').trim() || '当前文件夹';
     const totalFolderCount = Math.max(tabsToRender.length, Number(_batchTableState.libraryFolderTotalCount) || 0);
     const showLoadAllBtn = !!boundFolderId && (_batchTableState.libraryScopeMode === 'selected' || totalFolderCount > tabsToRender.length || hiddenTabCount > 0);
-    const dirtyLibCount = (_batchTableState.tabs || []).filter(t => t && ((t.libraryTemplateId && t._libraryDirty) || (!t.libraryTemplateId && (t.tasks?.length || 0) > 0 && !_isBatchTabEmpty(t)))).length;
+    const dirtyLibCount = (_batchTableState.tabs || []).filter(t => t && !t._fromSealedTemplate && ((t.libraryTemplateId && t._libraryDirty) || (t._isLiveProject && t._libraryDirty) || (!t.libraryTemplateId && (t.tasks?.length || 0) > 0 && !_isBatchTabEmpty(t)))).length;
     const folderScopeBarHtml = boundFolderId
         ? `<div class="rbt-folder-scope-bar">
-                <span class="rbt-folder-scope-pill" title="当前仅识别此级文件夹直属标签：${_escHtml(boundFolderPath)}">📂 ${_escHtml(boundFolderPath)} · 本级 ${tabsToRender.length}${totalFolderCount > tabsToRender.length ? `/${totalFolderCount}` : ''} 个标签</span>
-                ${showLoadAllBtn ? `<button class="rbt-folder-scope-btn" id="rbt-scope-load-all" style="background:rgba(16,185,129,0.16);border-color:rgba(16,185,129,0.4);color:#6ee7b7;" title="读取并展开当前级别文件夹下的全部 ${totalFolderCount} 个标签">📥 读取本级全部(${totalFolderCount})</button>` : ''}
-                <button class="rbt-folder-scope-btn" id="rbt-scope-open-lib" style="background:rgba(139,92,246,0.18);border-color:rgba(167,139,250,0.4);color:#ddd6fe;" title="打开工程管理库，在当前或上级文件夹中切换/多选工程标签">🗂️ 工程管理库</button>
-                <button class="rbt-folder-scope-btn" id="rbt-scope-sync" title="从工程管理库当前级别文件夹重新同步标签与修改">🔄 同步</button>
-                <button class="rbt-folder-scope-btn" id="rbt-scope-save-back" style="background:rgba(245,158,11,0.14);border-color:rgba(251,191,36,0.38);color:#fde68a;" title="把表格中修改/新增的标签写回到当前文件夹">${dirtyLibCount > 0 ? `💾 写回文件夹(${dirtyLibCount})` : '💾 写回文件夹'}</button>
-                <button class="rbt-folder-scope-btn" id="rbt-scope-exit" style="margin-left:auto;color:#fda4af;border-color:rgba(244,63,94,0.3);background:rgba(244,63,94,0.08);" title="解除文件夹作用域绑定（保留工作区标签）">✕ 退出文件夹</button>
+                <span class="rbt-folder-scope-pill" title="当前实时工程文件夹：${_escHtml(boundFolderPath)}">🗂️ ${_escHtml(boundFolderPath)} · 本级 ${tabsToRender.length}${totalFolderCount > tabsToRender.length ? `/${totalFolderCount}` : ''} 个工程</span>
+                <button class="rbt-folder-scope-btn" id="rbt-scope-new-tab" style="background:rgba(16,185,129,0.2);border-color:rgba(52,211,153,0.45);color:#a7f3d0;" title="在此文件夹中立即新建并实时保存空白工程标签">📄 + 空白标签</button>
+                ${showLoadAllBtn ? `<button class="rbt-folder-scope-btn" id="rbt-scope-load-all" style="background:rgba(16,185,129,0.16);border-color:rgba(16,185,129,0.4);color:#6ee7b7;" title="读取并展开当前级别文件夹下的全部 ${totalFolderCount} 个工程">📥 读取本级全部(${totalFolderCount})</button>` : ''}
+                <button class="rbt-folder-scope-btn" id="rbt-scope-open-lib" style="background:rgba(139,92,246,0.18);border-color:rgba(167,139,250,0.4);color:#ddd6fe;" title="打开实时工程项目，整理文件夹与空白标签">🗂️ 工程项目</button>
+                <button class="rbt-folder-scope-btn" id="rbt-scope-sync" title="从工程项目当前文件夹重新实时读取最新状态">🔄 同步</button>
+                <button class="rbt-folder-scope-btn" id="rbt-scope-save-back" style="background:rgba(245,158,11,0.14);border-color:rgba(251,191,36,0.38);color:#fde68a;" title="立即将当前标签全部实时写入当前文件夹">${dirtyLibCount > 0 ? `💾 立即保存(${dirtyLibCount})` : '🟢 已实时保存'}</button>
+                <button class="rbt-folder-scope-btn" id="rbt-scope-exit" style="margin-left:auto;color:#fda4af;border-color:rgba(244,63,94,0.3);background:rgba(244,63,94,0.08);" title="退出当前文件夹聚焦（已保存的工程不会丢失）">✕ 退出文件夹</button>
            </div>`
         : `<div class="rbt-folder-scope-bar" style="padding:4px 12px;border-bottom-color:rgba(255,255,255,0.06);background:rgba(15,23,42,0.45);">
-                <span style="color:#94a3b8;">📂 未绑定工程库文件夹（自由编辑模式）</span>
-                <button class="rbt-folder-scope-btn" id="rbt-scope-open-lib" style="background:rgba(139,92,246,0.16);border-color:rgba(167,139,250,0.38);color:#ddd6fe;">🗂️ 打开工程管理库</button>
+                <span style="color:#94a3b8;">🟢 实时工程模式（新建标签与编辑实时自动保存）</span>
+                <button class="rbt-folder-scope-btn" id="rbt-scope-new-tab" style="background:rgba(16,185,129,0.18);border-color:rgba(52,211,153,0.4);color:#6ee7b7;" title="新建空白标签并实时保存为工程">📄 + 空白标签</button>
+                <button class="rbt-folder-scope-btn" id="rbt-scope-open-lib" style="background:rgba(139,92,246,0.16);border-color:rgba(167,139,250,0.38);color:#ddd6fe;">🗂️ 打开工程项目</button>
            </div>`;
 
     // 素材文件夹信息
@@ -5513,8 +5665,13 @@ function _bindBatchTableEvents() {
     });
 
     // ── Folder workspace scope bar listeners ──
+    container.querySelector('#rbt-scope-new-tab')?.addEventListener('click', () => {
+        _addTab(undefined, '', { live: true });
+    });
     container.querySelector('#rbt-scope-open-lib')?.addEventListener('click', () => {
-        if (typeof window.openTemplateLibrary === 'function') {
+        if (typeof window.openProjectLibrary === 'function') {
+            window.openProjectLibrary({ folderId: _batchTableState.activeLibraryFolderId || '' });
+        } else if (typeof window.openTemplateLibrary === 'function') {
             window.openTemplateLibrary({ folderId: _batchTableState.activeLibraryFolderId || '' });
         }
     });
@@ -21001,6 +21158,8 @@ function _batchAutoSave(options = {}) {
                     libraryTemplateId: tab.libraryTemplateId || '',
                     libraryFolderId: tab.libraryFolderId || '',
                     libraryUpdatedAt: tab.libraryUpdatedAt || '',
+                    isLiveProject: !!tab._isLiveProject,
+                    fromSealedTemplate: !!tab._fromSealedTemplate,
                     materialDir: tab.materialDir || '',
                     folderQueueId: tab._folderQueueId || '',
                     externalFolderQueuesCombined: !!tab._externalFolderQueuesCombined,
@@ -21044,6 +21203,8 @@ function _batchAutoSave(options = {}) {
 // button and the batch-table “清空全部标签” action use this, so an older tab or
 // localStorage snapshot cannot resurrect deleted tasks after a reload.
 function reelsClearPersistedBatchTasks() {
+    if (_libraryAutoSyncTimer) { clearTimeout(_libraryAutoSyncTimer); _libraryAutoSyncTimer = null; }
+    _libraryFolderSyncGeneration++;
     if (window._reelsState) {
         window._reelsState.tasks = [];
         window._reelsState.selectedIdx = -1;
@@ -21128,6 +21289,8 @@ function _batchAutoRestore() {
                     libraryFolderId: String(t.libraryFolderId || '').trim(),
                     libraryUpdatedAt: String(t.libraryUpdatedAt || '').trim(),
                     _libraryDirty: false,
+                    _isLiveProject: Boolean(t.isLiveProject || t.libraryTemplateId),
+                    _fromSealedTemplate: Boolean(t.fromSealedTemplate && !t.libraryTemplateId),
                     materialDir: t.materialDir || '',
                     _folderQueueId: t.folderQueueId || '',
                     // 兼容此前没有持久化该标记的版本。
@@ -22261,9 +22424,12 @@ window.reelsFlushWorkspaceBeforeClose=function(){
     if(!Array.isArray(_batchTableState?.tabs) || _batchTableState.tabs.length === 0)return {ok:true,skipped:true};
     try{
         document.activeElement?.blur?.();
+        if(typeof window._flushAllPendingReelsEdits==='function')window._flushAllPendingReelsEdits();
         if(typeof _syncCurrentOverlayEditorToSelectedTask==='function')_syncCurrentOverlayEditorToSelectedTask();
         if(typeof _getSelectedTask==='function' && _getSelectedTask() && typeof _persistSubtitleStyleByScope==='function')_persistSubtitleStyleByScope(_readStyleFromUI());
+        try{_syncWorkspaceTabsBackToLibraryFolder({silent:true,onlyDirty:true,autoCreateNew:true,allowEmptyTabs:true,flushWorkspace:true}).catch(()=>{});}catch(_){}
         const ok=_batchAutoSave()===true;
+        try{window.electronAPI?.flushWorkspaceSaves?.();}catch(_){}
         return {ok,error:ok?'':'无法写入自动保存文件，请检查软件目录是否可写。'};
     }catch(error){return {ok:false,error:error.message||String(error)};}
 };

@@ -221,6 +221,198 @@ const _getDefaultProjectDir = () => {
 
 const _reelsFrameBridge = require('./services/reels-frame-bridge').createReelsFrameBridge(ipcRenderer);
 
+const _crypto = require('crypto');
+const _pendingSharedProjectWrites = new Map();
+let _sharedProjectWriteChain = Promise.resolve();
+let _sharedProjectTimer = null;
+let _pendingBatchWorkspaceContent = null;
+let _batchWorkspaceWriteChain = Promise.resolve();
+let _batchWorkspaceTimer = null;
+
+function _hashWorkspaceContent(content) {
+    return _crypto.createHash('sha256').update(String(content || '').replace(/"timestamp":"[^"]*",?/, '')).digest('hex');
+}
+
+function _isLikelyValidWorkspaceJson(content) {
+    if (typeof content !== 'string' || content.length < 20) return false;
+    if (!/"version"\s*:\s*"2\.0"/.test(content)) return false;
+    return /"tabs"\s*:\s*\[/.test(content) && !/"tabs"\s*:\s*\[\s*\]/.test(content);
+}
+
+const _syncDiskIo = {
+    mkdir: (dir) => fs.mkdirSync(dir, { recursive: true }),
+    copyFile: (src, dest) => fs.copyFileSync(src, dest),
+    writeAtomic: (targetFile, content) => {
+        fs.mkdirSync(path.dirname(targetFile), { recursive: true });
+        const temp = `${targetFile}.${process.pid}.${Date.now()}.tmp`;
+        fs.writeFileSync(temp, content, 'utf8');
+        fs.renameSync(temp, targetFile);
+    },
+};
+
+const _asyncDiskIo = {
+    mkdir: (dir) => fs.promises.mkdir(dir, { recursive: true }),
+    copyFile: (src, dest) => fs.promises.copyFile(src, dest).catch(() => {}),
+    writeAtomic: async (targetFile, content) => {
+        await fs.promises.mkdir(path.dirname(targetFile), { recursive: true });
+        const temp = `${targetFile}.${process.pid}.${Date.now()}.tmp`;
+        await fs.promises.writeFile(temp, content, 'utf8');
+        await fs.promises.rename(temp, targetFile);
+    },
+};
+
+function _resolveSharedProjectTargets(fileName, customDir = '') {
+    const safeName = path.basename(String(fileName || 'UntitledProject.json').trim() || 'UntitledProject.json');
+    const primaryDir = _getDefaultProjectDir();
+    const targetDirs = [...new Set([
+        ...(customDir ? [path.resolve(customDir)] : []),
+        primaryDir,
+        ...sharedProfile.getCandidateProjectDirs(),
+    ].filter(Boolean))];
+    return { safeName, primaryDir, targetDirs, cacheKey: `${safeName}|${customDir || ''}` };
+}
+
+function _writeSharedProjectEntry(entry, sync = false) {
+    try {
+        const { fileName, content, customDir } = entry;
+        const { safeName, primaryDir, targetDirs, cacheKey } = _resolveSharedProjectTargets(fileName, customDir);
+        const contentHash = _hashWorkspaceContent(content);
+        if (_sharedProjectLastHashes.get(cacheKey) === contentHash && (!primaryDir || fs.existsSync(path.join(primaryDir, safeName)))) {
+            return true;
+        }
+        if (sync) {
+            let savedPrimary = false;
+            for (const dir of targetDirs) {
+                try {
+                    _syncDiskIo.writeAtomic(path.join(dir, safeName), content);
+                    if (primaryDir && path.resolve(dir).toLowerCase() === path.resolve(primaryDir).toLowerCase()) {
+                        savedPrimary = true;
+                    }
+                } catch (_) { }
+            }
+            if (savedPrimary) _sharedProjectLastHashes.set(cacheKey, contentHash);
+            return savedPrimary;
+        }
+        return (async () => {
+            let savedPrimary = false;
+            for (const dir of targetDirs) {
+                try {
+                    await _asyncDiskIo.writeAtomic(path.join(dir, safeName), content);
+                    if (primaryDir && path.resolve(dir).toLowerCase() === path.resolve(primaryDir).toLowerCase()) {
+                        savedPrimary = true;
+                    }
+                } catch (_) { }
+            }
+            if (savedPrimary) _sharedProjectLastHashes.set(cacheKey, contentHash);
+            return savedPrimary;
+        })();
+    } catch (e) {
+        console.error('[Projects] saveSharedProjectFile failed:', e.message);
+        return false;
+    }
+}
+
+function _writeBatchWorkspaceContent(content, sync = false) {
+    if (location.hash.startsWith('#template=')) return true;
+    try {
+        const data = JSON.parse(content);
+        if (data.version !== '2.0' || !Array.isArray(data.tabs) || !data.tabs.length) return false;
+        const profile = _getProfileDataDir();
+        if (!profile) return false;
+        const dir = path.join(profile, 'projects');
+        const file = path.join(dir, 'workspace-autosave.json');
+        const hash = _hashWorkspaceContent(content);
+        if (hash === _workspaceLastHash && fs.existsSync(file)) return true;
+        const now = Date.now();
+        const shouldBackup = hash !== _workspaceLastHash && fs.existsSync(file) && (!_workspaceLastBackupAt || now - _workspaceLastBackupAt > 30000);
+        const backupPairs = [];
+        if (shouldBackup) {
+            for (let i = 4; i >= 1; i--) {
+                const oldFile = path.join(dir, 'workspace-previous-' + i + '.json');
+                if (fs.existsSync(oldFile)) backupPairs.push([oldFile, path.join(dir, 'workspace-previous-' + (i + 1) + '.json')]);
+            }
+            backupPairs.push([file, path.join(dir, 'workspace-previous-1.json')]);
+        }
+        const otherFiles = [];
+        for (const otherProfile of _getAllProfileDataDirs()) {
+            const otherFile = path.join(otherProfile, 'projects', 'workspace-autosave.json');
+            if (path.resolve(otherFile) !== path.resolve(file)) otherFiles.push(otherFile);
+        }
+        if (sync) {
+            _syncDiskIo.mkdir(dir);
+            if (shouldBackup) {
+                for (const [src, dest] of backupPairs) _syncDiskIo.copyFile(src, dest);
+                _workspaceLastBackupAt = now;
+            }
+            _syncDiskIo.writeAtomic(file, content);
+            for (const otherFile of otherFiles) {
+                try { _syncDiskIo.writeAtomic(otherFile, content); } catch (_) { }
+            }
+            _workspaceLastHash = hash;
+            return true;
+        }
+        return (async () => {
+            await _asyncDiskIo.mkdir(dir);
+            if (shouldBackup) {
+                for (const [src, dest] of backupPairs) await _asyncDiskIo.copyFile(src, dest);
+                _workspaceLastBackupAt = now;
+            }
+            await _asyncDiskIo.writeAtomic(file, content);
+            for (const otherFile of otherFiles) _asyncDiskIo.writeAtomic(otherFile, content).catch(() => {});
+            _workspaceLastHash = hash;
+            return true;
+        })();
+    } catch (e) {
+        console.error('[Workspace] Save failed:', e.message);
+        return false;
+    }
+}
+
+function _drainPendingWorkspaceDiskSavesAsync() {
+    if (_pendingBatchWorkspaceContent !== null) {
+        const nextContent = _pendingBatchWorkspaceContent;
+        _pendingBatchWorkspaceContent = null;
+        _batchWorkspaceWriteChain = _batchWorkspaceWriteChain
+            .then(() => _writeBatchWorkspaceContent(nextContent, false))
+            .catch(() => {})
+            .finally(() => {
+                if (_pendingBatchWorkspaceContent !== null) _drainPendingWorkspaceDiskSavesAsync();
+            });
+    }
+    if (_pendingSharedProjectWrites.size > 0) {
+        const entries = Array.from(_pendingSharedProjectWrites.values());
+        _pendingSharedProjectWrites.clear();
+        _sharedProjectWriteChain = _sharedProjectWriteChain
+            .then(async () => {
+                for (const entry of entries) {
+                    await _writeSharedProjectEntry(entry, false);
+                }
+            })
+            .catch(() => {})
+            .finally(() => {
+                if (_pendingSharedProjectWrites.size > 0) _drainPendingWorkspaceDiskSavesAsync();
+            });
+    }
+}
+
+function _flushPendingWorkspaceDiskSavesSync() {
+    if (_batchWorkspaceTimer) { clearTimeout(_batchWorkspaceTimer); _batchWorkspaceTimer = null; }
+    if (_sharedProjectTimer) { clearTimeout(_sharedProjectTimer); _sharedProjectTimer = null; }
+    if (_pendingBatchWorkspaceContent !== null) {
+        const content = _pendingBatchWorkspaceContent;
+        _pendingBatchWorkspaceContent = null;
+        void _writeBatchWorkspaceContent(content, true);
+    }
+    if (_pendingSharedProjectWrites.size > 0) {
+        const entries = Array.from(_pendingSharedProjectWrites.values());
+        _pendingSharedProjectWrites.clear();
+        for (const entry of entries) {
+            void _writeSharedProjectEntry(entry, true);
+        }
+    }
+}
+window.addEventListener('beforeunload', _flushPendingWorkspaceDiskSavesSync);
+
 const safeOpenPath = async (targetPath) => {
     try {
         return await ipcRenderer.invoke('open-path', targetPath);
@@ -664,32 +856,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
     saveSharedProjectFile: (fileName, content, customDir = '') => {
         try {
             const safeName = path.basename(String(fileName || 'UntitledProject.json').trim() || 'UntitledProject.json');
-            const contentHash = require('crypto').createHash('sha256').update(String(content || '').replace(/"timestamp":"[^"]*",?/, '')).digest('hex');
             const cacheKey = `${safeName}|${customDir || ''}`;
-            const defaultCheckDir = _getDefaultProjectDir();
-            if (_sharedProjectLastHashes.get(cacheKey) === contentHash && (!defaultCheckDir || fs.existsSync(path.join(defaultCheckDir, safeName)))) return true;
-            const primaryDir = _getDefaultProjectDir();
-            const targetDirs = [...new Set([
-                ...(customDir ? [path.resolve(customDir)] : []),
-                primaryDir,
-                ...sharedProfile.getCandidateProjectDirs(),
-            ].filter(Boolean))];
-            let savedPrimary = false;
-            const now = Date.now();
-            for (const dir of targetDirs) {
-                try {
-                    fs.mkdirSync(dir, { recursive: true });
-                    const targetFile = path.join(dir, safeName);
-                    const tempFile = `${targetFile}.${process.pid}.${now}.tmp`;
-                    fs.writeFileSync(tempFile, content, 'utf8');
-                    fs.renameSync(tempFile, targetFile);
-                    if (path.resolve(dir).toLowerCase() === path.resolve(primaryDir).toLowerCase()) {
-                        savedPrimary = true;
-                    }
-                } catch (_) { }
+            _pendingSharedProjectWrites.set(cacheKey, { fileName: safeName, content, customDir });
+            if (!_sharedProjectTimer) {
+                _sharedProjectTimer = setTimeout(() => {
+                    _sharedProjectTimer = null;
+                    _drainPendingWorkspaceDiskSavesAsync();
+                }, 40);
             }
-            if (savedPrimary) _sharedProjectLastHashes.set(cacheKey, contentHash);
-            return savedPrimary;
+            return true;
         } catch (e) {
             console.error('[Projects] saveSharedProjectFile failed:', e.message);
             return false;
@@ -712,48 +887,20 @@ contextBridge.exposeInMainWorld('electronAPI', {
     },
     saveBatchWorkspace: (content) => {
         if (location.hash.startsWith('#template=')) return true;
-        try {
-            const data = JSON.parse(content);
-            if (data.version !== '2.0' || !Array.isArray(data.tabs) || !data.tabs.length) return false;
-            const profile = _getProfileDataDir();
-            if (!profile) return false;
-            const dir = path.join(profile, 'projects');
-            fs.mkdirSync(dir, { recursive: true });
-            const file = path.join(dir, 'workspace-autosave.json');
-            const hash = require('crypto').createHash('sha256').update(content.replace(/"timestamp":"[^"]*",?/, '')).digest('hex');
-            if (hash === _workspaceLastHash && fs.existsSync(file)) {
-                return true;
-            }
-            const now = Date.now();
-            if (hash !== _workspaceLastHash && fs.existsSync(file) && (!_workspaceLastBackupAt || now - _workspaceLastBackupAt > 30000)) {
-                for (let i = 4; i >= 1; i--) {
-                    const old = path.join(dir, 'workspace-previous-' + i + '.json');
-                    const next = path.join(dir, 'workspace-previous-' + (i + 1) + '.json');
-                    if (fs.existsSync(old)) fs.copyFileSync(old, next);
-                }
-                fs.copyFileSync(file, path.join(dir, 'workspace-previous-1.json'));
-                _workspaceLastBackupAt = now;
-            }
-            const writeAtomic = (targetFile) => {
-                fs.mkdirSync(path.dirname(targetFile), { recursive: true });
-                const temp = targetFile + '.' + process.pid + '.' + now + '.tmp';
-                fs.writeFileSync(temp, content, 'utf8');
-                fs.renameSync(temp, targetFile);
-            };
-            writeAtomic(file);
-            for (const otherProfile of _getAllProfileDataDirs()) {
-                const otherFile = path.join(otherProfile, 'projects', 'workspace-autosave.json');
-                if (path.resolve(otherFile) === path.resolve(file)) continue;
-                fs.promises.mkdir(path.dirname(otherFile), { recursive: true })
-                    .then(() => {
-                        const temp = otherFile + '.' + process.pid + '.' + now + '.tmp';
-                        return fs.promises.writeFile(temp, content, 'utf8').then(() => fs.promises.rename(temp, otherFile));
-                    })
-                    .catch(() => { });
-            }
-            _workspaceLastHash = hash;
-            return true;
-        } catch (e) { console.error('[Workspace] Save failed:', e.message); return false; }
+        if (!_isLikelyValidWorkspaceJson(content)) return false;
+        if (!_getProfileDataDir()) return false;
+        _pendingBatchWorkspaceContent = content;
+        if (!_batchWorkspaceTimer) {
+            _batchWorkspaceTimer = setTimeout(() => {
+                _batchWorkspaceTimer = null;
+                _drainPendingWorkspaceDiskSavesAsync();
+            }, 40);
+        }
+        return true;
+    },
+    flushWorkspaceSaves: () => {
+        _flushPendingWorkspaceDiskSavesSync();
+        return true;
     },
     chooseBatchImportMode: (counts) => ipcRenderer.invoke('batch-project:choose-import-mode', counts),
     writeFileText: (filePath, content) => {

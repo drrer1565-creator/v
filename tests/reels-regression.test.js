@@ -2027,8 +2027,11 @@ test('Christmas writing pens, subtitle ribbon bands, ornaments, and presets are 
     loadBrowserScript('src/reels-canvas-renderer.js', sandbox);
 
     const isTip = sandbox.window.isImageOrVectorWritingTip;
-    for (const kind of ['candy_cane', 'christmas_tree', 'holly_berry', 'snowflake_wand', 'santa_feather', 'jingle_bell']) {
-        assert.equal(isTip(kind), true, `Christmas writing tip "${kind}" must be registered in BUILTIN_WRITING_TIP_KINDS`);
+    for (const kind of [
+        'candy_cane', 'christmas_tree', 'holly_berry', 'snowflake_wand', 'santa_feather', 'jingle_bell',
+        'maple_leaf', 'wheat_stalk', 'acorn', 'minimal_pumpkin', 'warm_mug', 'olive_branch',
+    ]) {
+        assert.equal(isTip(kind), true, `Seasonal writing tip "${kind}" must be registered in BUILTIN_WRITING_TIP_KINDS`);
     }
 
     const brushEngine = sandbox.window.ReelsBrushEngine;
@@ -2048,6 +2051,12 @@ test('Christmas writing pens, subtitle ribbon bands, ornaments, and presets are 
         'xmas_gingerbread_card',
         'xmas_starry_snow_night',
         'xmas_cream_holly_letter',
+        'thx_oat_linen_letterpress',
+        'thx_terracotta_botanical',
+        'thx_sage_gratitude_frame',
+        'thx_spiced_amber_hearth',
+        'thx_espresso_gold_minimal',
+        'thx_heirloom_kraft_twine',
     ]) {
         assert.equal(brushEngine.isCardBackgroundStyle(cardStyle), true, `Card background style "${cardStyle}" must be registered in ReelsBrushEngine.CARD_BACKGROUND_STYLES`);
         let saveCount = 0;
@@ -2314,9 +2323,13 @@ test('Christmas writing pens, subtitle ribbon bands, ornaments, and presets are 
 
 test('All built-in subtitle presets (including fullpage_typewriter newspaper cutout & candy ribbon) render without error and produce visible on-screen output', () => {
     const sandbox = loadBrowserScript('src/reels-style-engine.js', { window: { addEventListener() {} } });
+    sandbox.ReelsStyleEngine = sandbox.window.ReelsStyleEngine;
     loadBrowserScript('src/reels-presets-init.js', sandbox);
     loadBrowserScript('src/reels-anim-engine.js', sandbox);
+    sandbox.ReelsAnimEngine = sandbox.window.ReelsAnimEngine;
     loadBrowserScript('src/reels-overlay.js', sandbox);
+    sandbox.ReelsOverlay = sandbox.window.ReelsOverlay;
+    sandbox.ReelsBrushEngine = sandbox.window.ReelsBrushEngine;
     loadBrowserScript('src/reels-canvas-renderer.js', sandbox);
 
     const engine = sandbox.window.ReelsStyleEngine;
@@ -4922,7 +4935,7 @@ test('Scroll subtitle inspector organizes controls into clean collapsibles while
     assert.strictEqual((scrollBlock.match(/class="[^"]*rop-scroll-corner-badge-quick/g) || []).length, 13);
     assert.strictEqual((scrollBlock.match(/class="[^"]*rop-scroll-body-bg-preset/g) || []).length, 13);
     assert.strictEqual((scrollBlock.match(/class="[^"]*rop-scroll-tw-style-preset/g) || []).length, 14);
-    assert.strictEqual((scrollBlock.match(/class="[^"]*rop-scroll-tw-icon-chip/g) || []).length, 27);
+    assert.strictEqual((scrollBlock.match(/class="[^"]*rop-scroll-tw-icon-chip/g) || []).length, 33);
     assert.strictEqual((scrollBlock.match(/class="[^"]*rop-scroll-feather-preset/g) || []).length, 5);
 
     // Critical DOM element IDs remain identically addressable
@@ -6055,6 +6068,7 @@ test('Reels package-only and export-copy bundle regular batch tasks and remap pa
     }
 });
 
+
 test('Tab small-groups, grouped batch packaging subfolders, and multi-group restore round-trip', async () => {
     const os = require('node:os');
     const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'vk-tabgroup-pkg-'));
@@ -6334,6 +6348,7 @@ test('Tab small-groups, grouped batch packaging subfolders, and multi-group rest
     }
 });
 
+
 test('Cloud Hub downloadCloudProject splits flat grouped batch JSON into multiple tabs and relinks nested group folders', async () => {
     const os = require('node:os');
     const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'vk-cloud-multigroup-'));
@@ -6553,6 +6568,7 @@ test('Project packager & loader preserve watermarks (attribution), persist to lo
     }
 });
 
+
 test('Tab visibility project manager (open vs background) and duplicate cloud project prevention', async () => {
     const os = require('node:os');
     const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'vk-projmgr-'));
@@ -6726,6 +6742,7 @@ test('Tab visibility project manager (open vs background) and duplicate cloud pr
     }
 });
 
+
 test('Cloud Hub SSRF & unsafe protocol/prototype guards reject dangerous inputs', async () => {
     const os = require('node:os');
     const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'vk-hub-sec-'));
@@ -6817,7 +6834,7 @@ test('Project Library nested 3-level folders, move cycle guard, scoped rename & 
             thumbnail: 'data:image/png;base64,thumb_lvl3',
             projectData: { tasks: [{ baseName: 't3' }] },
         });
-        assert.throws(() => templates.deleteEmptyTemplateFolder(l3.id), /移出文件夹内的工程/);
+        assert.throws(() => templates.deleteEmptyTemplateFolder(l3.id), /移出文件夹内的模板/);
 
         const fetched = templates.getTemplatesByIds([p3.id, p1.id]);
         assert.equal(fetched.length, 2);
@@ -6883,25 +6900,26 @@ test('Project Library strict Level-3 workspace + Batch Table + working panel syn
     const apiFetchMock = async (url, init = {}) => {
         const body = init.body ? JSON.parse(init.body) : {};
         const okJson = (data) => ({ ok: true, status: 200, json: async () => ({ data }) });
-        if (String(url).endsWith('/templates/folders/list')) {
+        const u = String(url || '');
+        if (u.endsWith('/live-projects/folders/list') || u.endsWith('/templates/folders/list')) {
             return okJson({ folders: foldersDb, assignments: assignmentsDb, folderOrders: {} });
         }
-        if (String(url).endsWith('/templates/list')) {
+        if (u.endsWith('/live-projects/list') || u.endsWith('/templates/list')) {
             const list = [...templatesDb.values()].map(t => ({
                 id: t.id, name: t.name, thumbnail: t.thumbnail, updatedAt: t.updatedAt, taskCount: t.projectData.tasks.length,
             }));
             return okJson(list);
         }
-        if (String(url).endsWith('/templates/get-many')) {
+        if (u.endsWith('/live-projects/get-many') || u.endsWith('/templates/get-many')) {
             const list = (body.ids || []).map(id => templatesDb.get(id)).filter(Boolean);
             return okJson(list);
         }
-        if (String(url).endsWith('/templates/get')) {
+        if (u.endsWith('/live-projects/get') || u.endsWith('/templates/get')) {
             return okJson(templatesDb.get(body.id) || null);
         }
-        if (String(url).endsWith('/templates/save')) {
+        if (u.endsWith('/live-projects/save') || u.endsWith('/templates/save')) {
             savedBackPayloads.push(body);
-            const id = body.id || `tpl_new_${savedBackPayloads.length}`;
+            const id = body.id || `prj_new_${savedBackPayloads.length}`;
             const updated = {
                 id,
                 name: body.name,
@@ -6916,7 +6934,7 @@ test('Project Library strict Level-3 workspace + Batch Table + working panel syn
             }
             return okJson({ id, success: true });
         }
-        if (String(url).endsWith('/templates/rename')) {
+        if (u.endsWith('/live-projects/rename') || u.endsWith('/templates/rename')) {
             const t = templatesDb.get(body.id);
             if (t) t.name = body.name;
             return okJson({ success: true });
@@ -7088,7 +7106,8 @@ test('Project Library strict Level-3 workspace + Batch Table + working panel syn
     // Verify UI & CRLF contracts
     const indexHtml = fs.readFileSync(path.join(ROOT, 'src/index.html'), 'utf8');
     const templatesRaw = fs.readFileSync(path.join(ROOT, 'src/reels-templates.js'), 'utf8');
-    assert.match(indexHtml, /🗂️ 工程管理库/);
+    assert.match(indexHtml, /🗂️ 工程项目/);
+    assert.match(indexHtml, /📂 模板库/);
     assert.match(indexHtml, /id="reels-active-folder-bar"/);
     assert.match(templatesRaw, /tpl-card-check/);
     assert.match(templatesRaw, /tpl-apply-selected-btn/);
@@ -7105,6 +7124,7 @@ test('Project Library auto-archives live workspace tabs (open, hidden & combined
     const mockApp = { getPath: () => tmpUserData };
     const mockShared = {
         getCandidateTemplateDirs: () => [path.join(tmpUserData, 'videokit-templates')],
+        getCandidateLiveProjectDirs: () => [path.join(tmpUserData, 'videokit-live-projects')],
         isIsolatedTestProfile: () => true,
     };
 
@@ -7123,7 +7143,14 @@ test('Project Library auto-archives live workspace tabs (open, hidden & combined
             const u = String(url || '');
             const body = init.body ? JSON.parse(init.body) : {};
             let res = { success: true };
-            if (u.endsWith('/templates/folders/list')) res = tplService.readTemplateFolders();
+            if (u.endsWith('/live-projects/folders/list')) res = tplService.readLiveProjectFolders();
+            else if (u.endsWith('/live-projects/folders/create')) res = tplService.createLiveProjectFolder(body.name, body.parentId || '');
+            else if (u.endsWith('/live-projects/folders/reorder')) res = tplService.reorderLiveProjectLibrary(body.order, body.parentId || '');
+            else if (u.endsWith('/live-projects/list')) res = tplService.listLiveProjects();
+            else if (u.endsWith('/live-projects/get')) res = tplService.getLiveProject(body.id);
+            else if (u.endsWith('/live-projects/get-many')) res = tplService.getLiveProjectsByIds(body.ids || []);
+            else if (u.endsWith('/live-projects/save')) res = tplService.saveLiveProject(body);
+            else if (u.endsWith('/templates/folders/list')) res = tplService.readTemplateFolders();
             else if (u.endsWith('/templates/folders/create')) res = tplService.createTemplateFolder(body.name, body.parentId || '');
             else if (u.endsWith('/templates/folders/reorder')) res = tplService.reorderTemplateLibrary(body.order, body.parentId || '');
             else if (u.endsWith('/templates/list')) res = tplService.listTemplates();
@@ -7220,15 +7247,16 @@ test('Project Library auto-archives live workspace tabs (open, hidden & combined
         });
         assert.equal(ok1, true);
 
-        const foldersAfter = tplService.readTemplateFolders();
+        const foldersAfter = tplService.readLiveProjectFolders();
         const rootFolder = foldersAfter.folders.find(f => f.name === '我的自动工程');
         assert.ok(rootFolder);
         const subA = foldersAfter.folders.find(f => f.parentId === rootFolder.id && f.name === '分组A');
         const subB = foldersAfter.folders.find(f => f.parentId === rootFolder.id && f.name === '分组B');
         assert.ok(subA && subB);
 
-        const listAfter = tplService.listTemplates();
+        const listAfter = tplService.listLiveProjects();
         assert.equal(listAfter.length, 5);
+        assert.equal(tplService.listTemplates().length, 0, 'Auto-archiving live workspace must keep sealed templates store isolated');
         assert.ok(listAfter.every(t => !t.name.includes('[Q-')), 'Clean tab names should not append [Q-xxxx]');
         assert.equal(foldersAfter.assignments[listAfter.find(t => t.name === '早班号1').id], subA.id);
         assert.equal(foldersAfter.assignments[listAfter.find(t => t.name === '晚班号2').id], subB.id);
@@ -7258,7 +7286,7 @@ test('Project Library auto-archives live workspace tabs (open, hidden & combined
             folderPath: _batchTableState.activeLibraryFolderPath,
             barHtml: document.getElementById('reels-active-folder-bar').innerHTML
         })`, sandbox));
-        const unifiedFolder = tplService.readTemplateFolders().folders.find(f => f.name === '统一管理工程');
+        const unifiedFolder = tplService.readLiveProjectFolders().folders.find(f => f.name === '统一管理工程');
         assert.equal(unifiedState.folderId, unifiedFolder.id);
         assert.match(unifiedState.folderPath, /统一管理工程/);
         assert.match(unifiedState.barHtml, /统一管理工程/);
@@ -7663,8 +7691,8 @@ test('150 new prayer & Christmas card scroll presets (sc-49..sc-198), 31 new boa
 
     const { ReelsOverlay, ReelsBrushEngine, REELS_BUILTIN_SCROLL_STYLE_PRESETS, REELS_SCROLL_PRESET_ID_MAP, resolveBuiltinPreset } = sandbox.window;
 
-    assert.strictEqual(Object.keys(REELS_BUILTIN_SCROLL_STYLE_PRESETS).length, 198, 'Expected 198 built-in scroll style presets');
-    assert.strictEqual(Object.keys(REELS_SCROLL_PRESET_ID_MAP).length, 396, 'Expected 396 scroll preset ID mappings (sc-01..198 & scroll-01..198)');
+    assert.strictEqual(Object.keys(REELS_BUILTIN_SCROLL_STYLE_PRESETS).length, 214, 'Expected 214 built-in scroll style presets');
+    assert.strictEqual(Object.keys(REELS_SCROLL_PRESET_ID_MAP).length, 428, 'Expected 428 scroll preset ID mappings (sc-01..214 & scroll-01..214)');
 
     const newBoardIds = [
         'kraft_torn_note', 'kraft_stamped_letter', 'kraft_espresso_prayer',
@@ -7685,7 +7713,10 @@ test('150 new prayer & Christmas card scroll presets (sc-49..sc-198), 31 new boa
 
     const emblemMeta = ReelsOverlay.NA_PRAYER_EMBLEM_META;
     const emblemKeys = Object.keys(emblemMeta || {});
-    assert.strictEqual(emblemKeys.length, 72, 'Expected 72 North American, Catholic & Christmas emblems in NA_PRAYER_EMBLEM_META');
+    assert.strictEqual(emblemKeys.length, 78, 'Expected 78 North American, Catholic, Christmas & Thanksgiving emblems in NA_PRAYER_EMBLEM_META');
+    for (const thxKey of ['na_thx_maple', 'na_thx_wheat', 'na_thx_acorn', 'na_thx_heirloom_pumpkin', 'na_thx_autumn_mug', 'na_thx_olive_wreath']) {
+        assert.ok(emblemMeta[thxKey], `Expected Thanksgiving emblem "${thxKey}" in NA_PRAYER_EMBLEM_META`);
+    }
 
     const drawCalls = { fillText: 0, translate: 0 };
     const mockCtx = {
@@ -8036,7 +8067,7 @@ test('Atmospheric Scroll Style Preview Studio Modal (.rsl-dialog): categories, m
     const modal = appendedById['rop-scroll-style-picker-popover'];
     assert.ok(modal && modal.classList.contains('rsl-backdrop'), 'Modal #rop-scroll-style-picker-popover must use rsl-backdrop class');
     assert.ok(modal.innerHTML.includes('rsl-dialog'), 'Modal must render centered .rsl-dialog');
-    assert.strictEqual(modal.querySelectorAll('.rsl-card').length, 198, 'All 198 scroll cards must render inside studio grid');
+    assert.strictEqual(modal.querySelectorAll('.rsl-card').length, 214, 'All 214 scroll cards must render inside studio grid');
     assert.ok(modal.querySelectorAll('.rsl-chip').length >= 12, 'Expected material/element filter chips including 圣诞贺卡');
     assert.ok(rafQueue.length > 0, 'Lazy canvas thumbnail & stage RAF loops must be scheduled');
 
@@ -8050,19 +8081,27 @@ test('Atmospheric Scroll Style Preview Studio Modal (.rsl-dialog): categories, m
     assert.ok(oldPhotoChip, 'Expected 老照片 filter chip');
     oldPhotoChip.dispatchEvent({ type: 'click' });
     const visibleAfterChip = modal.querySelectorAll('.rsl-card').filter(c => c.style.display !== 'none');
-    assert.ok(visibleAfterChip.length > 0 && visibleAfterChip.length < 198, 'Selecting oldphoto chip should filter cards');
-    assert.ok(modal.querySelector('.rsl-count-readout').textContent.includes(`显示 ${visibleAfterChip.length} / 198`));
+    assert.ok(visibleAfterChip.length > 0 && visibleAfterChip.length < 214, 'Selecting oldphoto chip should filter cards');
+    assert.ok(modal.querySelector('.rsl-count-readout').textContent.includes(`显示 ${visibleAfterChip.length} / 214`));
 
-    // Verify Christmas chip shows all new sc-149..sc-198 cards
+    // Verify Christmas chip shows sc-149..sc-198 cards (and does NOT include sc-199..sc-214 Thanksgiving cards)
     oldPhotoChip.dispatchEvent({ type: 'click' });
     const xmasChip = modal.querySelectorAll('.rsl-chip').find(c => c.dataset.flag === 'christmas');
     assert.ok(xmasChip, 'Expected 🎄 圣诞贺卡 filter chip');
     xmasChip.dispatchEvent({ type: 'click' });
     const xmasCards = modal.querySelectorAll('.rsl-card').filter(c => c.style.display !== 'none');
-    assert.ok(xmasCards.length >= 50 && xmasCards.length < 198, `Expected >= 50 Christmas scroll cards, got ${xmasCards.length}`);
+    assert.ok(xmasCards.length >= 50 && xmasCards.length < 214, `Expected >= 50 Christmas scroll cards without overflowing into sc-199..214, got ${xmasCards.length}`);
+
+    // Verify Thanksgiving chip shows all 16 sc-199..sc-214 minimalist autumn/prayer cards (+ curated non-Christmas harvest cards)
+    xmasChip.dispatchEvent({ type: 'click' });
+    const thxChip = modal.querySelectorAll('.rsl-chip').find(c => c.dataset.flag === 'thanksgiving');
+    assert.ok(thxChip, 'Expected 🍂 感恩节极简 filter chip');
+    thxChip.dispatchEvent({ type: 'click' });
+    const thxCards = modal.querySelectorAll('.rsl-card').filter(c => c.style.display !== 'none');
+    assert.ok(thxCards.length >= 16 && thxCards.length < 214, `Expected >= 16 Thanksgiving scroll cards without leaking Christmas deck, got ${thxCards.length}`);
 
     // Clear chip & search for 白头鹰
-    xmasChip.dispatchEvent({ type: 'click' });
+    thxChip.dispatchEvent({ type: 'click' });
     const searchEl = modal.querySelector('#rop-scroll-picker-search');
     searchEl.value = '白头鹰';
     searchEl.dispatchEvent({ type: 'input' });
@@ -9263,6 +9302,1099 @@ test('End-to-end reelsStartExport persists Array resolvedBaseNames and reelsResu
         fs.rmSync(tmpRoot, { recursive: true, force: true });
     }
 });
+
+test('Thanksgiving Pinterest minimalist presets (sub-229..sub-244), sc-199..sc-214 cards, and box_wipe leading cursor + brush clip', () => {
+    const sandbox = loadBrowserScript('src/reels-style-engine.js', { window: { addEventListener() {} } });
+    sandbox.ReelsStyleEngine = sandbox.window.ReelsStyleEngine;
+    loadBrowserScript('src/reels-presets-init.js', sandbox);
+    loadBrowserScript('src/reels-anim-engine.js', sandbox);
+    sandbox.ReelsAnimEngine = sandbox.window.ReelsAnimEngine;
+    loadBrowserScript('src/reels-overlay.js', sandbox);
+    sandbox.ReelsOverlay = sandbox.window.ReelsOverlay;
+    sandbox.ReelsBrushEngine = sandbox.window.ReelsBrushEngine;
+    loadBrowserScript('src/reels-canvas-renderer.js', sandbox);
+
+    const {
+        ReelsStyleEngine,
+        ReelsCanvasRenderer,
+        ReelsBrushEngine,
+        ReelsOverlay,
+        resolveBuiltinPreset,
+        REELS_BUILTIN_SCROLL_STYLE_PRESETS,
+    } = sandbox.window;
+
+    // 1. All 16 minimalist Thanksgiving T-subtitle presets sub-229..sub-244 resolve, appear in category, and have unique fingerprints
+    const { categorized, presetsMap } = ReelsStyleEngine.getPresetsByCategory();
+    const thxGroup = categorized.find(g => g.category === '🍂 感恩节 · 简约秋日与祈祷');
+    assert.ok(thxGroup, 'PRESET_CATEGORIES must include 🍂 感恩节 · 简约秋日与祈祷');
+    assert.strictEqual(thxGroup.names.length, 16, `Expected 16 Thanksgiving presets in category, got ${thxGroup.names.length}`);
+
+    const thxTips = ['maple_leaf', 'wheat_stalk', 'acorn', 'minimal_pumpkin', 'warm_mug', 'olive_branch'];
+    const makeCtx = () => {
+        const ops = [];
+        let saveCount = 0;
+        let restoreCount = 0;
+        const grad = { addColorStop() {} };
+        const ctx = {
+            canvas: { width: 1080, height: 1920 },
+            globalAlpha: 1,
+            globalCompositeOperation: 'source-over',
+            font: '600 54px Georgia',
+            fillStyle: '#FFFFFF',
+            strokeStyle: '#000000',
+            lineWidth: 2,
+            lineCap: 'round',
+            lineJoin: 'round',
+            miterLimit: 10,
+            textAlign: 'left',
+            textBaseline: 'alphabetic',
+            shadowColor: 'transparent',
+            shadowBlur: 0,
+            shadowOffsetX: 0,
+            shadowOffsetY: 0,
+            save() { saveCount++; ops.push({ op: 'save' }); },
+            restore() { restoreCount++; ops.push({ op: 'restore' }); },
+            beginPath() { ops.push({ op: 'beginPath' }); },
+            closePath() {},
+            moveTo(x, y) { ops.push({ op: 'moveTo', x, y }); },
+            lineTo(x, y) { ops.push({ op: 'lineTo', x, y }); },
+            quadraticCurveTo() {},
+            bezierCurveTo() {},
+            arc(x, y, r) { ops.push({ op: 'arc', x, y, r }); },
+            arcTo() {},
+            ellipse(x, y, rx, ry) { ops.push({ op: 'ellipse', x, y, rx, ry }); },
+            rect(x, y, w, h) { ops.push({ op: 'rect', x, y, w, h }); },
+            roundRect(x, y, w, h) { ops.push({ op: 'roundRect', x, y, w, h }); },
+            clip() { ops.push({ op: 'clip' }); },
+            fill() { ops.push({ op: 'fill', style: this.fillStyle }); },
+            stroke() { ops.push({ op: 'stroke', style: this.strokeStyle }); },
+            fillRect(x, y, w, h) { ops.push({ op: 'fillRect', x, y, w, h }); },
+            strokeRect(x, y, w, h) { ops.push({ op: 'strokeRect', x, y, w, h }); },
+            clearRect() {},
+            drawImage() { ops.push({ op: 'drawImage' }); },
+            translate(x, y) { ops.push({ op: 'translate', x, y }); },
+            rotate(a) { ops.push({ op: 'rotate', a }); },
+            scale(sx, sy) { ops.push({ op: 'scale', sx, sy }); },
+            setTransform() {},
+            resetTransform() {},
+            setLineDash() {},
+            createPattern() { return {}; },
+            createLinearGradient() { return grad; },
+            createRadialGradient() { return grad; },
+            measureText(txt) {
+                return {
+                    width: String(txt || '').length * 24,
+                    actualBoundingBoxAscent: 42,
+                    actualBoundingBoxDescent: 12,
+                };
+            },
+            fillText(txt, x, y) { ops.push({ op: 'fillText', text: String(txt), x, y }); },
+            strokeText(txt, x, y) { ops.push({ op: 'strokeText', text: String(txt), x, y }); },
+            _ops: ops,
+            _counts: () => ({ saveCount, restoreCount }),
+        };
+        return ctx;
+    };
+
+    for (let n = 229; n <= 244; n++) {
+        const res = resolveBuiltinPreset(`sub-${n}`);
+        assert.ok(res && res.preset, `sub-${n} must resolve`);
+        assert.ok(thxGroup.names.includes(res.name), `sub-${n} (${res.name}) must belong to Thanksgiving category`);
+        const st = ReelsStyleEngine.applySubtitlePreset(res.name);
+        assert.equal(st.anim_in_type, 'box_wipe', `sub-${n} should use box_wipe animation`);
+        assert.equal(st.use_box, true, `sub-${n} should enable background slab`);
+        const fp = ReelsStyleEngine.subtitleStyleFingerprint(presetsMap[res.name]);
+        const dupCount = Object.values(presetsMap).filter(x => ReelsStyleEngine.subtitleStyleFingerprint(x) === fp).length;
+        assert.equal(dupCount, 1, `sub-${n} (${res.name}) must have a unique style fingerprint`);
+
+        const c = makeCtx();
+        const r = new ReelsCanvasRenderer({ width: 1080, height: 1920, getContext: () => c });
+        r.renderSubtitle(st, { start: 0, end: 3.0, text: 'Give thanks with a grateful heart\nin every season of life' }, 1.1, 1080, 1920);
+        const { saveCount, restoreCount } = c._counts();
+        assert.equal(saveCount, restoreCount, `sub-${n} renderSubtitle must balance ctx.save()/restore()`);
+        assert.ok(c._ops.some(op => op.op === 'fillText'), `sub-${n} renderSubtitle must draw subtitle text`);
+    }
+
+    // 2. Render each of the 6 new Thanksgiving vector cursor icons & verify box_wipe leading-edge progression + non-squashed brush clip
+    const brushCalls = [];
+    const origDrawBrush = ReelsBrushEngine.drawBrush.bind(ReelsBrushEngine);
+    ReelsBrushEngine.drawBrush = (ctx, x, y, w, h, opts) => {
+        brushCalls.push({ x, y, w, h, style: opts?.style });
+        return origDrawBrush(ctx, x, y, w, h, opts);
+    };
+    sandbox.window.ReelsBrushEngine.drawBrush = ReelsBrushEngine.drawBrush;
+
+    const tipCtxEarly = makeCtx();
+    const tipCtxLate = makeCtx();
+    const tipRendererEarly = new ReelsCanvasRenderer({ width: 1080, height: 1920, getContext: () => tipCtxEarly });
+    const tipRendererLate = new ReelsCanvasRenderer({ width: 1080, height: 1920, getContext: () => tipCtxLate });
+    const baseWipeStyle = {
+        ...ReelsStyleEngine.applySubtitlePreset('sub-230'),
+        use_box: true,
+        box_brush_style: 'watercolor',
+        anim_in_type: 'box_wipe',
+        subtitle_cursor_enabled: true,
+        fullpage_typewriter_cursor_kind: 'maple_leaf',
+        fullpage_typewriter_cursor_scale: 1.0,
+    };
+    const wipeSeg = { start: 0, end: 2.0, text: 'Walking through quiet autumn grace\nunder golden maple trees' };
+    tipRendererEarly.renderSubtitle(baseWipeStyle, wipeSeg, 0.25, 1080, 1920);
+    const earlyBrushCount = brushCalls.length;
+    tipRendererLate.renderSubtitle(baseWipeStyle, wipeSeg, 1.35, 1080, 1920);
+
+    // Brush engine must always receive full un-squashed box width while ctx.clip clips horizontally
+    assert.ok(earlyBrushCount >= 1 && brushCalls.length >= earlyBrushCount + 2, 'drawBrush must be invoked for brush box_wipe at both early and late times');
+    const widthsEarly = brushCalls.slice(0, earlyBrushCount).map(b => b.w);
+    const widthsLate = brushCalls.slice(earlyBrushCount).map(b => b.w);
+    assert.ok(Math.abs(Math.max(...widthsEarly) - Math.max(...widthsLate)) < 1, 'box_wipe brush drawBrush width must remain full un-squashed width and wipe via ctx.clip()');
+    assert.ok(tipCtxEarly._ops.some(o => o.op === 'clip') && tipCtxLate._ops.some(o => o.op === 'clip'), 'box_wipe brush render must clip horizontally');
+
+    // Moving leading cursor translates further right/down between t=0.25 and t=1.35
+    const maxTipTranslate = (ops) => {
+        const fillsIdx = ops.findIndex(o => o.op === 'fillText');
+        const tipOps = fillsIdx >= 0 ? ops.slice(fillsIdx) : ops;
+        const trs = tipOps.filter(o => o.op === 'translate' && Number.isFinite(o.x) && o.x > 0);
+        return trs.length ? trs[trs.length - 1] : null;
+    };
+    const trEarly = maxTipTranslate(tipCtxEarly._ops);
+    const trLate = maxTipTranslate(tipCtxLate._ops);
+    assert.ok(trEarly && trLate, 'box_wipe with subtitle_cursor_enabled must draw vector writing tip via ctx.translate');
+    assert.ok(trLate.y > trEarly.y || (Math.abs(trLate.y - trEarly.y) < 1 && trLate.x > trEarly.x), `Expected leading-edge cursor at t=1.35 (${JSON.stringify(trLate)}) to advance past t=0.25 (${JSON.stringify(trEarly)})`);
+
+    // Every new Thanksgiving icon kind renders cleanly without throwing or leaking ctx state
+    for (const kind of thxTips) {
+        const kc = makeCtx();
+        const kr = new ReelsCanvasRenderer({ width: 1080, height: 1920, getContext: () => kc });
+        kr.renderSubtitle({ ...baseWipeStyle, fullpage_typewriter_cursor_kind: kind }, wipeSeg, 0.85, 1080, 1920);
+        const { saveCount, restoreCount } = kc._counts();
+        assert.equal(saveCount, restoreCount, `Cursor tip "${kind}" must balance ctx.save()/restore()`);
+        assert.ok(kc._ops.some(o => o.op === 'translate' && o.x > 0), `Cursor tip "${kind}" must render vector artwork`);
+    }
+
+    // RichText box_wipe + subtitle_cursor_enabled with keyword spans renders cleanly
+    const richCtx = makeCtx();
+    const richRenderer = new ReelsCanvasRenderer({ width: 1080, height: 1920, getContext: () => richCtx });
+    richRenderer.renderSubtitle(
+        {
+            ...baseWipeStyle,
+            keywords: [{ words: ['grace'], color: '#9E472A', bold: true }],
+            highlight_rules: [{ words: ['grace'], color: '#9E472A', bold: true }],
+        },
+        wipeSeg,
+        0.9,
+        1080,
+        1920
+    );
+    const richCounts = richCtx._counts();
+    assert.equal(richCounts.saveCount, richCounts.restoreCount, 'drawRichText box_wipe + cursor must balance save/restore');
+    assert.ok(richCtx._ops.some(o => o.op === 'fillText'), 'drawRichText box_wipe + cursor must render text');
+
+    // 3. Verify all 16 Thanksgiving scroll prayer/lifestyle cards (sc-199..sc-214) resolve and draw cleanly with category & board
+    for (let sc = 199; sc <= 214; sc++) {
+        const resolved = resolveBuiltinPreset(`sc-${sc}`);
+        assert.ok(resolved && resolved.style, `sc-${sc} must resolve via resolveBuiltinPreset with .style`);
+        assert.equal(resolved.category, '🍂 感恩节 · 极简秋日与祈祷卡', `sc-${sc} must carry Thanksgiving category`);
+        const scPreset = REELS_BUILTIN_SCROLL_STYLE_PRESETS[resolved.name];
+        assert.ok(scPreset, `sc-${sc} must exist in REELS_BUILTIN_SCROLL_STYLE_PRESETS`);
+        assert.equal(scPreset.category, '🍂 感恩节 · 极简秋日与祈祷卡', `sc-${sc} preset must carry Thanksgiving category`);
+        assert.ok(String(scPreset.bg_style || '').startsWith('thx_'), `sc-${sc} must use a Thanksgiving thx_* card board (got ${scPreset.bg_style})`);
+
+        const scCtx = makeCtx();
+        const ov = ReelsOverlay.createScrollOverlay({
+            ...scPreset,
+            x: 80, y: 360, w: 920, h: 1200,
+            scroll_title: 'Thankful & Peaceful',
+            scroll_title_enabled: true,
+            content: 'Lord, thank You for warm mornings,\nsteady provision, and quiet gratitude.',
+        });
+        ReelsOverlay.drawOverlay(scCtx, ov, 1.2, 1080, 1920);
+        const counts = scCtx._counts();
+        assert.equal(counts.saveCount, counts.restoreCount, `sc-${sc} drawOverlay must balance ctx.save()/restore()`);
+        assert.ok(scCtx._ops.some(o => o.op === 'fillText'), `sc-${sc} drawOverlay must draw text`);
+    }
+});
+
+test('UI toggle/button/grain responsiveness: ReelsDecorPanel & ReelsOverlayPanel coalesce renders, skip sync AutoSave/task rebuild, and history skips redundant pointerdown snapshots', () => {
+    const os = require('node:os');
+    const panelSrc = fs.readFileSync(path.join(ROOT, 'src/reels-overlay-panel.js'), 'utf8');
+    const batchReelsSrc = fs.readFileSync(path.join(ROOT, 'src/batch-reels.js'), 'utf8');
+    const previewV2Src = fs.readFileSync(path.join(ROOT, 'src/reels-preview-v2.js'), 'utf8');
+
+    // 1. Test ReelsDecorPanel checkbox/slider toggles & flush
+    const makeControl = (id, { type = 'checkbox', tagName = 'INPUT', checked = false, value = '' } = {}) => {
+        const listeners = {};
+        const classes = new Set();
+        return {
+            id,
+            type,
+            tagName,
+            checked,
+            value,
+            dataset: {},
+            style: {},
+            textContent: '',
+            innerHTML: '',
+            classList: {
+                add: (c) => classes.add(c),
+                remove: (c) => classes.delete(c),
+                toggle: (c, f) => (f === undefined ? (classes.has(c) ? classes.delete(c) : classes.add(c)) : (f ? classes.add(c) : classes.delete(c))),
+                contains: (c) => classes.has(c),
+            },
+            addEventListener(evt, fn) { (listeners[evt] ||= []).push(fn); },
+            dispatch(evt) { (listeners[evt] || []).forEach(fn => fn({ type: evt, target: this, preventDefault() {}, stopPropagation() {} })); },
+            querySelector: () => null,
+            querySelectorAll: () => [],
+        };
+    };
+
+    const rdpControls = {
+        '#rdp-style-select': makeControl('rdp-style-select', { type: '', tagName: 'SELECT', value: 'dark_floating_dust' }),
+        '#rdp-style-scope': makeControl('rdp-style-scope', { type: '', tagName: 'SELECT', value: 'folder' }),
+        '#rdp-apply-all': makeControl('rdp-apply-all', { checked: true }),
+        '#rdp-dark-enabled': makeControl('rdp-dark-enabled', { checked: true }),
+        '#rdp-dark-vignette': makeControl('rdp-dark-vignette', { type: 'range', value: '60' }),
+        '#rdp-vignette-spread': makeControl('rdp-vignette-spread', { type: 'range', value: '55' }),
+        '#rdp-dark-tint': makeControl('rdp-dark-tint', { type: 'color', value: '#05070C' }),
+        '#rdp-grain-enabled': makeControl('rdp-grain-enabled', { checked: false }),
+        '#rdp-grain-intensity': makeControl('rdp-grain-intensity', { type: 'range', value: '0' }),
+        '#rdp-grain-size': makeControl('rdp-grain-size', { type: 'range', value: '100' }),
+        '#rdp-grain-warmth': makeControl('rdp-grain-warmth', { type: 'range', value: '0' }),
+        '#rdp-film-scratches': makeControl('rdp-film-scratches', { checked: false }),
+        '#rdp-light-leak': makeControl('rdp-light-leak', { checked: false }),
+        '#rdp-floating-particles': makeControl('rdp-floating-particles', { checked: true }),
+        '#rdp-particle-mode': makeControl('rdp-particle-mode', { type: '', tagName: 'SELECT', value: 'dust' }),
+        '#rdp-glow-stars': makeControl('rdp-glow-stars', { checked: false }),
+        '#rdp-snowflakes': makeControl('rdp-snowflakes', { checked: false }),
+        '#rdp-corner-ornaments': makeControl('rdp-corner-ornaments', { checked: false }),
+        '#rdp-edge-garland': makeControl('rdp-edge-garland', { checked: false }),
+        '#rdp-layout': makeControl('rdp-layout', { type: '', tagName: 'SELECT', value: 'edges_and_float' }),
+        '#rdp-density': makeControl('rdp-density', { type: 'range', value: '55' }),
+        '#rdp-size': makeControl('rdp-size', { type: 'range', value: '100' }),
+        '#rdp-glow': makeControl('rdp-glow', { type: 'range', value: '100' }),
+        '#rdp-speed': makeControl('rdp-speed', { type: 'range', value: '100' }),
+        '#rdp-margin': makeControl('rdp-margin', { type: 'range', value: '36' }),
+        '#rdp-center-clear': makeControl('rdp-center-clear', { type: 'range', value: '65' }),
+        '#rdp-opacity': makeControl('rdp-opacity', { type: 'range', value: '255' }),
+        '#rdp-color1': makeControl('rdp-color1', { type: 'color', value: '#FFD700' }),
+        '#rdp-color2': makeControl('rdp-color2', { type: 'color', value: '#FFFDF5' }),
+        '#rdp-layer-list': makeControl('rdp-layer-list', { type: '', tagName: 'DIV' }),
+    };
+
+    const t1 = {
+        id: 't1',
+        _batchTabId: 'tab1',
+        _folderQueueId: 'q1',
+        overlays: [{ id: 'dec_1', type: 'decor', decor_style: 'dark_floating_dust', decor_grain_enabled: false, decor_grain_intensity: 0 }],
+    };
+    const t2 = {
+        id: 't2',
+        _batchTabId: 'tab1',
+        _folderQueueId: 'q1',
+        overlays: [{ id: 'dec_2', type: 'decor', decor_style: 'dark_floating_dust', decor_grain_enabled: false, decor_grain_intensity: 0 }],
+    };
+
+    let autoSaveCount = 0;
+    let renderTaskListCount = 0;
+    let syncTabCount = 0;
+    let syncEditorCount = 0;
+    let canvasRenderCount = 0;
+    let onOverlayChangeCount = 0;
+    let v2RequestRenderCount = 0;
+    let v2SyncRenderCount = 0;
+    let historyScheduleCount = 0;
+    let layerListRenderCount = 0;
+    let nextTimerId = 1;
+    let timers = [];
+    let rafQueue = [];
+
+    const sandbox = {
+        console,
+        Math,
+        JSON,
+        Date,
+        Number,
+        String,
+        Boolean,
+        Array,
+        Object,
+        Set,
+        Map,
+        window: {},
+        document: {
+            head: { appendChild() {}, querySelector: () => null },
+            body: { appendChild() {} },
+            getElementById: (id) => rdpControls['#' + id] || null,
+            createElement: (tag) => makeControl('dyn_' + tag, { type: '', tagName: tag }),
+        },
+        _reelsState: { tasks: [t1, t2], selectedIdx: 0 },
+        _batchTableState: { activeTabId: 'tab1', tabs: [{ id: 'tab1', tasks: [t1, t2], _dirty: false }] },
+        _syncCurrentOverlayEditorToSelectedTask: () => { syncEditorCount++; },
+        _syncTasksToActiveTab: () => { syncTabCount++; },
+        _batchAutoSave: () => { autoSaveCount++; return true; },
+        _renderTaskList: () => { renderTaskListCount++; },
+        _scheduleReelsHistorySave: () => { historyScheduleCount++; },
+        ReelsPreviewV2: {
+            isOpen: () => true,
+            requestRender: () => { v2RequestRenderCount++; },
+            render: () => { v2SyncRenderCount++; },
+        },
+        ReelsOverlay: {
+            DECOR_OVERLAY_STYLES: { dark_floating_dust: { name: '黑金微粒' } },
+            createDecorOverlay: (opts) => ({ id: 'dec_new', type: 'decor', ...opts }),
+        },
+        setTimeout: (fn, ms) => { const id = nextTimerId++; timers.push({ id, fn, ms, cleared: false }); return id; },
+        clearTimeout: (id) => { const item = timers.find(t => t.id === id); if (item) item.cleared = true; },
+        requestAnimationFrame: (fn) => { const id = nextTimerId++; rafQueue.push({ id, fn, cancelled: false }); return id; },
+        cancelAnimationFrame: (id) => { const item = rafQueue.find(r => r.id === id); if (item) item.cancelled = true; },
+        localStorage: { getItem: () => null, setItem: () => {} },
+    };
+    sandbox.window = sandbox;
+    sandbox.ReelsPreviewV2 = sandbox.ReelsPreviewV2;
+    vm.createContext(sandbox);
+    vm.runInContext(`${panelSrc}\nwindow.ReelsOverlayPanel = ReelsOverlayPanel;\nwindow.ReelsDecorPanel = ReelsDecorPanel;`, sandbox);
+
+    const grainReadout = makeControl('rdp-grain-intensity-num', { type: 'number', value: '0' });
+    grainReadout.dataset = { link: 'rdp-grain-intensity' };
+    const decorPanel = Object.create(sandbox.ReelsDecorPanel.prototype);
+    decorPanel.container = {
+        querySelector: (sel) => rdpControls[sel] || null,
+        querySelectorAll: (sel) => (sel === '.rop-num-readout[data-link]' ? [grainReadout] : []),
+    };
+    decorPanel.linkedOverlayPanel = { _refreshList: () => {}, _syncFromOverlay: () => {} };
+    decorPanel.videoCanvas = {
+        overlayMgr: { overlays: t1.overlays },
+        render: () => { canvasRenderCount++; },
+        onOverlayChange: () => { onOverlayChangeCount++; },
+    };
+    decorPanel._selectedDecorId = 'dec_1';
+    decorPanel._activeCategory = 'all';
+    decorPanel._syncing = false;
+    const origRenderLayerList = decorPanel._renderLayerList.bind(decorPanel);
+    decorPanel._renderLayerList = () => { layerListRenderCount++; origRenderLayerList(); };
+    decorPanel._bindEvents();
+
+    // Simulate clicking "电影颗粒" checkbox (Chromium emits both input & change) + dragging grain intensity
+    rdpControls['#rdp-grain-enabled'].checked = true;
+    rdpControls['#rdp-grain-enabled'].dispatch('input');
+    rdpControls['#rdp-grain-enabled'].dispatch('change');
+    for (const val of ['25', '50', '78']) {
+        rdpControls['#rdp-grain-intensity'].value = val;
+        rdpControls['#rdp-grain-intensity'].dispatch('input');
+    }
+
+    assert.strictEqual(autoSaveCount, 0, 'Toggling grain / dragging slider must NOT run _batchAutoSave synchronously on click');
+    assert.strictEqual(renderTaskListCount, 0, 'Toggling grain must NOT synchronously rebuild #reels-task-list DOM');
+    assert.strictEqual(syncTabCount, 0, 'Toggling grain must NOT synchronously call _syncTasksToActiveTab');
+    assert.strictEqual(onOverlayChangeCount, 0, 'Toggling grain must NOT synchronously invoke onOverlayChange/timeline rebuild');
+    assert.strictEqual(v2SyncRenderCount, 0, 'Toggling grain must NOT synchronously invoke ReelsPreviewV2.render()');
+    assert.strictEqual(t1.overlays[0].decor_grain_enabled, true, 'Active task overlay model must update immediately in memory');
+    assert.strictEqual(t1.overlays[0].decor_grain_intensity, 78, 'Active task overlay grain intensity must update immediately in memory');
+
+    // Drain rAF -> coalesces canvas + V2 preview + layer list into one frame without heavy persistence
+    for (const r of rafQueue) {
+        if (!r.cancelled) r.fn();
+    }
+    rafQueue = [];
+    assert.strictEqual(canvasRenderCount, 1, 'Multiple click/slider events in a frame must coalesce into 1 canvas render');
+    assert.strictEqual(v2RequestRenderCount, 1, 'Decor changes must coalesce V2 preview render via requestRender()');
+    assert.strictEqual(layerListRenderCount, 1, 'Layer list UI refresh must coalesce to 1 update per frame');
+    assert.strictEqual(autoSaveCount, 0, 'Frame paint must finish before _batchAutoSave runs');
+
+    // Run debounced scope sync timer (reset timer excluded since ms===0)
+    const syncTimers = timers.filter(t => !t.cleared && t.ms > 0);
+    assert.ok(syncTimers.length >= 1, 'Debounced scope sync timer must be scheduled');
+    syncTimers.forEach(t => t.fn());
+    assert.strictEqual(t2.overlays[0].decor_grain_enabled, true, 'Debounced flush must propagate grain enable to scoped sibling task t2');
+    assert.strictEqual(t2.overlays[0].decor_grain_intensity, 78, 'Debounced flush must propagate grain intensity to scoped sibling task t2');
+    assert.strictEqual(autoSaveCount, 1, 'Debounced flush must invoke _batchAutoSave once after burst');
+    assert.strictEqual(syncEditorCount, 0, 'Non-structural grain toggle must not force full timeline rebuild via _syncCurrentOverlayEditorToSelectedTask');
+    assert.strictEqual(renderTaskListCount, 0, 'Non-structural grain toggle must not rebuild #reels-task-list DOM even on debounced flush');
+    assert.strictEqual(historyScheduleCount, 1, 'Debounced flush must schedule background undo history save');
+
+    // 2. Verify ReelsOverlayPanel discrete checkbox deduplicates input+change & defers commit sync off synchronous click turn
+    const ropCheckbox = makeControl('rop-disabled', { checked: true });
+    let ropCommitCalls = 0;
+    const ropSandbox = {
+        console,
+        setTimeout: (fn, ms) => { const id = nextTimerId++; timers.push({ id, fn, ms, cleared: false }); return id; },
+        clearTimeout: (id) => { const item = timers.find(t => t.id === id); if (item) item.cleared = true; },
+        window: {},
+    };
+    ropSandbox.window = ropSandbox;
+    vm.createContext(ropSandbox);
+    const helperStart = panelSrc.indexOf('function _isDiscreteOverlayControl(');
+    const helperEnd = panelSrc.indexOf('/** 四舍五入', helperStart);
+    vm.runInContext(panelSrc.slice(helperStart, helperEnd), ropSandbox);
+    ropSandbox._bindDiscreteAwareSync(ropCheckbox, () => { ropCommitCalls++; });
+    ropCheckbox.dispatch('input');
+    ropCheckbox.dispatch('change');
+    assert.strictEqual(ropCommitCalls, 1, '_bindDiscreteAwareSync must deduplicate input + change on checkbox click');
+
+    // 3. Verify V2 & V1 preview toggle handlers use requestRender instead of synchronous render()
+    assert.ok(!previewV2Src.includes("subtitleToggle?.addEventListener('change', () => {\n            if (exportSubtitleToggle) exportSubtitleToggle.checked = subtitleToggle.checked;\n            if (typeof window.reelsOnSubtitleToggleChange === 'function') {\n                window.reelsOnSubtitleToggleChange(exportSubtitleToggle || subtitleToggle);\n            }\n            render();"), 'Preview V2 toggles must not call synchronous render()');
+    const toggleStart = batchReelsSrc.indexOf('function _requestReelsPreviewV2Render(');
+    const toggleEnd = batchReelsSrc.indexOf('window.reelsOnDecorToggleChange =', toggleStart);
+    assert.ok(toggleStart > 0 && toggleEnd > toggleStart);
+    let v1PrevCalls = 0;
+    let v2Req = 0;
+    let v2Sync = 0;
+    const toggleCtx = {
+        window: {
+            ReelsPreviewV2: { requestRender: () => { v2Req++; }, render: () => { v2Sync++; } },
+        },
+        document: { getElementById: () => null, querySelector: () => null },
+        _reelsState: {},
+        reelsUpdatePreview: () => { v1PrevCalls++; },
+        showToast: () => {},
+        alert: () => {},
+    };
+    vm.createContext(toggleCtx);
+    vm.runInContext(`${batchReelsSrc.slice(toggleStart, toggleEnd)}\nwindow.reelsOnDecorToggleChange = reelsOnDecorToggleChange;`, toggleCtx);
+    toggleCtx.reelsOnSubtitleToggleChange({ checked: false });
+    toggleCtx.reelsOnOverlayToggleChange({ checked: false });
+    toggleCtx.reelsOnDecorToggleChange({ checked: false });
+    assert.strictEqual(v1PrevCalls, 3);
+    assert.strictEqual(v2Req, 3, 'Toggle handlers must schedule ReelsPreviewV2.requestRender()');
+    assert.strictEqual(v2Sync, 0, 'Toggle handlers must not call synchronous ReelsPreviewV2.render()');
+
+    // 4. Verify history listeners skip synchronous snapshot on pointerdown once baseline exists & flush on _flushReelsHistory
+    const histStart = batchReelsSrc.indexOf('function _reelsHistoryEventInEditor(');
+    const histEnd = batchReelsSrc.indexOf('setTimeout(()=>{if(_reelsHistoryStack.length===0)', histStart);
+    assert.ok(histStart > 0 && histEnd > histStart);
+    const docListeners = {};
+    let historySaves = 0;
+    let idleQueued = 0;
+    const histTimers = [];
+    const btnTarget = { closest: (sel) => (sel.includes('button') ? btnTarget : null), type: 'button', tagName: 'BUTTON' };
+    const histCtx = {
+        window: {
+            reelsSaveHistory: () => { historySaves++; },
+            reelsUndo: () => {},
+            reelsRedo: () => {},
+        },
+        document: {
+            getElementById: (id) => (id === 'batch-reels-panel' ? { classList: { contains: () => true } } : null),
+            addEventListener: (evt, fn) => { (docListeners[evt] ||= []).push(fn); },
+        },
+        _reelsState: { tasks: new Array(30).fill({}), selectedIdx: 0 },
+        _reelsHistoryStack: ['S0'],
+        _isRestoringHistory: false,
+        setTimeout: (fn, ms) => { const id = nextTimerId++; histTimers.push({ id, fn, ms, cleared: false }); return id; },
+        clearTimeout: (id) => { const item = histTimers.find(t => t.id === id); if (item) item.cleared = true; },
+        requestIdleCallback: (fn) => { idleQueued++; return 1; },
+        cancelIdleCallback: () => {},
+    };
+    vm.createContext(histCtx);
+    vm.runInContext(batchReelsSrc.slice(histStart, histEnd), histCtx);
+    docListeners.pointerdown.forEach(fn => fn({ target: btnTarget, defaultPrevented: false, isComposing: false, altKey: false, ctrlKey: false, metaKey: false }));
+    assert.strictEqual(historySaves, 0, 'pointerdown with existing undo baseline must NOT synchronously serialize full project history');
+    docListeners.click.forEach(fn => fn({ target: btnTarget }));
+    assert.strictEqual(historySaves, 0, 'click must debounce history snapshot rather than running synchronously');
+    assert.ok(histTimers.some(t => !t.cleared && t.ms >= 250), 'click must schedule debounced history snapshot (>=250ms, not 0ms)');
+    histCtx._flushReelsHistory();
+    assert.strictEqual(historySaves, 1, '_flushReelsHistory must synchronously capture pending history before Undo/Export/Save');
+
+    // 5. Verify preload.js queues batch workspace disk writes off the synchronous UI call stack and flushes via flushWorkspaceSaves()
+    const preloadSrc = fs.readFileSync(path.join(ROOT, 'electron/preload.js'), 'utf8');
+    assert.ok(preloadSrc.includes('_writeBatchWorkspaceContent') && preloadSrc.includes('flushWorkspaceSaves:'), 'preload.js must provide non-blocking workspace saver and flushWorkspaceSaves');
+    const tmpProfile = fs.mkdtempSync(path.join(os.tmpdir(), 'vk-preload-async-'));
+    try {
+        const exposed = {};
+        let beforeUnloadHandler = null;
+        const preloadSandbox = {
+            require: (id) => {
+                if (id === 'electron') {
+                    return {
+                        contextBridge: { exposeInMainWorld: (name, api) => { exposed[name] = api; } },
+                        ipcRenderer: { sendSync: () => ({ ok: true, profileDir: tmpProfile, projectsDir: path.join(tmpProfile, 'projects') }), invoke: async () => ({}), on: () => {}, removeListener: () => {} },
+                        webUtils: { getPathForFile: () => '' },
+                        webFrame: { setZoomFactor() {}, getZoomFactor: () => 1 },
+                        clipboard: {},
+                    };
+                }
+                if (id === './services/sharedProfile') return { getPrimarySharedProfileDir: () => tmpProfile, getCandidateProfileDirs: () => [tmpProfile], getCandidateProjectDirs: () => [path.join(tmpProfile, 'projects')] };
+                if (id === './services/reels-frame-bridge') return { createReelsFrameBridge: () => ({}) };
+                return require(id);
+            },
+            __dirname: path.join(ROOT, 'electron'),
+            process,
+            console,
+            Buffer,
+            location: { hash: '' },
+            localStorage: { length: 0, key: () => null, getItem: () => null, setItem: () => {} },
+            window: { addEventListener: (evt, fn) => { if (evt === 'beforeunload') beforeUnloadHandler = fn; }, dispatchEvent: () => {} },
+            CustomEvent: function(n, o) { this.type = n; this.detail = o?.detail; },
+            setInterval: () => 1,
+            setTimeout: (fn) => { return 1; },
+            clearTimeout: () => {},
+        };
+        vm.createContext(preloadSandbox);
+        vm.runInContext(preloadSrc, preloadSandbox);
+        assert.strictEqual(exposed.electronAPI.saveBatchWorkspace('{"version":"1.0"}'), false, 'Invalid workspace payload must synchronously return false');
+        const payload = JSON.stringify({ version: '2.0', tabs: [{ id: 'tab_1', tasks: [{ id: 't1' }] }] });
+        const wsFile = path.join(tmpProfile, 'projects', 'workspace-autosave.json');
+        assert.strictEqual(exposed.electronAPI.saveBatchWorkspace(payload), true, 'Valid workspace payload must return true immediately');
+        assert.strictEqual(fs.existsSync(wsFile), false, 'saveBatchWorkspace must NOT synchronously write disk inside click turn');
+        assert.strictEqual(typeof beforeUnloadHandler, 'function', 'preload.js must register beforeunload flush');
+        exposed.electronAPI.flushWorkspaceSaves();
+        assert.strictEqual(fs.existsSync(wsFile), true, 'flushWorkspaceSaves() must flush queued workspace payload to disk synchronously');
+        assert.strictEqual(fs.readFileSync(wsFile, 'utf8'), payload);
+    } finally {
+        fs.rmSync(tmpProfile, { recursive: true, force: true });
+    }
+});
+
+test('Live Projects and Sealed Templates keep isolated stores, support blank tabs and safe template import', () => {
+    const os = require('node:os');
+    const Module = require('node:module');
+    const origLoad = Module._load;
+    const tmpUserData = fs.mkdtempSync(path.join(os.tmpdir(), 'vk-split-stores-'));
+    const templatesResolved = require.resolve('../electron/services/templates');
+    const mockApp = { getPath: () => tmpUserData };
+    const mockShared = {
+        getCandidateTemplateDirs: () => [path.join(tmpUserData, 'videokit-templates')],
+        getCandidateLiveProjectDirs: () => [path.join(tmpUserData, 'videokit-live-projects')],
+        isIsolatedTestProfile: () => true,
+    };
+
+    try {
+        Module._load = function (request, parent, isMain) {
+            if (request === 'electron') return { app: mockApp };
+            if (request === './sharedProfile' && parent && parent.filename.endsWith(`${path.sep}templates.js`)) {
+                return mockShared;
+            }
+            return origLoad.apply(this, arguments);
+        };
+        delete require.cache[templatesResolved];
+        const tplService = require('../electron/services/templates');
+
+        const tplFolder = tplService.createTemplateFolder('节日模板').folder;
+        assert.ok(tplFolder.id);
+        const sealed = tplService.saveTemplate({
+            name: '感恩节爆款',
+            folderId: tplFolder.id,
+            projectData: { tasks: [{ id: 's1', baseName: 'hook', txtContent: 'sealed' }], style: { fontSize: 54 } },
+        });
+        assert.ok(sealed.id.startsWith('tpl_'));
+        assert.ok(fs.existsSync(path.join(tmpUserData, 'videokit-templates', `${sealed.id}.json`)));
+        assert.equal(tplService.listTemplates().length, 1);
+        assert.equal(tplService.listLiveProjects().length, 0);
+
+        const liveFolder = tplService.createLiveProjectFolder('正在制作').folder;
+        assert.ok(liveFolder.id);
+        const blank = tplService.saveLiveProject({
+            name: '新建空白标签',
+            folderId: liveFolder.id,
+            projectData: { tasks: [] },
+        });
+        assert.ok(blank.id.startsWith('prj_'));
+        assert.ok(fs.existsSync(path.join(tmpUserData, 'videokit-live-projects', `${blank.id}.json`)));
+        const liveListBeforeImport = tplService.listLiveProjects();
+        assert.equal(liveListBeforeImport.length, 1);
+        assert.equal(liveListBeforeImport[0].templateType, '空白标签');
+        assert.equal(liveListBeforeImport[0].taskCount, 0);
+        assert.equal(tplService.listTemplates().length, 1);
+
+        const imported = tplService.importTemplatesIntoLiveProjects({ copyAllFolders: true });
+        assert.equal(imported.importedCount, 1);
+        const liveFolders = tplService.readLiveProjectFolders();
+        const importedFolder = liveFolders.folders.find(f => f.name === '节日模板');
+        assert.ok(importedFolder);
+        const importedLive = tplService.listLiveProjects().find(p => p.name === '感恩节爆款');
+        assert.ok(importedLive && importedLive.id.startsWith('prj_'));
+        assert.equal(liveFolders.assignments[importedLive.id], importedFolder.id);
+
+        // Modifying or deleting the imported live project must NEVER mutate the sealed template
+        tplService.saveLiveProject({
+            id: importedLive.id,
+            name: '感恩节爆款-已改名',
+            projectData: { tasks: [{ id: 's1', baseName: 'hook', txtContent: 'mutated_live' }] },
+        });
+        assert.equal(tplService.getTemplate(sealed.id).name, '感恩节爆款');
+        assert.equal(tplService.getTemplate(sealed.id).projectData.tasks[0].txtContent, 'sealed');
+        tplService.deleteLiveProject(importedLive.id);
+        assert.equal(tplService.listTemplates().length, 1);
+        assert.equal(tplService.getTemplate(sealed.id).projectData.tasks[0].txtContent, 'sealed');
+    } finally {
+        Module._load = origLoad;
+        delete require.cache[templatesResolved];
+        fs.rmSync(tmpUserData, { recursive: true, force: true });
+    }
+});
+
+test('Workspace tabs auto-save blank & edited Live Projects while Sealed Templates load as isolated non-overwriting copies', async () => {
+    const os = require('node:os');
+    const Module = require('node:module');
+    const origLoad = Module._load;
+    const tmpUserData = fs.mkdtempSync(path.join(os.tmpdir(), 'vk-live-vs-sealed-'));
+    const templatesResolved = require.resolve('../electron/services/templates');
+    const mockApp = { getPath: () => tmpUserData };
+    const mockShared = {
+        getCandidateTemplateDirs: () => [path.join(tmpUserData, 'videokit-templates')],
+        getCandidateLiveProjectDirs: () => [path.join(tmpUserData, 'videokit-live-projects')],
+        isIsolatedTestProfile: () => true,
+    };
+
+    try {
+        Module._load = function (request, parent, isMain) {
+            if (request === 'electron') return { app: mockApp };
+            if (request === './sharedProfile' && parent && parent.filename.endsWith(`${path.sep}templates.js`)) {
+                return mockShared;
+            }
+            return origLoad.apply(this, arguments);
+        };
+        delete require.cache[templatesResolved];
+        const tplService = require('../electron/services/templates');
+
+        const liveFolder = tplService.createLiveProjectFolder('日常工作工程').folder;
+        const sealedSaved = tplService.saveTemplate({
+            name: '感恩节爆款模板',
+            projectData: {
+                tasks: [{ id: 's1', baseName: 'prayer', txtContent: 'sealed snapshot' }],
+                style: { fontSize: 60 },
+            },
+        });
+
+        const liveSaveCalls = [];
+        const tplSaveCalls = [];
+        const apiFetchMock = async (url, init = {}) => {
+            const u = String(url || '');
+            const body = init.body ? JSON.parse(init.body) : {};
+            let res = { success: true };
+            if (u.endsWith('/live-projects/folders/list')) res = tplService.readLiveProjectFolders();
+            else if (u.endsWith('/live-projects/folders/create')) res = tplService.createLiveProjectFolder(body.name, body.parentId || '');
+            else if (u.endsWith('/live-projects/list')) res = tplService.listLiveProjects();
+            else if (u.endsWith('/live-projects/get')) res = tplService.getLiveProject(body.id);
+            else if (u.endsWith('/live-projects/get-many')) res = tplService.getLiveProjectsByIds(body.ids || []);
+            else if (u.endsWith('/live-projects/save')) { liveSaveCalls.push(body); res = tplService.saveLiveProject(body); }
+            else if (u.endsWith('/templates/folders/list')) res = tplService.readTemplateFolders();
+            else if (u.endsWith('/templates/list')) res = tplService.listTemplates();
+            else if (u.endsWith('/templates/get')) res = tplService.getTemplate(body.id);
+            else if (u.endsWith('/templates/save')) { tplSaveCalls.push(body); res = tplService.saveTemplate(body); }
+            return { ok: true, status: 200, json: async () => ({ data: res }) };
+        };
+
+        const makeEl = (overrides = {}) => ({
+            value: '', checked: false, disabled: false, textContent: '', innerHTML: '', style: {}, dataset: {},
+            options: [], children: [], classList: { add() {}, remove() {}, toggle() {}, contains: () => false },
+            appendChild() {}, removeChild() {}, remove() {}, contains: () => false, addEventListener() {}, setAttribute() {},
+            focus() {}, click() {}, querySelector: () => null, querySelectorAll: () => [],
+            getBoundingClientRect: () => ({ width: 800, height: 600, top: 0, left: 0 }),
+            getContext: () => ({
+                font: '', globalAlpha: 1, save() {}, restore() {}, beginPath() {}, closePath() {}, moveTo() {}, lineTo() {},
+                quadraticCurveTo() {}, bezierCurveTo() {}, arc() {}, arcTo() {}, rect() {}, clip() {}, fill() {}, stroke() {},
+                fillRect() {}, strokeRect() {}, clearRect() {}, fillText() {}, strokeText() {}, translate() {}, rotate() {},
+                scale() {}, setLineDash() {}, createPattern: () => ({}), createLinearGradient: () => ({ addColorStop() {} }),
+                createRadialGradient: () => ({ addColorStop() {} }), measureText: (txt) => ({ width: String(txt || '').length * 10 }),
+            }),
+            ...overrides,
+        });
+        const domElements = new Map([
+            ['reels-task-list', makeEl()],
+            ['reels-task-count', makeEl()],
+            ['reels-task-panel-count', makeEl()],
+            ['reels-active-folder-bar', makeEl()],
+            ['reels-batch-table-container', makeEl({ style: { display: 'none' } })],
+            ['reels-work-mode', makeEl({ value: 'srt' })],
+            ['reels-quality', makeEl({ value: 'medium' })],
+            ['reels-export-engine', makeEl({ value: 'precise' })],
+            ['reels-suffix', makeEl({ value: '_subtitled' })],
+            ['reels-naming-mode', makeEl({ value: 'text' })],
+            ['reels-task-name-display', makeEl({ value: 'full' })],
+        ]);
+        const documentStub = {
+            head: makeEl(), body: makeEl(), createElement: () => makeEl(),
+            getElementById: (id) => domElements.get(id) || null,
+            querySelector: () => null, querySelectorAll: () => [],
+            addEventListener() {}, removeEventListener() {},
+        };
+
+        const sandbox = loadBrowserScript('src/reels-project.js', {
+            window: {
+                innerWidth: 1280, innerHeight: 800, location: { hash: '' },
+                addEventListener() {}, removeEventListener() {},
+                electronAPI: {
+                    toFileUrl: (p) => 'file:///' + String(p || '').replace(/\\/g, '/'),
+                    getDefaultProjectDir: () => '',
+                    saveBatchWorkspace: () => true,
+                    readBatchWorkspace: () => '',
+                },
+            },
+            document: documentStub,
+            API_BASE: 'http://127.0.0.1:0/api',
+            apiFetch: apiFetchMock,
+            setTimeout: () => 0,
+            clearTimeout: () => {},
+            setInterval: () => 0,
+            clearInterval: () => {},
+            requestAnimationFrame: () => 0,
+            getComputedStyle: () => ({ display: 'none', height: '0px' }),
+            getWritingVisualStyle: (s) => s,
+            reelsRefreshWritingTitleEditor: () => {},
+            reelsRefreshSpeechWritingImageUI: () => {},
+            showToast: () => {},
+            alert: () => {},
+            confirm: () => true,
+        });
+        vm.runInContext(fs.readFileSync(path.join(ROOT, 'src/reels-batch-table.js'), 'utf8'), sandbox, { filename: 'src/reels-batch-table.js' });
+        vm.runInContext(fs.readFileSync(path.join(ROOT, 'src/batch-reels.js'), 'utf8'), sandbox, { filename: 'src/batch-reels.js' });
+        vm.runInContext(fs.readFileSync(path.join(ROOT, 'src/reels-templates.js'), 'utf8'), sandbox, { filename: 'src/reels-templates.js' });
+
+        assert.equal(typeof sandbox.window.openProjectLibrary, 'function');
+        assert.equal(typeof sandbox.window.openTemplateLibrary, 'function');
+
+        // 1. Creating a blank tab immediately marks it as a Live Project and saves empty tasks to /live-projects/save
+        vm.runInContext(`
+            _batchTableState.tabs = [];
+            _batchTableState.activeTabId = '';
+            _batchTableState.activeLibraryFolderId = ${JSON.stringify(liveFolder.id)};
+            _batchTableState.activeLibraryFolderPath = '日常工作工程';
+            _batchTableState.libraryScopeMode = 'folder';
+            _addTab('空白工作标签', '', { activate: true });
+        `, sandbox);
+        await new Promise((r) => setImmediate(r));
+        await new Promise((r) => setImmediate(r));
+
+        const tabAfterBlank = JSON.parse(vm.runInContext(`JSON.stringify(_batchTableState.tabs[0])`, sandbox));
+        assert.equal(tabAfterBlank._isLiveProject, true);
+        assert.equal(tabAfterBlank.libraryFolderId, liveFolder.id);
+        assert.ok(tabAfterBlank.libraryTemplateId.startsWith('prj_'));
+        assert.equal(tplSaveCalls.length, 0);
+        const savedBlankRecord = tplService.getLiveProject(tabAfterBlank.libraryTemplateId);
+        assert.equal(savedBlankRecord.name, '空白工作标签');
+        assert.equal(savedBlankRecord.projectData.tasks.length, 0);
+
+        // 2. Editing the tab syncs tasks back to Live Projects store (still never /templates/save)
+        vm.runInContext(`
+            window._reelsState.tasks = [{ id: 't_live', baseName: 'clip1', txtContent: 'updated live copy' }];
+            _syncTasksToActiveTab();
+        `, sandbox);
+        await sandbox.window.reelsSyncWorkspaceTabsBackToLibraryFolder({ silent: true, onlyDirty: true });
+        assert.equal(tplSaveCalls.length, 0);
+        assert.equal(tplService.getLiveProject(tabAfterBlank.libraryTemplateId).projectData.tasks[0].txtContent, 'updated live copy');
+
+        // 3. Loading a Sealed Template creates an isolated copy that never auto-overwrites templates or live projects
+        const liveCallsBeforeSealed = liveSaveCalls.length;
+        const sealedPayload = tplService.getTemplate(sealedSaved.id);
+        await sandbox.window.reelsApplySealedTemplate(sealedPayload);
+        const sealedTabState = JSON.parse(vm.runInContext(`JSON.stringify({
+            tab: _batchTableState.tabs.find(t => t.id === _batchTableState.activeTabId),
+            activeFolderId: _batchTableState.activeLibraryFolderId,
+            txtContent: window._reelsState.tasks[0]?.txtContent,
+        })`, sandbox));
+        assert.equal(sealedTabState.tab.libraryTemplateId, '');
+        assert.equal(sealedTabState.tab.libraryFolderId, '');
+        assert.equal(sealedTabState.tab._fromSealedTemplate, true);
+        assert.equal(sealedTabState.tab._isLiveProject, false);
+        assert.equal(sealedTabState.activeFolderId, '');
+        assert.equal(sealedTabState.txtContent, 'sealed snapshot');
+
+        vm.runInContext(`
+            window._reelsState.tasks[0].txtContent = 'local derivative';
+            _syncTasksToActiveTab();
+            reelsMarkStyleDirty({ type: 'change' });
+        `, sandbox);
+        await sandbox.window.reelsSyncWorkspaceTabsBackToLibraryFolder({ silent: true, onlyDirty: true });
+        assert.equal(tplSaveCalls.length, 0, 'Editing a sealed template copy must NEVER auto-overwrite /templates/save');
+        assert.equal(liveSaveCalls.length, liveCallsBeforeSealed, 'Editing a standalone sealed template copy must NOT leak to /live-projects/save');
+        assert.equal(tplService.getTemplate(sealedSaved.id).projectData.tasks[0].txtContent, 'sealed snapshot');
+    } finally {
+        Module._load = origLoad;
+        delete require.cache[templatesResolved];
+        fs.rmSync(tmpUserData, { recursive: true, force: true });
+    }
+});
+
+test('Project Library and Template Library provide prominent select-all, multi-select mode, Shift-range, invert, folder checkboxes and batch delete/move', async () => {
+    const os = require('node:os');
+    const Module = require('node:module');
+    const origLoad = Module._load;
+    const tmpUserData = fs.mkdtempSync(path.join(os.tmpdir(), 'vk-lib-multiselect-'));
+    const templatesResolved = require.resolve('../electron/services/templates');
+    const mockApp = { getPath: () => tmpUserData };
+    const mockShared = {
+        getCandidateTemplateDirs: () => [path.join(tmpUserData, 'videokit-templates')],
+        getCandidateLiveProjectDirs: () => [path.join(tmpUserData, 'videokit-live-projects')],
+        isIsolatedTestProfile: () => true,
+    };
+
+    try {
+        Module._load = function (request, parent, isMain) {
+            if (request === 'electron') return { app: mockApp };
+            if (request === './sharedProfile' && parent && parent.filename.endsWith(`${path.sep}templates.js`)) {
+                return mockShared;
+            }
+            return origLoad.apply(this, arguments);
+        };
+        delete require.cache[templatesResolved];
+        const tplService = require('../electron/services/templates');
+
+        const fEmpty = tplService.createLiveProjectFolder('空文件夹可删').folder;
+        const fSub = tplService.createLiveProjectFolder('深层子文件夹', fEmpty.id).folder;
+        const p1 = tplService.saveLiveProject({ name: '工程A', projectData: { tasks: [] } });
+        const p2 = tplService.saveLiveProject({ name: '工程B', projectData: { tasks: [{ id: 't2', baseName: 'v2' }] } });
+        const p3 = tplService.saveLiveProject({ name: '工程C', projectData: { tasks: [{ id: 't3', baseName: 'v3' }] } });
+        const sealedT = tplService.saveTemplate({ name: '封存参考模板', projectData: { tasks: [{ id: 'st1', baseName: 's' }] } });
+
+        const apiFetchMock = async (url, init = {}) => {
+            const u = String(url || '');
+            const body = init.body ? JSON.parse(init.body) : {};
+            let res = { success: true };
+            if (u.endsWith('/live-projects/folders/list')) res = tplService.readLiveProjectFolders();
+            else if (u.endsWith('/live-projects/folders/delete')) res = tplService.deleteEmptyLiveProjectFolder(body.id);
+            else if (u.endsWith('/live-projects/folders/move')) res = tplService.moveLiveProjectsToFolder(body.ids, body.folderId || '');
+            else if (u.endsWith('/live-projects/folders/move-folders')) res = tplService.moveLiveProjectFolders(body.folderIds, body.targetParentId || '');
+            else if (u.endsWith('/live-projects/list')) res = tplService.listLiveProjects();
+            else if (u.endsWith('/live-projects/get')) res = tplService.getLiveProject(body.id);
+            else if (u.endsWith('/live-projects/delete')) res = tplService.deleteLiveProject(body.id);
+            else if (u.endsWith('/templates/folders/list')) res = tplService.readTemplateFolders();
+            else if (u.endsWith('/templates/list')) res = tplService.listTemplates();
+            else if (u.endsWith('/templates/get')) res = tplService.getTemplate(body.id);
+            return { ok: true, status: 200, json: async () => ({ data: res }) };
+        };
+
+        const elementsById = new Map();
+        const trackedClasses = new Set();
+        const makeEl = (tag = 'div', overrides = {}) => {
+            const el = {
+                tagName: String(tag).toUpperCase(),
+                id: '',
+                value: '',
+                checked: false,
+                disabled: false,
+                textContent: '',
+                innerHTML: '',
+                style: {},
+                dataset: {},
+                options: [],
+                children: [],
+                scrollTop: 0,
+                isConnected: true,
+                classList: {
+                    add(...cs) { cs.forEach(c => el._cls?.add(c)); },
+                    remove(...cs) { cs.forEach(c => el._cls?.delete(c)); },
+                    toggle(c, force) {
+                        if (force === undefined) {
+                            if (el._cls.has(c)) { el._cls.delete(c); return false; }
+                            el._cls.add(c); return true;
+                        }
+                        if (force) el._cls.add(c); else el._cls.delete(c);
+                        return !!force;
+                    },
+                    contains: (c) => el._cls.has(c),
+                },
+                _cls: new Set(),
+                setAttribute() {},
+                removeAttribute() {},
+                getAttribute: () => '',
+                addEventListener() {},
+                removeEventListener() {},
+                appendChild(child) {
+                    if (child && child.id) elementsById.set(child.id, child);
+                    el.children.push(child);
+                    return child;
+                },
+                removeChild() {},
+                remove() { if (el.id) elementsById.delete(el.id); },
+                contains: () => false,
+                closest: () => null,
+                focus() {},
+                click() {},
+                getBoundingClientRect: () => ({ width: 800, height: 600, top: 0, left: 0, right: 800, bottom: 600 }),
+                querySelector(sel) {
+                    if (sel === '[data-role="grid-container"]') return el._gridContainer;
+                    if (sel === '[data-role="selected-count"]') return el._selCountEl;
+                    if (sel === '[data-act="select-all"]') return el._selAllBtn;
+                    if (sel === '[data-act="invert-selection"]') return el._invertBtn;
+                    if (sel === '[data-act="clear-selection"]') return el._clearBtn;
+                    if (sel === '[data-act="toggle-multi-mode"]') return el._multiBtn;
+                    if (sel === '[data-act="batch-move"]') return el._moveBtn;
+                    if (sel === '[data-act="batch-delete"]') return el._delBtn;
+                    if (sel === '#tpl-apply-selected-btn') return el._applySelBtn;
+                    if (sel === '#lpl-append-selected-btn') return el._appendSelBtn;
+                    if (sel === '#lpl-seal-to-tpl-btn') return el._sealBtn;
+                    if (sel === '#tpl-copy-selected-to-live-btn') return el._copyLiveBtn;
+                    return null;
+                },
+                querySelectorAll: () => [],
+                ...overrides,
+            };
+            Object.defineProperty(el, 'id', {
+                get() { return el._idVal || ''; },
+                set(v) {
+                    if (el._idVal) elementsById.delete(el._idVal);
+                    el._idVal = String(v || '');
+                    if (el._idVal) elementsById.set(el._idVal, el);
+                },
+            });
+            return el;
+        };
+
+        const bodyEl = makeEl('body');
+        const createdModals = [];
+        const documentStub = {
+            head: makeEl('head'),
+            body: bodyEl,
+            readyState: 'complete',
+            createElement: (tag) => {
+                const el = makeEl(tag);
+                if (String(tag).toLowerCase() === 'div') {
+                    el._gridContainer = makeEl('div');
+                    el._selCountEl = makeEl('span');
+                    el._selAllBtn = makeEl('button');
+                    el._invertBtn = makeEl('button');
+                    el._clearBtn = makeEl('button');
+                    el._multiBtn = makeEl('button');
+                    el._moveBtn = makeEl('button');
+                    el._delBtn = makeEl('button');
+                    el._applySelBtn = makeEl('button');
+                    el._appendSelBtn = makeEl('button');
+                    el._sealBtn = makeEl('button');
+                    el._copyLiveBtn = makeEl('button');
+                    createdModals.push(el);
+                }
+                return el;
+            },
+            getElementById: (id) => elementsById.get(id) || null,
+            querySelector: () => null,
+            querySelectorAll: () => [],
+            addEventListener() {},
+            removeEventListener() {},
+        };
+
+        const storage = new Map();
+        const sandbox = loadBrowserScript('src/reels-project.js', {
+            window: {
+                innerWidth: 1280, innerHeight: 800, location: { hash: '' },
+                addEventListener() {}, removeEventListener() {},
+                electronAPI: {
+                    toFileUrl: (p) => 'file:///' + String(p || '').replace(/\\/g, '/'),
+                    getDefaultProjectDir: () => '',
+                    saveBatchWorkspace: () => true,
+                    readBatchWorkspace: () => '',
+                },
+            },
+            document: documentStub,
+            localStorage: {
+                getItem: (k) => storage.get(k) ?? null,
+                setItem: (k, v) => storage.set(k, String(v)),
+            },
+            API_BASE: 'http://127.0.0.1:0/api',
+            apiFetch: apiFetchMock,
+            setTimeout: () => 0,
+            clearTimeout: () => {},
+            setInterval: () => 0,
+            clearInterval: () => {},
+            requestAnimationFrame: () => 0,
+            cancelAnimationFrame: () => {},
+            getComputedStyle: () => ({ display: 'flex', height: '0px', marginTop: '0', marginBottom: '0' }),
+            ResizeObserver: function () { return { observe() {}, disconnect() {} }; },
+            AbortController: globalThis.AbortController,
+            showToast: () => {},
+            alert: () => {},
+            confirm: () => true,
+        });
+        sandbox.window.localStorage = sandbox.localStorage;
+        vm.runInContext(fs.readFileSync(path.join(ROOT, 'src/reels-templates.js'), 'utf8'), sandbox, { filename: 'src/reels-templates.js' });
+
+        // 1. Open Live Project Library and verify dedicated selection toolbar & folder checkboxes in rendered HTML
+        sandbox.window.openProjectLibrary({ preserveRoot: true });
+        await new Promise((r) => setImmediate(r));
+        await new Promise((r) => setImmediate(r));
+
+        const lplModal = elementsById.get('live-project-library-modal');
+        assert.ok(lplModal, 'live-project-library-modal must exist');
+        assert.match(lplModal.innerHTML, /data-role="selection-bar"/);
+        assert.match(lplModal.innerHTML, /id="lpl-select-all-btn"/);
+        assert.match(lplModal.innerHTML, /data-act="invert-selection"/);
+        assert.match(lplModal.innerHTML, /data-act="clear-selection"/);
+        assert.match(lplModal.innerHTML, /data-act="toggle-multi-mode"/);
+        assert.match(lplModal.innerHTML, /id="lpl-append-selected-btn"/);
+        assert.match(lplModal.innerHTML, /id="lpl-move-selected-btn"/);
+        assert.match(lplModal.innerHTML, /id="lpl-delete-selected-btn"/);
+        assert.match(lplModal._gridContainer.innerHTML, /tpl-folder-check/);
+        assert.match(lplModal._gridContainer.innerHTML, /tpl-card-check/);
+
+        // 2. Test Select All -> selects ALL items + folders in current view, second call unselects all
+        vm.runInContext(`_selectAllLibraryItems(_getLibState('liveProject'));`, sandbox);
+        const allSel = JSON.parse(vm.runInContext(`JSON.stringify({
+            items: [...document.getElementById('live-project-library-modal')._selectedItemIds],
+            folders: [...document.getElementById('live-project-library-modal')._selectedFolderIds],
+            allBtn: document.getElementById('live-project-library-modal')._selAllBtn.textContent,
+            countText: document.getElementById('live-project-library-modal')._selCountEl.textContent,
+        })`, sandbox));
+        assert.equal(allSel.items.length, 3);
+        assert.deepEqual(allSel.folders, [fEmpty.id]);
+        assert.match(allSel.allBtn, /取消全选\(4\)/);
+        assert.match(allSel.countText, /3 个工程 · 1 个文件夹/);
+
+        vm.runInContext(`_selectAllLibraryItems(_getLibState('liveProject'));`, sandbox);
+        assert.equal(lplModal._selectedItemIds.size, 0);
+        assert.equal(lplModal._selectedFolderIds.size, 0);
+
+        // 3. Test Multi-Select Mode + Shift Range + Invert Selection across folders & items
+        vm.runInContext(`(() => {
+            const m = document.getElementById('live-project-library-modal');
+            const st = _getLibState('liveProject');
+            _toggleMultiSelectMode(st);
+            _applyCardSelectionAction(st, m, 'f:' + ${JSON.stringify(fEmpty.id)}, { fromCheckbox: false });
+            _applyCardSelectionAction(st, m, 't:' + ${JSON.stringify(p2.id)}, { fromCheckbox: false });
+        })()`, sandbox);
+        assert.equal(lplModal._multiSelectMode, true);
+        assert.equal(lplModal.classList.contains('vk-multi-select-on'), true);
+        assert.equal(lplModal._selectedFolderIds.has(fEmpty.id), true);
+        assert.equal(lplModal._selectedItemIds.has(p2.id), true);
+        assert.equal(lplModal._selectedItemIds.size, 1, 'Multi-select mode must accumulate plain clicks without Ctrl');
+
+        // Shift-range from p1 -> p3 selects all 3 projects
+        vm.runInContext(`(() => {
+            const m = document.getElementById('live-project-library-modal');
+            const st = _getLibState('liveProject');
+            _clearLibrarySelection(st);
+            _applyCardSelectionAction(st, m, 't:' + ${JSON.stringify(p1.id)}, {});
+            _applyCardSelectionAction(st, m, 't:' + ${JSON.stringify(p3.id)}, { shiftKey: true });
+        })()`, sandbox);
+        assert.equal(lplModal._selectedItemIds.size, 3);
+
+        // Invert selection -> deselects all 3 projects and selects the 1 folder
+        vm.runInContext(`_invertLibrarySelection(_getLibState('liveProject'));`, sandbox);
+        assert.equal(lplModal._selectedItemIds.size, 0);
+        assert.deepEqual([...lplModal._selectedFolderIds], [fEmpty.id]);
+
+        // 4. Test Batch Delete of multiple selected items (while deleting nested folders safely leaf-first when empty)
+        // Remove nested fSub so fEmpty is empty, select fEmpty + p1 + p2 -> batch delete deletes all 3 in one action
+        tplService.deleteEmptyLiveProjectFolder(fSub.id);
+        vm.runInContext(`(() => {
+            const m = document.getElementById('live-project-library-modal');
+            m._selectedItemIds = new Set([${JSON.stringify(p1.id)}, ${JSON.stringify(p2.id)}]);
+            m._selectedFolderIds = new Set([${JSON.stringify(fEmpty.id)}]);
+        })()`, sandbox);
+        await vm.runInContext(`_batchDeleteLibrarySelection(_getLibState('liveProject'))`, sandbox);
+        assert.deepEqual(tplService.listLiveProjects().map(x => x.id), [p3.id]);
+        assert.equal(tplService.readLiveProjectFolders().folders.length, 0);
+        assert.equal(tplService.getTemplate(sealedT.id).name, '封存参考模板', 'Sealed template must stay isolated');
+
+        // 5. Open Template Library and verify it also includes the full multi-select & batch bar
+        sandbox.window.openTemplateLibrary();
+        await new Promise((r) => setImmediate(r));
+        await new Promise((r) => setImmediate(r));
+        const tplModal = elementsById.get('template-library-modal');
+        assert.ok(tplModal);
+        assert.match(tplModal.innerHTML, /data-role="selection-bar"/);
+        assert.match(tplModal.innerHTML, /id="tpl-select-all-btn"/);
+        assert.match(tplModal.innerHTML, /id="tpl-copy-selected-to-live-btn"/);
+        assert.match(tplModal.innerHTML, /id="tpl-move-selected-btn"/);
+        assert.match(tplModal.innerHTML, /id="tpl-delete-selected-btn"/);
+    } finally {
+        Module._load = origLoad;
+        delete require.cache[templatesResolved];
+        fs.rmSync(tmpUserData, { recursive: true, force: true });
+    }
+});
+
+
+
+
 
 
 

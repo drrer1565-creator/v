@@ -140,7 +140,8 @@ const BUILTIN_WRITING_TIP_KINDS = new Set([
     'butterfly', 'candle_flame', 'dove', 'heart', 'leaf', 'sakura',
     'crown', 'music_note', 'cross_light', 'feather_gold',
     'candy_cane', 'christmas_tree', 'holly_berry', 'snowflake_wand', 'santa_feather', 'jingle_bell',
-    'us_flag_shield', 'purple_heart_medal', 'bald_eagle_crest', 'veteran_poppy', 'military_dog_tag'
+    'us_flag_shield', 'purple_heart_medal', 'bald_eagle_crest', 'veteran_poppy', 'military_dog_tag',
+    'maple_leaf', 'wheat_stalk', 'acorn', 'minimal_pumpkin', 'warm_mug', 'olive_branch'
 ]);
 function isImageOrVectorWritingTip(kind) {
     return kind === 'image' || BUILTIN_WRITING_TIP_KINDS.has(kind);
@@ -418,6 +419,59 @@ function drawSpeechWritingTip(ctx, kind, x, y, size, angle) {
         shape('M.38-.36 L.64-.62 M.44-.30 L.70-.56', null, '#64748b', .022);
         // 铭牌中心荣耀五角金星
         shape('M.56-.48 L.59-.41 L.66-.41 L.60-.36 L.62-.29 L.56-.34 L.50-.29 L.52-.36 L.46-.41 L.53-.41 Z', '#facc15', '#854d0e', .012);
+    } else if (kind === 'maple_leaf') {
+        // 🍁 极简北美秋枫叶 (Pinterest 低饱和赤陶赤褐 + 亚麻叶脉)
+        shape('M0 0 Q.14-.14 .28-.28', null, '#6b3a28', .028);
+        shape('M.26-.26 L.08-.46 L.22-.50 L.14-.72 L.34-.64 L.46-.96 L.58-.64 L.78-.72 L.70-.50 L.86-.46 L.66-.26 L.74-.14 L.48-.20 L.34-.10 Z', '#b85a3a', '#7c3822', .018);
+        shape('M.28-.28 L.46-.78 M.36-.36 L.22-.58 M.42-.38 L.66-.58 M.32-.32 L.56-.36', null, '#f3e7d8', .014);
+    } else if (kind === 'wheat_stalk') {
+        // 🌾 感恩节金麦穗 (丰收琥珀金 + 极简麦芒)
+        shape('M0 0 Q.36-.36 .88-.92', null, '#9c6635', .024);
+        const grains = [
+            ['.24-.26', '.14-.42', '.30-.40', '.22-.22'],
+            ['.30-.22', '.46-.14', '.46-.30', '.28-.24'],
+            ['.42-.44', '.30-.62', '.48-.58', '.40-.40'],
+            ['.48-.40', '.66-.32', '.64-.48', '.46-.42'],
+            ['.60-.62', '.48-.80', '.66-.76', '.58-.58'],
+            ['.66-.58', '.84-.50', '.82-.66', '.64-.60'],
+        ];
+        for (const [a, b, c, d] of grains) {
+            shape(`M${a} Q${b} ${c} ${d} Z`, '#dfb67e', '#8c5a2b', .014);
+        }
+        shape('M.76-.78 Q.70-.96 .88-1.02 Q.92-.82 .74-.74 Z', '#e8c997', '#8c5a2b', .014);
+        shape('M.48-.58 L.44-.74 M.66-.76 L.62-.94 M.88-1.02 L.96-1.14 M.82-.66 L.96-.72', null, '#b5814b', .01);
+    } else if (kind === 'acorn') {
+        // 🌰 森系简约橡果 (奶油胡桃棕 + 暖蜜橡实)
+        shape('M.64-.78 Q.76-.92 .88-.98', null, '#5e3c28', .026);
+        shape('M.12-.14 C-.04-.32 .04-.62 .30-.66 L.62-.34 C.58-.08 .28 0 .12-.14 Z', '#d29b65', '#7c4e28', .018);
+        shape('M0-.02 L.14-.16', null, '#7c4e28', .022);
+        shape('M.26-.68 C.44-.84 .72-.82 .80-.62 C.88-.42 .68-.22 .58-.30 L.26-.68 Z', '#6b4732', '#472c1d', .018);
+        shape('M.42-.58 L.52-.68 M.54-.46 L.66-.56 M.40-.68 L.60-.50', null, '#9a6e52', .011);
+    } else if (kind === 'minimal_pumpkin') {
+        // 🎃 北美极简陶土南瓜 (低饱和赤陶暖橙 + 鼠尾草藤梗)
+        shape('M.46-.76 Q.54-.94 .66-.98', null, '#7c8363', .032);
+        shape('M.12-.36 C.02-.64 .28-.80 .50-.72 C.72-.80 .98-.64 .88-.36 C.82-.08 .62 0 .50-.06 C.38 0 .18-.08 .12-.36 Z', '#c96d44', '#7a3b22', .018);
+        shape('M.32-.38 C.28-.64 .40-.76 .50-.74 C.60-.76 .72-.64 .68-.38 C.64-.12 .56-.04 .50-.06 C.44-.04 .36-.12 .32-.38 Z', '#d8835b', '#7a3b22', .014);
+        shape('M.46-.72 Q.50-.38 .48-.06', null, '#7a3b22', .012);
+    } else if (kind === 'warm_mug') {
+        // ☕ 秋日手冲陶瓷咖啡杯 (奶白陶杯 + 袅袅热气 + 可可醇香)
+        shape('M.68-.52 C.92-.52 .94-.22 .68-.22', null, '#6b5344', .032);
+        shape('M.16-.58 L.70-.58 L.66-.10 C.65-.02 .58 .02 .43 .02 C.28 .02 .21-.02 .20-.10 Z', '#f3ece1', '#6b5344', .018);
+        shape('M.18-.58 A.25 .07 0 1 0 .68-.58 A.25 .07 0 1 0 .18-.58 Z', '#6b4732', '#6b5344', .014);
+        shape('M.32-.74 Q.24-.88 .34-.98 M.50-.72 Q.42-.86 .52-.98', null, 'rgba(255,252,246,0.85)', .018);
+    } else if (kind === 'olive_branch') {
+        // 🌿 静谧感恩橄榄枝 (莫兰迪鼠尾草绿 + 祈祷和平枝条)
+        shape('M0 0 Q.38-.36 .88-.88', null, '#5a6b54', .022);
+        const leaves = [
+            'M.22-.24 C.08-.34 .06-.52 .20-.54 C.30-.48 .30-.32 .22-.24 Z',
+            'M.28-.26 C.38-.40 .56-.42 .58-.28 C.52-.18 .36-.18 .28-.26 Z',
+            'M.44-.46 C.30-.56 .28-.74 .42-.76 C.52-.70 .52-.54 .44-.46 Z',
+            'M.50-.48 C.60-.62 .78-.64 .80-.50 C.74-.40 .58-.40 .50-.48 Z',
+            'M.70-.72 C.66-.90 .82-1.02 .92-.92 C.90-.76 .78-.70 .70-.72 Z',
+        ];
+        for (const ld of leaves) {
+            shape(ld, '#8a9a86', '#4f5e4a', .014);
+        }
     } else {
         // 🪶 默认复古羽毛笔 (quill)
         shape('M.05-.07 C.2-.48 .23-.87 .54-1.15 C.66-1.32 .82-1.4 .97-1.44 C1.04-1.02 .81-.55 .43-.3 Z', '#eee8d9', '#7e7264', .018);
@@ -1674,6 +1728,9 @@ class ReelsCanvasRenderer {
 
         // ── 背景框绘制 ──
         const isBoxWipe = Boolean(s.box_wipe_enabled || animInType === 'box_wipe');
+        let boxWipeCursorX = null;
+        let boxWipeCursorY = null;
+        let boxWipeCursorSize = fontSize;
         if (s.use_box || isBoxWipe) {
             ctx.save();
             const bgColor = s.color_bg || '#000000';
@@ -1762,6 +1819,9 @@ class ReelsCanvasRenderer {
                                 if (textDirection === 'rtl') {
                                     lRectX = sl.right - lRectW;
                                 }
+                                boxWipeCursorX = textDirection === 'rtl' ? lRectX : (lRectX + lRectW);
+                                boxWipeCursorY = (lRectY + (sl.bottom - lRectY) * 0.5) - fontSize * 0.42;
+                                boxWipeCursorSize = fontSize;
                             }
                             const lRectH = Math.max(1, sl.bottom - sl.top);
                             let r = rad + expand * 0.3;
@@ -1790,6 +1850,9 @@ class ReelsCanvasRenderer {
                         if (textDirection === 'rtl') {
                             lRectX = (rectX + rectW + expand) - lRectW;
                         }
+                        boxWipeCursorX = textDirection === 'rtl' ? lRectX : (lRectX + lRectW);
+                        boxWipeCursorY = (lRectY + (rectH + expand * 2) * 0.5) - fontSize * 0.42;
+                        boxWipeCursorSize = fontSize;
                     }
                     const lRectH = rectH + expand * 2;
                     r = Math.min(r, lRectW / 2, lRectH / 2);
@@ -2040,6 +2103,16 @@ class ReelsCanvasRenderer {
                             if (textDirection === 'rtl') {
                                 drawX = (bb.x + bb.w) - drawW;
                             }
+                            boxWipeCursorX = textDirection === 'rtl' ? drawX : (drawX + drawW);
+                            boxWipeCursorY = (bb.y + bb.h * 0.5) - fontSize * 0.42;
+                            boxWipeCursorSize = fontSize;
+                            ctx.save();
+                            ctx.beginPath();
+                            ctx.rect(drawX, bb.y - 12, drawW, bb.h + 24);
+                            ctx.clip();
+                            brushEngine.drawBrush(ctx, bb.x, bb.y, bb.w, bb.h, bStyle, brushColor, 1, bColorMode, brushDir, bCustomData, bSolid);
+                            ctx.restore();
+                            continue;
                         }
                         brushEngine.drawBrush(ctx, drawX, bb.y, drawW, bb.h, bStyle, brushColor, 1, bColorMode, brushDir, bCustomData, bSolid);
                     }
@@ -3025,6 +3098,11 @@ class ReelsCanvasRenderer {
         }
 
         // ── Standard T-Subtitle Emerging Word/Char Writing Tip Icon (🇺🇸 星条盾 / 🎖️ 紫心勋章 / 🪶 羽毛笔等) ──
+        if (subtitleCursorEnabled && isBoxWipe && boxWipeCursorX !== null && boxWipeCursorY !== null) {
+            subCursorX = boxWipeCursorX;
+            subCursorY = boxWipeCursorY;
+            subCursorSize = boxWipeCursorSize;
+        }
         if (subtitleCursorEnabled && subCursorX !== null && subCursorY !== null) {
             const tipKind = s.fullpage_typewriter_cursor_kind || 'us_flag_shield';
             const imageTip = isImageOrVectorWritingTip(tipKind);
@@ -4473,6 +4551,9 @@ class ReelsCanvasRenderer {
 
         // 5. 绘制基础背景框
         const isRichBoxWipe = Boolean(s.box_wipe_enabled || s.anim_in_type === 'box_wipe');
+        let richBoxWipeCursorX = null;
+        let richBoxWipeCursorY = null;
+        const richBoxWipeCursorSize = baseStyleConfig.fontsize;
         const richBoxOpacity = (s.use_box || isRichBoxWipe)
             ? (s.box_opacity ?? s.opacity_bg ?? 150)
             : 0;
@@ -4531,6 +4612,8 @@ class ReelsCanvasRenderer {
                         slW = wipedRichWidths[li] || 0;
                         if (slW <= 0.5) continue;
                         if (textDirection === 'rtl') slX = sl.right - slW;
+                        richBoxWipeCursorX = textDirection === 'rtl' ? slX : (slX + slW);
+                        richBoxWipeCursorY = (sl.top + (sl.bottom - sl.top) * 0.5) - baseStyleConfig.fontsize * 0.42;
                     }
                     const slH = Math.max(1, sl.bottom - sl.top);
                     if (r > 0) {
@@ -4553,6 +4636,10 @@ class ReelsCanvasRenderer {
                 if (isRichBoxWipe && typeof ReelsAnimEngine !== 'undefined' && typeof ReelsAnimEngine.computeBoxWipeLineWidths === 'function') {
                     const [w] = ReelsAnimEngine.computeBoxWipeLineWidths(currentTime, segment.start || 0, segment.end || 0, [bW]);
                     bW = w || 0;
+                    if (bW > 0.5) {
+                        richBoxWipeCursorX = textDirection === 'rtl' ? bX : (bX + bW);
+                        richBoxWipeCursorY = (bY + bH * 0.5) - baseStyleConfig.fontsize * 0.42;
+                    }
                 }
                 if (bW > 0.5) {
                     if (r > 0) {
@@ -4701,6 +4788,26 @@ class ReelsCanvasRenderer {
 
             currY += line.lineH + (randomLineSpacingMax > 0 ? (richLineSpacings[renderLineIdx] || 0) : lineSpacing);
             renderLineIdx++;
+        }
+
+        if (isRichBoxWipe && s.subtitle_cursor_enabled && !style?._ambient_text_final_pass && richBoxWipeCursorX !== null && richBoxWipeCursorY !== null) {
+            const tipKind = s.fullpage_typewriter_cursor_kind || 'maple_leaf';
+            const scale = Math.max(0.2, Math.min(4, Number(s.fullpage_typewriter_cursor_scale) || 1));
+            const offX = Number(s.fullpage_typewriter_cursor_offset_x) || 0;
+            const offY = Number(s.fullpage_typewriter_cursor_offset_y) || 0;
+            const angle = Number(s.fullpage_typewriter_cursor_angle) || 0;
+            if (isImageOrVectorWritingTip(tipKind)) {
+                const drawTip = tipKind === 'image'
+                    ? (c, k, x, y, sz, ang) => this._drawWritingCursorImage(c, s, x, y, sz, ang, currentTime)
+                    : drawSpeechWritingTip;
+                drawTip(ctx, tipKind, richBoxWipeCursorX + offX, richBoxWipeCursorY + richBoxWipeCursorSize * 0.9 + offY, richBoxWipeCursorSize * scale, angle);
+            } else {
+                ctx.save();
+                ctx.fillStyle = s.fullpage_typewriter_cursor_color || '#FFD700';
+                ctx.font = `700 ${Math.round(richBoxWipeCursorSize)}px "${baseStyleConfig.fontFamily || 'Arial'}", sans-serif`;
+                ctx.fillText(s.fullpage_typewriter_cursor_char || '|', richBoxWipeCursorX + offX, richBoxWipeCursorY + offY);
+                ctx.restore();
+            }
         }
 
         ctx.restore();

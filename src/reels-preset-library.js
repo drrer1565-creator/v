@@ -739,9 +739,14 @@
         modal.className = 'reels-subtitle-preset-library';
 
         const countAll = items.length;
+        const countThanksgiving = items.filter(it => it.category.includes('感恩节') || /^sub-(229|23\d|24[0-4])$/i.test(it.code)).length;
         const countNew = items.filter(it => it.isNewViral).length;
         const countFav = items.filter(it => favorites.has(it.name)).length;
         const countOnline = items.filter(it => it.isOnlineImported).length;
+        const maxSubCodeNum = items.reduce((mx, it) => {
+            const m = String(it.code || '').match(/^sub-(\d+)$/i);
+            return m ? Math.max(mx, Number(m[1])) : mx;
+        }, 244);
 
         const categoryButtonsHtml = categorized.map(g =>
             `<button type="button" class="rsp-nav-btn" data-group="${_esc(g.category)}"><span>${_esc(g.category)}</span><small>${g.names.length}</small></button>`
@@ -770,7 +775,7 @@
             <header>
                 <div class="rsp-header-title">
                     <h2>🎬 字幕效果独立预览窗</h2>
-                    <span class="rsp-total-badge">共 ${countAll} 款 · sub-01 ~ sub-227</span>
+                    <span class="rsp-total-badge">共 ${countAll} 款 · sub-01 ~ sub-${maxSubCodeNum}</span>
                 </div>
                 <div class="rsp-header-controls">
                     <input type="text" class="rsp-search-input" placeholder="🔍 搜索编号 / 名称 / 字体 (如 sub-128 / Hormozi / 3D / 霓虹)...">
@@ -785,6 +790,7 @@
                 <aside>
                     <div class="rsp-aside-label">⚡ 快速筛选</div>
                     <button type="button" class="rsp-nav-btn active" data-group="all"><span>全部字幕效果</span><small>${countAll}</small></button>
+                    <button type="button" class="rsp-nav-btn" data-group="__thanksgiving__"><span>🍂 感恩节 · 极简秋日与祈祷</span><small>${countThanksgiving}</small></button>
                     <button type="button" class="rsp-nav-btn" data-group="__new_viral__"><span>✨ 2026新增100款爆款</span><small>${countNew}</small></button>
                     <button type="button" class="rsp-nav-btn" data-group="__favorites__"><span>⭐ 我的收藏</span><small class="rsp-fav-count">${countFav}</small></button>
                     <button type="button" class="rsp-nav-btn" data-group="__online_imported__"><span>🌐 网络/ASS导入效果</span><small>${countOnline}</small></button>
@@ -1145,6 +1151,7 @@
                 if (!it) return;
                 let matchGroup = true;
                 if (activeGroup === '__favorites__') matchGroup = favorites.has(it.name);
+                else if (activeGroup === '__thanksgiving__') matchGroup = it.category.includes('感恩节') || /^sub-(229|23\d|24[0-4])$/i.test(it.code);
                 else if (activeGroup === '__new_viral__') matchGroup = it.isNewViral;
                 else if (activeGroup === '__online_imported__') matchGroup = it.isOnlineImported;
                 else if (activeGroup !== 'all') matchGroup = it.category === activeGroup;
