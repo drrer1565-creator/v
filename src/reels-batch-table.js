@@ -267,10 +267,34 @@ function _getActiveTab() {
     return _batchTableState.tabs.find(t => t.id === _batchTableState.activeTabId) || _batchTableState.tabs[0];
 }
 
+function _normalizeTabWatermarksArray(wms) {
+    if (!Array.isArray(wms)) return null;
+    const clean = wms.filter(w => w && typeof w === 'object');
+    const dedupFn = typeof window !== 'undefined' && typeof window._reelsDeduplicateWatermarks === 'function'
+        ? window._reelsDeduplicateWatermarks
+        : (arr => arr);
+    return JSON.parse(JSON.stringify(dedupFn(clean)));
+}
+
+function _areTabWatermarksSame(listA, listB) {
+    if (typeof window !== 'undefined' && typeof window._reelsAreWatermarkListsEquivalent === 'function') {
+        return window._reelsAreWatermarkListsEquivalent(listA, listB);
+    }
+    return JSON.stringify(listA || []) === JSON.stringify(listB || []);
+}
+
 function reelsSyncActiveBatchTabFromId(tabId) {
-    if (!tabId || _batchTableState.visible) return;
-    if (_batchTableState.tabs.some(t => t.id === tabId)) {
+    if (!tabId || _batchTableState.visible) {
+        if (typeof window !== 'undefined' && typeof window._reelsSyncActiveWatermarksFromContext === 'function') {
+            window._reelsSyncActiveWatermarksFromContext({ refreshUI: true, refreshPreview: false });
+        }
+        return;
+    }
+    if (_batchTableState.tabs.some(t => t && t.id === tabId)) {
         _batchTableState.activeTabId = tabId;
+    }
+    if (typeof window !== 'undefined' && typeof window._reelsSyncActiveWatermarksFromContext === 'function') {
+        window._reelsSyncActiveWatermarksFromContext({ refreshUI: true, refreshPreview: false });
     }
 }
 window.reelsSyncActiveBatchTabFromId = reelsSyncActiveBatchTabFromId;
@@ -671,6 +695,9 @@ function _switchToTab(tabId, opts = {}) {
     _skipNextApply = true;
     if (opts.skipNextAutoSave) _skipNextBatchAutoSave = true;
     if (!opts.noRender) _renderBatchTable();
+    if (typeof window !== 'undefined' && typeof window._reelsSyncActiveWatermarksFromContext === 'function') {
+        window._reelsSyncActiveWatermarksFromContext({ tab, refreshUI: true, refreshPreview: true });
+    }
 }
 
 function _addTab(name, group = '', options = {}) {
@@ -1358,7 +1385,19 @@ function _replaceTabContentInPlace(existingTab, incomingTab) {
         existingTab._libraryDirty = false;
     }
     existingTab.hidden = false;
-    existingTab.tasks = Array.isArray(incomingTab.tasks) ? incomingTab.tasks : [];
+    if (Array.isArray(incomingTab.watermarks)) {
+        existingTab.watermarks = _normalizeTabWatermarksArray(incomingTab.watermarks);
+    } else {
+        delete existingTab.watermarks;
+    }
+    existingTab.tasks = Array.isArray(incomingTab.tasks) ? incomingTab.tasks.map(t => {
+        if (t && typeof t === 'object') {
+            t._batchTabId = existingTab.id;
+            t._batchTabName = existingTab.name;
+            if (existingTab.group) t._batchTabGroup = existingTab.group;
+        }
+        return t;
+    }) : [];
     existingTab._cachedSerializedTasks = null;
     existingTab._cachedTasksRef = null;
     existingTab._cachedTasksLen = -1;
@@ -1674,8 +1713,15 @@ function _showProjectManagerModal(focusTabId = '') {
 }
 window.openBatchProjectManager = _showProjectManagerModal;
 
-function _buildImportedTabObjects(rawTabs, fallbackName = '导入工程', tagPrefix = 'import') {
+function _buildImportedTabObjects(rawTabs, fallbackName = '导入工程', tagPrefix = 'import', options = {}) {
     const cleanFallback = String(fallbackName || '导入工程').trim() || '导入工程';
+    const topDefaultWms = Array.isArray(options.defaultWatermarks) && options.defaultWatermarks.length > 0
+        ? _normalizeTabWatermarksArray(options.defaultWatermarks)
+        : null;
+    const localDefaultWms = typeof window !== 'undefined' && typeof window._reelsGetLocalDefaultWatermarks === 'function'
+        ? window._reelsGetLocalDefaultWatermarks()
+        : [];
+    const preserveMatchingAsPerTab = options.loadMode === 'append';
     return (Array.isArray(rawTabs) ? rawTabs : []).map((t, tIdx) => {
         const id = 'tab_' + _batchTableState.nextTabId++;
         const queueIds = new Map();
@@ -1688,6 +1734,11 @@ function _buildImportedTabObjects(rawTabs, fallbackName = '导入工程', tagPre
         const tabName = (rawTabs.length === 1 && (!rawTabName || rawTabName === '默认' || rawTabName === '标签1'))
             ? cleanFallback
             : (rawTabName || `${cleanFallback}_${tIdx + 1}`);
+        const explicitTabWms = Array.isArray(t?.watermarks) ? _normalizeTabWatermarksArray(t.watermarks) : null;
+        const candidateWms = explicitTabWms !== null ? explicitTabWms : topDefaultWms;
+        const attachOwnWms = explicitTabWms !== null
+            ? (preserveMatchingAsPerTab || !topDefaultWms || !_areTabWatermarksSame(explicitTabWms, topDefaultWms))
+            : (preserveMatchingAsPerTab && topDefaultWms && (!_areTabWatermarksSame(topDefaultWms, localDefaultWms) || !localDefaultWms.some(w => w && w.enabled)));
         return {
             id,
             name: tabName,
@@ -1695,6 +1746,7 @@ function _buildImportedTabObjects(rawTabs, fallbackName = '导入工程', tagPre
             hidden: !!t?.hidden,
             cloudKey: String(t?.cloudKey || '').trim(),
             cloudUrl: String(t?.cloudUrl || '').trim(),
+            ...(attachOwnWms && candidateWms ? { watermarks: _normalizeTabWatermarksArray(candidateWms) } : {}),
             materialDir: t?.materialDir || '',
             _folderQueueId: remapQueue(t?.folderQueueId || t?._folderQueueId),
             _externalFolderQueuesCombined: !!(t?.externalFolderQueuesCombined || t?._externalFolderQueuesCombined),
@@ -1703,6 +1755,9 @@ function _buildImportedTabObjects(rawTabs, fallbackName = '导入工程', tagPre
                 const imported = _stripBatchGroupMeta(task);
                 delete imported.id;
                 _ensureTaskId(imported);
+                imported._batchTabId = id;
+                imported._batchTabName = tabName;
+                if (t?.group) imported._batchTabGroup = String(t.group || '').trim();
                 if (imported._folderQueueId) imported._folderQueueId = remapQueue(imported._folderQueueId);
                 const mediaBg = imported.bgPath || imported.videoPath || '';
                 if (mediaBg && window.electronAPI?.toFileUrl) {
@@ -1796,9 +1851,9 @@ function _applyImportedTabsToState(importedTabs, normalizedData, options = {}) {
         && options._watermarksAlreadyApplied !== true && window._reelsState) {
         const wmMode = (applyGlobalMeta && loadMode !== 'append') ? 'replace' : 'append';
         if (typeof window.reelsApplyRestoredWatermarks === 'function') {
-            window.reelsApplyRestoredWatermarks(normalizedData.watermarks, { mode: wmMode });
+            window.reelsApplyRestoredWatermarks(normalizedData.watermarks, { mode: wmMode, scopeTabs: importedTabs });
         } else {
-            try { window._reelsState.watermarks = JSON.parse(JSON.stringify(normalizedData.watermarks)); } catch (_) {}
+            try { window._reelsState.watermarks = _normalizeTabWatermarksArray(normalizedData.watermarks) || []; } catch (_) {}
         }
     }
 
@@ -1828,8 +1883,24 @@ function _applyImportedTabsToState(importedTabs, normalizedData, options = {}) {
         }
         if (typeof _renderTaskList === 'function') _renderTaskList();
         if (window._reelsState?.tasks?.length > 0 && typeof reelsSelectTask === 'function') {
-            reelsSelectTask(0);
+            const activeTabId = _batchTableState.activeTabId;
+            const preferredIdx = activeTabId
+                ? window._reelsState.tasks.findIndex(t => t && t._batchTabId === activeTabId)
+                : -1;
+            reelsSelectTask(preferredIdx >= 0 ? preferredIdx : 0);
+        } else if (window._reelsState) {
+            window._reelsState._coverEditMode = false;
+            window._reelsState.selectedIdx = -1;
+            if (window._reelsState.overlayProxy?.overlayMgr) {
+                window._reelsState.overlayProxy.overlayMgr.overlays = [];
+            }
+            window._reelsState.overlayPanel?.deselectOverlay?.();
+            window._reelsState.overlayPanel?._refreshList?.();
+            window._reelsState.decorPanel?.refresh?.();
         }
+    }
+    if (typeof window !== 'undefined' && typeof window._reelsSyncActiveWatermarksFromContext === 'function') {
+        window._reelsSyncActiveWatermarksFromContext({ refreshUI: true, refreshPreview: false });
     }
     _batchAutoSave({ skipSync: true, forceFullSerialize: true });
     return { tabsAdded, tabsUpdated, skippedDuplicates, matchedFirstTabId };
@@ -2434,7 +2505,10 @@ async function _syncWorkspaceTabsBackToLibraryFolder(options = {}) {
 
     const style = typeof _readStyleFromUI === 'function' ? _readStyleFromUI() : (window._reelsState?.globalSubtitleStyle || {});
     const globalStyle = window._reelsState?.globalSubtitleStyle || style;
-    const watermarks = Array.isArray(window._reelsState?.watermarks) ? window._reelsState.watermarks : [];
+    const rawWatermarks = Array.isArray(window._reelsState?.watermarks) ? window._reelsState.watermarks : [];
+    const fallbackWatermarks = typeof window._reelsDeduplicateWatermarks === 'function'
+        ? window._reelsDeduplicateWatermarks(rawWatermarks)
+        : rawWatermarks;
     let updated = 0;
     let created = 0;
     let failed = 0;
@@ -2451,12 +2525,17 @@ async function _syncWorkspaceTabsBackToLibraryFolder(options = {}) {
             if (!thumb && !options.silent && tab.tasks?.length && typeof window.captureTemplateThumbnailForTasks === 'function') {
                 thumb = await window.captureTemplateThumbnailForTasks(tab.tasks, '');
             }
+            const tabWatermarks = Array.isArray(tab.watermarks)
+                ? _normalizeTabWatermarksArray(tab.watermarks)
+                : (typeof window._resolveReelsWatermarksForTask === 'function'
+                    ? _normalizeTabWatermarksArray(window._resolveReelsWatermarksForTask(tab.tasks?.[0], tab))
+                    : fallbackWatermarks);
             const projectData = window.ReelsProject.collectProjectData({
                 tasks: tab.tasks || [],
                 backgroundLibrary: window._reelsState?.backgroundLibrary || [],
                 style: globalStyle || {},
                 exportOpts: { ...(window._reelsState?.exportOpts || {}), workMode: document.getElementById('reels-work-mode')?.value || 'srt' },
-                watermarks,
+                watermarks: tabWatermarks || fallbackWatermarks,
                 selectedIdx: tab.tasks?.length ? 0 : -1,
             });
             const isUpdate = !!tab.libraryTemplateId;
@@ -2530,21 +2609,34 @@ window.reelsApplyLibraryProjects = async function(entries = [], options = {}) {
         }
     }
 
+    const builtEntries = [];
     const builtTabs = [];
     let firstGlobalStyle = null;
     let firstExportOpts = null;
-    const mergedWatermarks = [];
+    let primaryWatermarks = null;
     for (const item of validEntries) {
         const tplData = item.tplData || item;
         const summary = item.summary || {};
         const built = _buildTabFromLibraryTemplate(tplData, summary, targetFolderId);
         builtTabs.push(built.tab);
+        const tabWms = Array.isArray(built.restored?.watermarks) && built.restored.watermarks.length > 0
+            ? _normalizeTabWatermarksArray(built.restored.watermarks)
+            : null;
+        builtEntries.push({ tab: built.tab, watermarks: tabWms });
         if (!firstGlobalStyle && built.restored?.style) firstGlobalStyle = built.restored.style;
         if (!firstExportOpts && built.restored?.exportOpts) firstExportOpts = built.restored.exportOpts;
-        if (Array.isArray(built.restored?.watermarks)) {
-            for (const wm of built.restored.watermarks) mergedWatermarks.push(wm);
+        if (!primaryWatermarks && tabWms?.length) primaryWatermarks = tabWms;
+    }
+    const localDefaultWms = typeof window._reelsGetLocalDefaultWatermarks === 'function'
+        ? window._reelsGetLocalDefaultWatermarks()
+        : [];
+    const baselineWms = loadMode === 'replace' ? (primaryWatermarks || localDefaultWms) : localDefaultWms;
+    for (const entry of builtEntries) {
+        if (entry.watermarks && entry.watermarks.length > 0 && !_areTabWatermarksSame(entry.watermarks, baselineWms)) {
+            entry.tab.watermarks = entry.watermarks;
         }
     }
+    const mergedWatermarks = primaryWatermarks ? _normalizeTabWatermarksArray(primaryWatermarks) : [];
     if (!builtTabs.length) return false;
     _libraryFolderSyncGeneration++;
 
@@ -2620,6 +2712,12 @@ window.reelsApplySealedTemplate = async function(tplData, options = {}) {
     });
 
     const id = 'tab_' + _batchTableState.nextTabId++;
+    const cleanTplWatermarks = Array.isArray(restored.watermarks) && restored.watermarks.length > 0
+        ? _normalizeTabWatermarksArray(restored.watermarks)
+        : null;
+    const localDefTplWms = typeof window._reelsGetLocalDefaultWatermarks === 'function'
+        ? window._reelsGetLocalDefaultWatermarks()
+        : [];
     const sealedTab = {
         id,
         name: cleanName,
@@ -2630,6 +2728,8 @@ window.reelsApplySealedTemplate = async function(tplData, options = {}) {
         libraryTemplateId: '',
         libraryFolderId: '',
         libraryUpdatedAt: '',
+        ...(loadMode === 'append' && cleanTplWatermarks && !_areTabWatermarksSame(cleanTplWatermarks, localDefTplWms)
+            ? { watermarks: cleanTplWatermarks } : {}),
         materialDir: '',
         lastRefreshTime: null,
         tasks,
@@ -3183,6 +3283,9 @@ function reelsToggleBatchTable(options = {}) {
             }
             if (typeof _renderTaskList === 'function') _renderTaskList();
             window.reelsUpdateActiveFolderBar?.();
+            if (typeof window._reelsSyncActiveWatermarksFromContext === 'function') {
+                window._reelsSyncActiveWatermarksFromContext({ refreshUI: true, refreshPreview: false });
+            }
             _batchTableState.openSnapshotTasks = _batchTasksSnapshot(window._reelsState?.tasks || []);
             console.log('[BatchTable.toggle] 关闭表格，已保存 changes');
             if (window._reelsState?.tasks.length && typeof reelsSelectTask === 'function') {
@@ -3208,6 +3311,9 @@ function reelsToggleBatchTable(options = {}) {
                 _skipNextApply = true;
                 if (typeof _renderTaskList === 'function') _renderTaskList();
                 window.reelsUpdateActiveFolderBar?.();
+            if (typeof window._reelsSyncActiveWatermarksFromContext === 'function') {
+                window._reelsSyncActiveWatermarksFromContext({ refreshUI: true, refreshPreview: false });
+            }
                 _syncSelectedTaskOverlayMgrIfNeeded(snapshot.selectedIdx);
                 if (typeof reelsUpdatePreview === 'function') reelsUpdatePreview();
                 // Replace any interim automatic saves with the opening snapshot.
@@ -21160,6 +21266,7 @@ function _batchAutoSave(options = {}) {
                     libraryUpdatedAt: tab.libraryUpdatedAt || '',
                     isLiveProject: !!tab._isLiveProject,
                     fromSealedTemplate: !!tab._fromSealedTemplate,
+                    ...(Array.isArray(tab.watermarks) ? { watermarks: _normalizeTabWatermarksArray(tab.watermarks) } : {}),
                     materialDir: tab.materialDir || '',
                     folderQueueId: tab._folderQueueId || '',
                     externalFolderQueuesCombined: !!tab._externalFolderQueuesCombined,
@@ -21291,6 +21398,7 @@ function _batchAutoRestore() {
                     _libraryDirty: false,
                     _isLiveProject: Boolean(t.isLiveProject || t.libraryTemplateId),
                     _fromSealedTemplate: Boolean(t.fromSealedTemplate && !t.libraryTemplateId),
+                    ...(Array.isArray(t.watermarks) ? { watermarks: _normalizeTabWatermarksArray(t.watermarks) } : {}),
                     materialDir: t.materialDir || '',
                     _folderQueueId: t.folderQueueId || '',
                     // 兼容此前没有持久化该标记的版本。
@@ -21391,6 +21499,9 @@ function _batchAutoRestore() {
                 if(selectedId){const index=restoredTasks.findIndex(t=>t.id===selectedId);if(index>=0 && typeof reelsSelectTask==='function')setTimeout(()=>reelsSelectTask(index),0);}
             }
             window.reelsUpdateActiveFolderBar?.();
+            if (typeof window._reelsSyncActiveWatermarksFromContext === 'function') {
+                window._reelsSyncActiveWatermarksFromContext({ refreshUI: true, refreshPreview: false });
+            }
             console.log(`[BatchTable] Auto-restored ${_batchTableState.tabs.length} tabs, ${restoredTasks.length} unique tasks${duplicateTaskCount ? `, skipped ${duplicateTaskCount} duplicates` : ''}${migratedLegacyStyleCount ? `, migrated ${migratedLegacyStyleCount} legacy styles` : ''}${sanitizedOverlayCount ? `, cleaned ${sanitizedOverlayCount} invalid overlays` : ''} from ${data.timestamp}`);
             if (duplicateTaskCount > 0 || migratedLegacyStyleCount > 0 || sanitizedOverlayCount > 0) {
                 // 延迟回写清理后的标签数据，避免阻塞首屏启动。
@@ -22258,7 +22369,9 @@ function _batchExportConfig(scope = 'current') {
         return;
     }
     try { window.reelsSyncWatermarkFromUI?.(); } catch (_) {}
-    const wmList = Array.isArray(window._reelsState?.watermarks) ? window._reelsState.watermarks : [];
+    const wmList = typeof window._resolveReelsWatermarksForTask === 'function'
+        ? _normalizeTabWatermarksArray(window._resolveReelsWatermarksForTask(null, activeTab)) || []
+        : (Array.isArray(window._reelsState?.watermarks) ? window._reelsState.watermarks : []);
     const globalStyle = window._reelsState?.globalSubtitleStyle;
     const data = {
         version: '2.0',
@@ -22284,6 +22397,7 @@ function _batchExportConfig(scope = 'current') {
             cloudUrl: tab.cloudUrl || '',
             libraryTemplateId: tab.libraryTemplateId || '',
             libraryFolderId: tab.libraryFolderId || '',
+            ...(Array.isArray(tab.watermarks) ? { watermarks: _normalizeTabWatermarksArray(tab.watermarks) } : {}),
             materialDir: tab.materialDir || '',
             lastRefreshTime: tab.lastRefreshTime || null,
             tasks: _serializeTasks(tab.tasks),
@@ -22329,7 +22443,7 @@ function _batchImportConfig(file) {
                     tabs: _batchTableState.tabs.map(tab => ({ id: tab.id, name: tab.name, group: String(tab.group || '').trim(), hidden: !!tab.hidden, cloudKey: tab.cloudKey || '', cloudUrl: tab.cloudUrl || '', materialDir: tab.materialDir || '', folderQueueId: tab._folderQueueId || '', externalFolderQueuesCombined: !!tab._externalFolderQueuesCombined, lastRefreshTime: tab.lastRefreshTime || null, tasks: _serializeTasks(tab.tasks) })) };
                 if (!await window.electronAPI.writeFileText(backupPath, JSON.stringify(backup, null, 2))) throw new Error('备份失败，原有工程未覆盖');
             }
-            const importedTabs = _buildImportedTabObjects(data.tabs, fallbackName, 'import');
+            const importedTabs = _buildImportedTabObjects(data.tabs, fallbackName, 'import', { defaultWatermarks: data.watermarks, loadMode: mode });
             const applyRes = _applyImportedTabsToState(importedTabs, data, { loadMode: mode, applyGlobalMeta: true });
             const total = importedTabs.reduce((sum, t) => sum + t.tasks.length, 0);
             if (mode === 'replace') {
@@ -24043,7 +24157,7 @@ async function _applyDownloadedCloudProjectToBatchTable(rawProject, savedPath = 
         }
     }
 
-    const importedTabs = _buildImportedTabObjects(data.tabs, fallbackName, 'cloud');
+    const importedTabs = _buildImportedTabObjects(data.tabs, fallbackName, 'cloud', { defaultWatermarks: data.watermarks, loadMode });
     const cloudKey = String(options.cloudKey || '').trim();
     const cloudUrl = String(options.cloudUrl || '').trim();
     if (cloudKey || cloudUrl) {

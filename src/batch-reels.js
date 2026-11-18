@@ -4957,8 +4957,10 @@ function _getWatermarkImage(pathValue, onLoadedCallback) {
 /**
  * 绘制 AI 水印 (预览 + 导出共用)
  */
-function _drawWatermarks(ctx, canvasW, canvasH) {
-    const watermarks = _reelsState.watermarks || [];
+function _drawWatermarks(ctx, canvasW, canvasH, watermarksOverride = null) {
+    const watermarks = Array.isArray(watermarksOverride)
+        ? watermarksOverride
+        : _resolveReelsWatermarksForTask(_getSelectedTask());
     for (const wm of watermarks) {
         if (!wm.enabled) continue;
 
@@ -5033,7 +5035,7 @@ function _drawWatermarks(ctx, canvasW, canvasH) {
 
             ctx.save();
             ctx.font = `${fontSize}px Arial, sans-serif`;
-            const lines = wm.text.split('\n');
+            const lines = String(wm.text).split('\n');
             let maxTextW = 0;
             for (const line of lines) {
                 maxTextW = Math.max(maxTextW, ctx.measureText(line).width);
@@ -5107,10 +5109,273 @@ const REELS_DEFAULT_WATERMARK = [
     }
 ];
 
+function _reelsCloneWatermarks(list) {
+    if (!Array.isArray(list)) return [];
+    const cloneFn = typeof _cloneProjectDataForSave === 'function'
+        ? _cloneProjectDataForSave
+        : (v => JSON.parse(JSON.stringify(v)));
+    return _reelsDeduplicateWatermarks(cloneFn(list).filter(w => w && typeof w === 'object'));
+}
+
 function _reelsSaveWatermarks() {
+    const clean = _reelsCloneWatermarks(_reelsState.watermarks);
+    _reelsState._localDefaultWatermarks = clean;
     try {
-        localStorage.setItem(REELS_WATERMARK_STORAGE_KEY, JSON.stringify(_reelsState.watermarks));
+        localStorage.setItem(REELS_WATERMARK_STORAGE_KEY, JSON.stringify(clean));
     } catch (e) { /* quota exceeded etc */ }
+}
+
+function _reelsGetWatermarkContextTab(task = null) {
+    if (typeof _batchTableState === 'undefined' || !Array.isArray(_batchTableState?.tabs) || _batchTableState.tabs.length === 0) {
+        return null;
+    }
+    const selTask = task || (typeof _getSelectedTask === 'function' ? _getSelectedTask() : null);
+    if (selTask?._batchTabId) {
+        const hit = _batchTableState.tabs.find(t => t && t.id === selTask._batchTabId);
+        if (hit) return hit;
+    }
+    if (selTask) {
+        const ownerByTask = _batchTableState.tabs.find(t =>
+            t && Array.isArray(t.tasks) && (t.tasks.includes(selTask) || (selTask.id && t.tasks.some(x => x && x.id === selTask.id)))
+        );
+        if (ownerByTask) return ownerByTask;
+    }
+    if (typeof _getActiveTab === 'function') {
+        return _getActiveTab() || null;
+    }
+    return _batchTableState.tabs.find(t => t && t.id === _batchTableState.activeTabId) || _batchTableState.tabs[0] || null;
+}
+
+function _reelsGetLocalDefaultWatermarks() {
+    try {
+        const saved = localStorage.getItem(REELS_WATERMARK_STORAGE_KEY);
+        if (saved) {
+            const parsed = JSON.parse(saved);
+            if (Array.isArray(parsed)) {
+                const deduped = _reelsDeduplicateWatermarks(parsed);
+                if (deduped.length !== parsed.length) {
+                    try { localStorage.setItem(REELS_WATERMARK_STORAGE_KEY, JSON.stringify(deduped)); } catch (_) {}
+                }
+                _reelsState._localDefaultWatermarks = _reelsCloneWatermarks(deduped);
+                return _reelsCloneWatermarks(deduped);
+            }
+        }
+    } catch (_) {}
+    if (Array.isArray(_reelsState._localDefaultWatermarks)) {
+        return _reelsCloneWatermarks(_reelsState._localDefaultWatermarks);
+    }
+    if (Array.isArray(_reelsState.watermarks) && _reelsState.watermarks.length > 0 && !_reelsGetWatermarkContextTab(null)?.watermarks) {
+        return _reelsCloneWatermarks(_reelsState.watermarks);
+    }
+    return _reelsCloneWatermarks(REELS_DEFAULT_WATERMARK);
+}
+
+function _reelsAreWatermarkListsEquivalent(listA, listB) {
+    const a = _reelsDeduplicateWatermarks(listA || []);
+    const b = _reelsDeduplicateWatermarks(listB || []);
+    if (a.length !== b.length) return false;
+    for (let i = 0; i < a.length; i++) {
+        const x = a[i];
+        const y = b[i];
+        if (_reelsWatermarkIdentityKey(x) !== _reelsWatermarkIdentityKey(y)) return false;
+        if (Boolean(x.enabled) !== Boolean(y.enabled)) return false;
+        if (x.type === 'image') {
+            if ((parseInt(x.imageScale) || 100) !== (parseInt(y.imageScale) || 100)) return false;
+            if ((x.opacity ?? 1) !== (y.opacity ?? 1)) return false;
+            if (Boolean(x.flipH) !== Boolean(y.flipH) || Boolean(x.flipV) !== Boolean(y.flipV)) return false;
+        } else {
+            if ((parseInt(x.fontSize) || 20) !== (parseInt(y.fontSize) || 20)) return false;
+            if (String(x.color || '#FFFFFF').toUpperCase() !== String(y.color || '#FFFFFF').toUpperCase()) return false;
+            if (String(x.bgColor || '#000000').toUpperCase() !== String(y.bgColor || '#000000').toUpperCase()) return false;
+            if ((x.textOpacity ?? 1) !== (y.textOpacity ?? 1)) return false;
+            if ((x.bgOpacity ?? 0.5) !== (y.bgOpacity ?? 0.5)) return false;
+        }
+    }
+    return true;
+}
+
+function _resolveReelsWatermarksForTask(task = null, tabOverride = null) {
+    const tab = tabOverride || _reelsGetWatermarkContextTab(task);
+    if (tab && Array.isArray(tab.watermarks)) {
+        return _reelsDeduplicateWatermarks(tab.watermarks);
+    }
+    if (Array.isArray(_reelsState._localDefaultWatermarks)) {
+        return _reelsDeduplicateWatermarks(_reelsState._localDefaultWatermarks);
+    }
+    return Array.isArray(_reelsState.watermarks) ? _reelsDeduplicateWatermarks(_reelsState.watermarks) : [];
+}
+
+function _reelsSyncActiveWatermarksFromContext({ task = null, tab = null, refreshUI = true, refreshPreview = false } = {}) {
+    if (!_reelsState) return;
+    const ctxTab = tab || _reelsGetWatermarkContextTab(task);
+    if (ctxTab && Array.isArray(ctxTab.watermarks)) {
+        _reelsState.watermarks = _reelsCloneWatermarks(ctxTab.watermarks);
+    } else if (Array.isArray(_reelsState._localDefaultWatermarks)) {
+        _reelsState.watermarks = _reelsCloneWatermarks(_reelsState._localDefaultWatermarks);
+    }
+    if (refreshUI && typeof _reelsRefreshWatermarkUI === 'function') {
+        _reelsRefreshWatermarkUI();
+    }
+    if (refreshPreview && typeof reelsUpdatePreview === 'function') {
+        try { reelsUpdatePreview(); } catch (_) {}
+    }
+}
+
+function _reelsRenderWatermarkScopeBar() {
+    const bar = typeof document !== 'undefined' ? document.getElementById('reels-watermark-scope-bar') : null;
+    if (!bar) return;
+    const tab = _reelsGetWatermarkContextTab(null);
+    if (!tab) {
+        bar.style.display = 'none';
+        bar.innerHTML = '';
+        return;
+    }
+    bar.style.display = 'block';
+    const isPerTab = Array.isArray(tab.watermarks);
+    const tabLabel = typeof _escapeReelsTaskText === 'function' ? _escapeReelsTaskText(tab.name || '当前标签') : (tab.name || '当前标签');
+    if (isPerTab) {
+        bar.style.borderColor = 'rgba(56,189,248,0.42)';
+        bar.style.background = 'rgba(14,165,233,0.10)';
+        bar.innerHTML = `
+            <div style="display:flex;align-items:center;justify-content:space-between;gap:6px;flex-wrap:wrap;">
+                <span style="color:#bae6fd;font-weight:600;">📑 标签「${tabLabel}」使用专属水印</span>
+                <div style="display:flex;gap:4px;flex-wrap:wrap;">
+                    <button type="button" class="btn btn-secondary" style="font-size:10px;padding:2px 6px;" onclick="reelsPromoteTabWatermarkToDefault()" title="把当前这组水印设为本机默认，清除重复覆盖">💾 设为本机默认</button>
+                    <button type="button" class="btn btn-secondary" style="font-size:10px;padding:2px 6px;" onclick="reelsResetTabWatermarkToDefault()" title="放弃专属水印，改用本机默认水印">↩️ 改用本机默认</button>
+                </div>
+            </div>`;
+    } else {
+        bar.style.borderColor = 'rgba(16,185,129,0.32)';
+        bar.style.background = 'rgba(16,185,129,0.08)';
+        bar.innerHTML = `
+            <div style="display:flex;align-items:center;justify-content:space-between;gap:6px;flex-wrap:wrap;">
+                <span style="color:#a7f3d0;">🖥️ 跟随<b>本机默认水印</b>（无专属水印的标签共用）</span>
+                <button type="button" class="btn btn-secondary" style="font-size:10px;padding:2px 6px;" onclick="reelsForkTabWatermarkFromDefault()" title="只为当前标签单独修改水印，不影响本机默认与其他标签">📌 仅本标签独立设置</button>
+            </div>`;
+    }
+}
+
+window.reelsForkTabWatermarkFromDefault = function() {
+    const tab = _reelsGetWatermarkContextTab(null);
+    if (!tab) return false;
+    tab.watermarks = _reelsCloneWatermarks(_resolveReelsWatermarksForTask(null, tab));
+    _reelsState.watermarks = _reelsCloneWatermarks(tab.watermarks);
+    tab._dirty = true;
+    if (!tab._fromSealedTemplate && (tab.libraryTemplateId || tab._isLiveProject || (tab.tasks && tab.tasks.length))) {
+        tab._libraryDirty = true;
+    }
+    if (typeof _batchAutoSave === 'function') _batchAutoSave({ skipSync: true });
+    _reelsRefreshWatermarkUI();
+    return true;
+};
+
+window.reelsPromoteTabWatermarkToDefault = function() {
+    const tab = _reelsGetWatermarkContextTab(null);
+    const activeWms = _reelsCloneWatermarks(Array.isArray(_reelsState.watermarks) ? _reelsState.watermarks : tab?.watermarks);
+    _reelsState.watermarks = _reelsCloneWatermarks(activeWms);
+    if (tab && Array.isArray(tab.watermarks)) {
+        delete tab.watermarks;
+        tab._dirty = true;
+        if (!tab._fromSealedTemplate && (tab.libraryTemplateId || tab._isLiveProject || (tab.tasks && tab.tasks.length))) {
+            tab._libraryDirty = true;
+        }
+    }
+    _notifyWatermarksChanged({ refreshUI: true, persist: true, refreshPreview: true, markLiveDirty: true, recordHistory: true, scopeMode: 'local-default' });
+    return true;
+};
+
+window.reelsResetTabWatermarkToDefault = function() {
+    const tab = _reelsGetWatermarkContextTab(null);
+    if (!tab || !Array.isArray(tab.watermarks)) return false;
+    delete tab.watermarks;
+    tab._dirty = true;
+    if (!tab._fromSealedTemplate && (tab.libraryTemplateId || tab._isLiveProject || (tab.tasks && tab.tasks.length))) {
+        tab._libraryDirty = true;
+    }
+    _reelsState.watermarks = _reelsGetLocalDefaultWatermarks();
+    if (typeof _batchAutoSave === 'function') _batchAutoSave({ skipSync: true });
+    if (typeof window.reelsMarkLiveProjectTabDirty === 'function') window.reelsMarkLiveProjectTabDirty('active');
+    _reelsRefreshWatermarkUI();
+    if (typeof reelsUpdatePreview === 'function') { try { reelsUpdatePreview(); } catch (_) {} }
+    return true;
+};
+
+function _reelsNormalizeWatermarkImageIdentity(pathValue) {
+    const raw = String(pathValue || '').trim();
+    if (!raw) return '';
+    let normalized = raw.replace(/\\/g, '/');
+    normalized = normalized.replace(/^(?:local-media|file):\/\/\/*/i, '');
+    try { normalized = decodeURIComponent(normalized); } catch (_) {}
+    normalized = normalized.split(/[?#]/)[0];
+    if (/(?:^|\/)colossyan\.png$/i.test(normalized)) {
+        return 'builtin:colossyan.png';
+    }
+    if (/^[a-zA-Z]:\//.test(normalized)) {
+        normalized = normalized.toLowerCase();
+    }
+    return normalized;
+}
+
+function _reelsWatermarkIdentityKey(wm) {
+    if (!wm || typeof wm !== 'object') return '';
+    const type = wm.type === 'image' ? 'image' : 'text';
+    const pos = wm.position || (type === 'image' ? 'center' : 'top-right');
+    const x = Number(wm.x) || 0;
+    const y = Number(wm.y) || 0;
+    if (type === 'image') {
+        const imgId = _reelsNormalizeWatermarkImageIdentity(wm.imagePath);
+        const anchor = wm.imageAnchor || 'center';
+        return `image|${imgId}|${pos}|${anchor}|${x}|${y}`;
+    }
+    const text = String(wm.text || '').trim();
+    return `text|${text}|${pos}|${x}|${y}`;
+}
+
+function _reelsDeduplicateWatermarks(list, { onlyEnabled = false } = {}) {
+    if (!Array.isArray(list) || list.length === 0) return [];
+    const seen = new Map();
+    const out = [];
+    for (const wm of list) {
+        if (!wm || typeof wm !== 'object') continue;
+        if (onlyEnabled && !wm.enabled) continue;
+        const key = _reelsWatermarkIdentityKey(wm);
+        if (!key) continue;
+        if (!seen.has(key)) {
+            seen.set(key, out.length);
+            out.push(wm);
+        }
+    }
+    return out;
+}
+
+function _notifyWatermarksChanged({ refreshUI = false, persist = true, refreshPreview = true, markLiveDirty = true, recordHistory = true, scopeMode = 'auto' } = {}) {
+    const activeTab = scopeMode === 'auto' ? _reelsGetWatermarkContextTab(null) : null;
+    const isPerTab = Boolean(activeTab && Array.isArray(activeTab.watermarks));
+    if (isPerTab) {
+        const cleaned = _reelsCloneWatermarks(_reelsState.watermarks);
+        _reelsState.watermarks = _reelsCloneWatermarks(cleaned);
+        activeTab.watermarks = cleaned;
+        activeTab._dirty = true;
+        if (markLiveDirty && !activeTab._fromSealedTemplate && (activeTab.libraryTemplateId || activeTab._isLiveProject || (activeTab.tasks && activeTab.tasks.length))) {
+            activeTab._libraryDirty = true;
+            if (typeof _scheduleLibraryFolderAutoSync === 'function') _scheduleLibraryFolderAutoSync();
+        }
+        if (persist && typeof _batchAutoSave === 'function') {
+            _batchAutoSave({ skipSync: true });
+        }
+    } else {
+        if (persist) _reelsSaveWatermarks();
+        if (markLiveDirty && typeof window !== 'undefined' && typeof window.reelsMarkLiveProjectTabDirty === 'function') {
+            window.reelsMarkLiveProjectTabDirty('all');
+        }
+    }
+    if (refreshUI) _reelsRefreshWatermarkUI();
+    if (refreshPreview && typeof reelsUpdatePreview === 'function') {
+        try { reelsUpdatePreview(); } catch (_) {}
+    }
+    if (recordHistory && typeof _scheduleReelsHistorySave === 'function') {
+        _scheduleReelsHistorySave(280);
+    }
 }
 
 function _reelsLoadWatermarks() {
@@ -5119,9 +5384,13 @@ function _reelsLoadWatermarks() {
         if (saved) {
             const parsed = JSON.parse(saved);
             if (Array.isArray(parsed)) {
-                _reelsState.watermarks = parsed;
+                const deduped = _reelsDeduplicateWatermarks(parsed);
+                let changed = deduped.length !== parsed.length;
+                _reelsState.watermarks = _reelsCloneWatermarks(deduped);
                 // 确保用户已保存的列表中也包含新的 colossyan 默认预设
-                const hasColossyan = parsed.some(wm => wm.type === 'image' && wm.imagePath && wm.imagePath.includes('colossyan.png'));
+                const hasColossyan = deduped.some(wm =>
+                    wm.type === 'image' && _reelsNormalizeWatermarkImageIdentity(wm.imagePath) === 'builtin:colossyan.png'
+                );
                 if (!hasColossyan) {
                     _reelsState.watermarks.push({
                         type: 'image',
@@ -5134,30 +5403,35 @@ function _reelsLoadWatermarks() {
                         position: 'center',
                         enabled: false
                     });
-                    _reelsSaveWatermarks();
+                    changed = true;
                 }
+                _reelsState._localDefaultWatermarks = _reelsCloneWatermarks(_reelsState.watermarks);
+                if (changed) _reelsSaveWatermarks();
+                _reelsSyncActiveWatermarksFromContext({ refreshUI: false, refreshPreview: false });
                 return;
             }
         }
     } catch (e) { /* parse error */ }
     // No saved data — use default
     _reelsState.watermarks = JSON.parse(JSON.stringify(REELS_DEFAULT_WATERMARK));
+    _reelsState._localDefaultWatermarks = _reelsCloneWatermarks(_reelsState.watermarks);
+    _reelsSyncActiveWatermarksFromContext({ refreshUI: false, refreshPreview: false });
 }
 
 function reelsAddWatermark() {
+    if (!Array.isArray(_reelsState.watermarks)) _reelsState.watermarks = [];
     _reelsState.watermarks.push({
         type: 'text',
         text: 'Attribution to11.ai', fontSize: 20, color: '#FFFFFF', textOpacity: 1.0,
         bgColor: '#000000', bgOpacity: 0.5, position: 'bottom-left', enabled: true,
     });
-    _reelsRefreshWatermarkUI();
-    _reelsSaveWatermarks();
+    _notifyWatermarksChanged({ refreshUI: true, persist: true, refreshPreview: true, markLiveDirty: true, recordHistory: true });
 }
 
 function reelsRemoveWatermark(idx) {
+    if (!Array.isArray(_reelsState.watermarks) || idx < 0 || idx >= _reelsState.watermarks.length) return;
     _reelsState.watermarks.splice(idx, 1);
-    _reelsRefreshWatermarkUI();
-    _reelsSaveWatermarks();
+    _notifyWatermarksChanged({ refreshUI: true, persist: true, refreshPreview: true, markLiveDirty: true, recordHistory: true });
 }
 
 const REELS_WATERMARK_PRESETS_KEY = 'reels_watermark_presets';
@@ -5221,10 +5495,9 @@ function reelsLoadWatermarkPreset() {
     if (!name) return;
     const presets = _getWatermarkPresets();
     if (presets[name]) {
-        _reelsState.watermarks = JSON.parse(JSON.stringify(presets[name]));
-        localStorage.setItem(REELS_WATERMARK_STORAGE_KEY, JSON.stringify(_reelsState.watermarks));
-        _reelsRefreshWatermarkUI();
-        if (typeof reelsUpdatePreview === 'function') reelsUpdatePreview();
+        const cloned = JSON.parse(JSON.stringify(presets[name]));
+        _reelsState.watermarks = _reelsDeduplicateWatermarks(cloned);
+        _notifyWatermarksChanged({ refreshUI: true, persist: true, refreshPreview: true, markLiveDirty: true, recordHistory: true });
     }
 }
 
@@ -5362,13 +5635,11 @@ function _reelsSyncWatermarkFromUI() {
             wm.textOpacity = Number.isFinite(rawTextOp) ? rawTextOp / 100 : 1.0;
         }
     });
-    _reelsSaveWatermarks();
-    if (typeof reelsUpdatePreview === 'function') {
-        reelsUpdatePreview();
-    }
+    _notifyWatermarksChanged({ refreshUI: false, persist: true, refreshPreview: true, markLiveDirty: true, recordHistory: true });
 }
 
 function _reelsRefreshWatermarkUI() {
+    _reelsRenderWatermarkScopeBar();
     const list = document.getElementById('reels-watermark-list');
     const countEl = document.getElementById('reels-wm-count');
     if (!list) return;
@@ -5394,9 +5665,10 @@ function _reelsRefreshWatermarkUI() {
         let optionsHtml = '';
 
         if (isImage) {
+            const safeImgPath = _escapeReelsTaskText(wm.imagePath || '');
             contentHtml = `
                 <div style="display:flex;align-items:center;gap:4px;flex:1;">
-                    <input type="text" class="wm-imagepath input" readonly value="${wm.imagePath || ''}" style="flex:1;font-size:11px;padding:4px 6px;" placeholder="未选择图片">
+                    <input type="text" class="wm-imagepath input" readonly value="${safeImgPath}" style="flex:1;font-size:11px;padding:4px 6px;" placeholder="未选择图片">
                     <button class="btn btn-secondary" style="font-size:11px;padding:2px 6px;" onclick="reelsChooseWatermarkImage(${i})">选择</button>
                 </div>
             `;
@@ -5448,41 +5720,51 @@ function _reelsRefreshWatermarkUI() {
         `;
     }).join('');
 
-    // 添加鼠标左右拖拽调整数值功能
+    // 添加鼠标左右拖拽调整数值功能；单击保持可聚焦输入
     list.querySelectorAll('input[type="number"]').forEach(el => {
         el.style.cursor = 'ew-resize';
-        let dragging = false, startX = 0, startVal = 0;
+        let dragging = false, moved = false, startX = 0, startVal = 0;
         el.addEventListener('mousedown', (e) => {
             e.stopPropagation();
             if (document.activeElement === el) return;
             dragging = true;
+            moved = false;
             startX = e.clientX;
             startVal = parseFloat(el.value) || 0;
             e.preventDefault();
             const onMove = (me) => {
                 if (!dragging) return;
                 const dx = me.clientX - startX;
+                if (!moved && Math.abs(dx) <= 2) return;
+                moved = true;
                 const speed = me.shiftKey ? 0.1 : 1;
                 const step = parseFloat(el.getAttribute('step')) || 1;
                 let newVal = Math.round((startVal + dx * speed * step) / step) * step;
-                
-                // 处理极值
+
                 const min = parseFloat(el.getAttribute('min'));
                 const max = parseFloat(el.getAttribute('max'));
                 if (!isNaN(min) && newVal < min) newVal = min;
                 if (!isNaN(max) && newVal > max) newVal = max;
 
                 el.value = newVal;
-                // 触发同步和预览刷新（通过 dispatchEvent 触发 inline oninput）
-                el.dispatchEvent(new Event('input'));
+                const linkedRange = el.parentElement?.querySelector?.('input[type="range"]');
+                if (linkedRange) linkedRange.value = String(newVal);
+                el.dispatchEvent(new Event('input', { bubbles: true }));
             };
             const onUp = () => {
+                const wasClick = dragging && !moved;
                 dragging = false;
                 document.removeEventListener('mousemove', onMove);
                 document.removeEventListener('mouseup', onUp);
+                window.removeEventListener('blur', onUp);
+                if (wasClick) {
+                    el.focus();
+                    el.select();
+                }
             };
             document.addEventListener('mousemove', onMove);
             document.addEventListener('mouseup', onUp);
+            window.addEventListener('blur', onUp);
         });
         el.addEventListener('dblclick', (e) => {
             e.preventDefault();
@@ -5492,45 +5774,41 @@ function _reelsRefreshWatermarkUI() {
     });
 }
 
-function _reelsWatermarkIdentityKey(wm) {
-    if (!wm || typeof wm !== 'object') return '';
-    return `${wm.type || 'text'}|${String(wm.text || '').trim()}|${String(wm.imagePath || '').trim()}|${wm.position || 'top-right'}`;
-}
-
-function _reelsApplyRestoredWatermarks(watermarks, { mode = 'replace', persist = true, refreshUI = true, refreshPreview = true } = {}) {
+function _reelsApplyRestoredWatermarks(watermarks, { mode = 'replace', persist = true, refreshUI = true, refreshPreview = true, scopeTabs = null } = {}) {
     if (!Array.isArray(watermarks) || watermarks.length === 0 || typeof _reelsState !== 'object' || !_reelsState) {
         return false;
     }
-    const cloneFn = typeof _cloneProjectDataForSave === 'function'
-        ? _cloneProjectDataForSave
-        : (v => JSON.parse(JSON.stringify(v)));
-    const incoming = cloneFn(watermarks).filter(w => w && typeof w === 'object');
+    const incoming = _reelsCloneWatermarks(watermarks.filter(w => w && typeof w === 'object'));
     if (!incoming.length) return false;
 
+    const currentDefaults = _reelsGetLocalDefaultWatermarks();
+    const hasActiveLocalDefault = currentDefaults.some(w => w && w.enabled);
+
     if (mode === 'append') {
-        const current = Array.isArray(_reelsState.watermarks) ? _reelsState.watermarks : [];
-        const hasActiveCurrent = current.some(w => w && w.enabled);
-        if (!hasActiveCurrent) {
-            _reelsState.watermarks = incoming;
-        } else {
-            const seen = new Set(current.map(_reelsWatermarkIdentityKey));
-            for (const wm of incoming) {
-                if (!wm.enabled) continue;
-                const key = _reelsWatermarkIdentityKey(wm);
-                if (!seen.has(key)) {
-                    seen.add(key);
-                    current.push(wm);
-                }
+        // 加载/同步网络工程或追加标签时，绝不再叠加拼接旧水印：
+        // 若新工程带专属水印则仅该标签使用（本机已有启用中默认水印时保持本机默认不变）；
+        // 若本机此前无启用中的默认水印（或仅出厂关闭状态），则同步只保留这份最新水印。
+        if (!hasActiveLocalDefault || !Array.isArray(scopeTabs) || scopeTabs.length === 0) {
+            if (!hasActiveLocalDefault) {
+                _reelsState.watermarks = _reelsCloneWatermarks(incoming);
+                _reelsNotifyAndSaveLocalDefault(incoming, persist);
+            } else {
+                _reelsState.watermarks = _reelsCloneWatermarks(incoming);
             }
-            _reelsState.watermarks = current;
+        } else {
+            _reelsState.watermarks = _reelsCloneWatermarks(incoming);
         }
     } else {
-        _reelsState.watermarks = incoming;
+        // 整包替换或同步覆盖：只保留最新这组水印
+        _reelsState.watermarks = _reelsCloneWatermarks(incoming);
+        if (!Array.isArray(scopeTabs) && typeof _batchTableState !== 'undefined' && Array.isArray(_batchTableState?.tabs)) {
+            for (const t of _batchTableState.tabs) {
+                if (t && Array.isArray(t.watermarks)) delete t.watermarks;
+            }
+        }
+        if (persist) _reelsSaveWatermarks();
     }
 
-    if (persist && typeof _reelsSaveWatermarks === 'function') {
-        _reelsSaveWatermarks();
-    }
     if (refreshUI && typeof _reelsRefreshWatermarkUI === 'function') {
         _reelsRefreshWatermarkUI();
     }
@@ -5540,7 +5818,22 @@ function _reelsApplyRestoredWatermarks(watermarks, { mode = 'replace', persist =
     return true;
 }
 
+function _reelsNotifyAndSaveLocalDefault(list, persist) {
+    const clean = _reelsCloneWatermarks(list);
+    _reelsState._localDefaultWatermarks = clean;
+    if (persist) {
+        try {
+            localStorage.setItem(REELS_WATERMARK_STORAGE_KEY, JSON.stringify(clean));
+        } catch (_) {}
+    }
+}
+
 if (typeof window !== 'undefined') {
+    window._reelsDeduplicateWatermarks = _reelsDeduplicateWatermarks;
+    window._reelsGetLocalDefaultWatermarks = _reelsGetLocalDefaultWatermarks;
+    window._reelsAreWatermarkListsEquivalent = _reelsAreWatermarkListsEquivalent;
+    window._resolveReelsWatermarksForTask = _resolveReelsWatermarksForTask;
+    window._reelsSyncActiveWatermarksFromContext = _reelsSyncActiveWatermarksFromContext;
     window.reelsApplyRestoredWatermarks = _reelsApplyRestoredWatermarks;
     window.reelsSyncWatermarkFromUI = () => {
         if (typeof document !== 'undefined' && typeof document.querySelectorAll === 'function'
@@ -10660,6 +10953,8 @@ function reelsSelectTask(idx, options = {}) {
     if (!task) return;
     if (task._batchTabId && typeof window.reelsSyncActiveBatchTabFromId === 'function') {
         window.reelsSyncActiveBatchTabFromId(task._batchTabId);
+    } else {
+        _reelsSyncActiveWatermarksFromContext({ task, refreshUI: true, refreshPreview: false });
     }
     _preFetchMultiBgDurations(task);
     _preFetchTaskMediaDurations(task);
@@ -13585,7 +13880,7 @@ async function _exportSaveCoverPng(task, outputDirTrimmed, baseName) {
         }
 
         if (typeof _drawWatermarks === 'function') {
-            _drawWatermarks(ctx, tw, th);
+            _drawWatermarks(ctx, tw, th, _resolveReelsWatermarksForTask(task));
         }
 
 
@@ -14100,7 +14395,7 @@ function _collectReelsTaskMediaAssets(task) {
     visitValue(task.imageOverlays, 'overlay');
     visitValue(task.cover, 'overlay');
     visitValue(task.watermarks, 'overlay');
-    visitValue(_reelsState.watermarks || [], 'overlay');
+    visitValue(_resolveReelsWatermarksForTask(task) || [], 'overlay');
 
     return assets;
 }
@@ -14130,8 +14425,9 @@ function _buildSingleTaskReelsProjectSnapshot(task) {
             exportOpts,
             selectedIdx: 0,
         });
-        if (projectData && Array.isArray(_reelsState.watermarks) && _reelsState.watermarks.length > 0) {
-            projectData.watermarks = JSON.parse(JSON.stringify(_reelsState.watermarks));
+        const resolvedSnapWatermarks = _resolveReelsWatermarksForTask(task);
+        if (projectData && Array.isArray(resolvedSnapWatermarks) && resolvedSnapWatermarks.length > 0) {
+            projectData.watermarks = JSON.parse(JSON.stringify(resolvedSnapWatermarks));
         }
         return projectData;
     } catch (error) {
@@ -15205,7 +15501,7 @@ async function _reelsStartExportImpl(options = {}) {
                 segments: task.segments,
                 overlays: task.overlays,
                 cover: task.cover,
-                watermarks: _reelsState.watermarks
+                watermarks: _resolveReelsWatermarksForTask(task)
             });
             await fm.ensureFontsLoaded(fontsToLoad);
             console.log(`[Export Font Load] Fonts loaded successfully:`, fontsToLoad);
@@ -15880,7 +16176,7 @@ async function _reelsStartExportImpl(options = {}) {
                     maxBitrateMbps,
                     exportEngine,
                     isCancelled: () => !_reelsState.isExporting,
-                    watermarks: _reelsState.watermarks || [],
+                    watermarks: _resolveReelsWatermarksForTask(task) || [],
                     onProgress: reportWysiwygProgress,
                     onLog: (msg) => {
                         console.log(`[WYSIWYG] ${task.fileName}: ${msg}`);
@@ -17170,13 +17466,16 @@ for(const name of ['pointerdown','beforeinput'])document.addEventListener(name,e
     if(name==='pointerdown'&&event.target?.type==='range')_reelsHistoryRangeGesture=true;
 },true);
 for(const name of ['input','change','click','pointerup','pointercancel'])document.addEventListener(name,event=>{
-    if(name==='pointercancel'){_reelsHistoryRangeGesture=false;return;}
+    if(name==='pointercancel'||name==='pointerup')_reelsHistoryRangeGesture=false;
+    if(name==='pointercancel')return;
     if(!_reelsHistoryEventInEditor(event)||_isRestoringHistory)return;
-    if(name==='pointerup')_reelsHistoryRangeGesture=false;
     if(_reelsHistoryRangeGesture)return;
     if(name==='click'&&!event.target?.closest?.('input,select,button,[onclick]'))return;
     _scheduleReelsHistorySave(name==='input'?400:280);
 });
+if(typeof window!=='undefined'&&typeof window.addEventListener==='function'){
+    window.addEventListener('blur',()=>{_reelsHistoryRangeGesture=false;});
+}
 setTimeout(()=>{if(_reelsHistoryStack.length===0)window.reelsSaveHistory?.();},2000);
 
 // ═══════════════════════════════════════════════════════
@@ -17331,10 +17630,11 @@ function reelsMarkStyleDirty(e) {
     }
 
     // 只有用户真实改动某个样式控件时才写入当前作用域；预览/任务切换不写。
-    // 连续滑块 input 拖动时仅先更新当前任务与全局基线，防抖同步同组其余任务，松手/change 再立即落盘。
+    // 连续滑块/文本 input 拖动时仅先更新当前任务与全局基线，防抖同步同组其余任务；离散控件或 change 立即落盘。
     const currentStyle = _readStyleFromUI();
     const activeScope = typeof _getSubtitleStyleScope === 'function' ? _getSubtitleStyleScope() : 'task';
-    if (e?.type === 'input' && activeScope !== 'task' && (_reelsState?.tasks?.length || 0) > 1) {
+    const isContinuousInput = e?.type === 'input' && !isDiscrete;
+    if (isContinuousInput && activeScope !== 'task' && (_reelsState?.tasks?.length || 0) > 1) {
         const selectedTask = _getSelectedTask();
         if (selectedTask) selectedTask.subtitleStyle = _cloneSubtitleStyle(currentStyle);
         if (activeScope === 'all') _reelsState.globalSubtitleStyle = _cloneSubtitleStyle(currentStyle);
@@ -17347,7 +17647,7 @@ function reelsMarkStyleDirty(e) {
     if (window.ReelsPreviewV2?.isOpen?.()) {
         _requestReelsPreviewV2Render();
     }
-    if (e?.type !== 'input' && typeof window.reelsMarkLiveProjectTabDirty === 'function') {
+    if (!isContinuousInput && typeof window.reelsMarkLiveProjectTabDirty === 'function') {
         window.reelsMarkLiveProjectTabDirty(activeScope === 'all' ? 'all' : 'active');
     }
 }

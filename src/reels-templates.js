@@ -1932,12 +1932,22 @@ async function _archiveGroupsToLibrary(groups, options = {}) {
             thumb = await _captureTemplateThumbnailForTasks(group.tasks, '');
         }
 
+        const groupTabObj = group.tabId && typeof _batchTableState !== 'undefined' && Array.isArray(_batchTableState?.tabs)
+            ? (_batchTableState.tabs.find(t => t && t.id === group.tabId) || null)
+            : null;
+        const groupWatermarks = Array.isArray(options.watermarks)
+            ? options.watermarks
+            : (Array.isArray(groupTabObj?.watermarks)
+                ? groupTabObj.watermarks
+                : (typeof window._resolveReelsWatermarksForTask === 'function'
+                    ? window._resolveReelsWatermarksForTask(group.tasks?.[0], groupTabObj)
+                    : sharedWatermarks));
         const projectData = ReelsProject.collectProjectData({
             tasks: group.tasks,
             backgroundLibrary: sharedBgLib,
             style: sharedGlobalStyle,
             exportOpts: sharedExportOpts,
-            watermarks: sharedWatermarks,
+            watermarks: groupWatermarks,
             selectedIdx: group.tasks.length ? 0 : -1,
         });
 

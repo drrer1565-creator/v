@@ -10426,3 +10426,323 @@ test('Project Library and Template Library provide prominent select-all, multi-s
 
 
 
+
+test('Opening multiple live projects deduplicates watermarks and keeps watermark & discrete style controls responsive', async () => {
+    const store = new Map();
+    const localStorageStub = {
+        getItem: (k) => (store.has(k) ? store.get(k) : null),
+        setItem: (k, v) => { store.set(k, String(v)); },
+        removeItem: (k) => { store.delete(k); },
+    };
+
+    const windowListeners = new Map();
+    const docListeners = new Map();
+    const savedBackPayloads = [];
+    let focusCalls = 0;
+    let selectCalls = 0;
+
+    function createWatermarkNumEl(initialVal) {
+        const listeners = new Map();
+        return {
+            value: String(initialVal),
+            style: {},
+            attributes: { min: '8', max: '80', step: '1' },
+            getAttribute(k) { return this.attributes[k] ?? null; },
+            addEventListener(type, fn) {
+                if (!listeners.has(type)) listeners.set(type, []);
+                listeners.get(type).push(fn);
+            },
+            dispatchEvent(ev) {
+                if (this._onInputSync) this._onInputSync();
+                for (const fn of listeners.get(ev.type) || []) fn(ev);
+                return true;
+            },
+            focus() { focusCalls++; },
+            select() { selectCalls++; },
+        };
+    }
+
+    const wmListEl = {
+        _innerHTML: '',
+        _numEls: [],
+        _rows: [],
+        get innerHTML() { return this._innerHTML; },
+        set innerHTML(val) {
+            this._innerHTML = String(val);
+            const matches = [...this._innerHTML.matchAll(/class="wm-row"/g)];
+            this._numEls = [];
+            this._rows = matches.map((_, idx) => {
+                const fontEl = createWatermarkNumEl(25);
+                this._numEls.push(fontEl);
+                return {
+                    querySelector(sel) {
+                        if (sel === '.wm-enabled') return { checked: idx !== 2 };
+                        if (sel === '.wm-type') return { value: idx === 2 ? 'image' : 'text' };
+                        if (sel === '.wm-position') return { value: idx === 0 ? 'top-right' : (idx === 1 ? 'bottom-left' : 'center') };
+                        if (sel === '.wm-x' || sel === '.wm-y') return { value: '0' };
+                        if (sel === '.wm-text') return { value: idx === 0 ? 'AI Generated 58' : 'Attribution to11.ai' };
+                        if (sel === '.wm-fontsize') return fontEl;
+                        if (sel === '.wm-color') return { value: '#FFFFFF' };
+                        if (sel === '.wm-bgcolor') return { value: '#000000' };
+                        if (sel === '.wm-bgopacity') return { value: '50' };
+                        if (sel === '.wm-textopacity') return { value: '80' };
+                        if (sel === '.wm-imagepath') return { value: 'assets/colossyan.png' };
+                        if (sel === '.wm-imagescale') return { value: '100' };
+                        if (sel === '.wm-imageanchor') return { value: 'center' };
+                        if (sel === '.wm-opacity') return { value: '100' };
+                        if (sel === '.wm-fliph' || sel === '.wm-flipv') return { checked: false };
+                        return null;
+                    },
+                };
+            });
+        },
+        querySelectorAll(sel) {
+            if (sel === 'input[type="number"]') return this._numEls;
+            if (sel === '.wm-row') return this._rows;
+            return [];
+        },
+    };
+
+    const countEl = { textContent: '' };
+    const presetSelectEl = { value: '', innerHTML: '', appendChild() {} };
+    const boldCheckEl = {
+        id: 'reels-bold-test',
+        type: 'checkbox',
+        checked: false,
+        dataset: {},
+        closest(sel) { return sel === '#inspector-tab-subtitle' ? this : null; },
+    };
+    const scopeBarEl = { style: {}, innerHTML: '' };
+    const batchPanelEl = { classList: { contains: (c) => c === 'active' }, style: { display: '' } };
+
+    const domMap = new Map([
+        ['reels-watermark-list', wmListEl],
+        ['reels-wm-count', countEl],
+        ['reels-watermark-scope-bar', scopeBarEl],
+        ['reels-watermark-preset-select', presetSelectEl],
+        ['batch-reels-panel', batchPanelEl],
+    ]);
+
+    const sandbox = vm.createContext({
+        console,
+        Map,
+        Set,
+        Date,
+        Math,
+        JSON,
+        Number,
+        String,
+        Array,
+        Object,
+        Promise,
+        Error,
+        Event: function Event(type, opts = {}) { this.type = type; this.bubbles = Boolean(opts?.bubbles); },
+        window: null,
+        API_BASE: 'http://127.0.0.1:18999/api',
+        apiFetch: async (url, init = {}) => {
+            if (url.endsWith('/live-projects/save')) {
+                savedBackPayloads.push(JSON.parse(init.body));
+                return { ok: true, json: async () => ({ success: true, id: 'lp_saved' }) };
+            }
+            return { ok: true, json: async () => ({ success: true, data: [] }) };
+        },
+        electronAPI: {
+            resolveAssetUrl: (f) => `local-media:///C:/Users/User/AppData/Local/Programs/VideoKit/resources/assets/${f}`,
+            toFileUrl: (p) => p,
+            saveBatchWorkspace: () => true,
+            readBatchWorkspace: () => '',
+        },
+        localStorage: localStorageStub,
+        document: {
+            activeElement: null,
+            head: { appendChild() {} },
+            body: { appendChild() {}, querySelectorAll: () => [] },
+            createElement: () => ({ style: {}, classList: { add() {}, remove() {}, contains: () => false }, querySelectorAll: () => [], addEventListener() {} }),
+            getElementById: (id) => domMap.get(id) || null,
+            querySelector: () => null,
+            querySelectorAll: (sel) => (sel === '#reels-watermark-list .wm-row' ? wmListEl._rows : []),
+            addEventListener(type, fn, capture) {
+                const key = `${type}:${Boolean(capture)}`;
+                if (!docListeners.has(key)) docListeners.set(key, []);
+                docListeners.get(key).push(fn);
+            },
+            removeEventListener(type, fn, capture) {
+                const key = `${type}:${Boolean(capture)}`;
+                const list = docListeners.get(key);
+                if (list) docListeners.set(key, list.filter(x => x !== fn));
+            },
+        },
+        setTimeout: () => 1,
+        clearTimeout: () => {},
+        setInterval: () => 0,
+        clearInterval: () => {},
+        requestAnimationFrame: (cb) => { cb(); return 1; },
+        cancelAnimationFrame: () => {},
+        getComputedStyle: () => ({ display: 'none', height: '0px' }),
+        getWritingVisualStyle: (s) => s,
+        reelsRefreshWritingTitleEditor: () => {},
+        reelsRefreshSpeechWritingImageUI: () => {},
+        showToast: () => {},
+        alert: () => {},
+        confirm: () => true,
+    });
+    sandbox.window = sandbox;
+    sandbox.window.addEventListener = (type, fn) => {
+        if (!windowListeners.has(type)) windowListeners.set(type, []);
+        windowListeners.get(type).push(fn);
+    };
+    sandbox.window.removeEventListener = (type, fn) => {
+        const list = windowListeners.get(type);
+        if (list) windowListeners.set(type, list.filter(x => x !== fn));
+    };
+
+    vm.runInContext(fs.readFileSync(path.join(ROOT, 'src/reels-project.js'), 'utf8'), sandbox, { filename: 'src/reels-project.js' });
+    vm.runInContext(fs.readFileSync(path.join(ROOT, 'src/reels-batch-table.js'), 'utf8'), sandbox, { filename: 'src/reels-batch-table.js' });
+    vm.runInContext(fs.readFileSync(path.join(ROOT, 'src/batch-reels.js'), 'utf8'), sandbox, { filename: 'src/batch-reels.js' });
+
+    vm.runInContext(`(() => {
+        reelsUpdatePreview = () => { window._previewCalls = (window._previewCalls || 0) + 1; };
+    })()`, sandbox);
+    const previewCalls = () => vm.runInContext('window._previewCalls || 0', sandbox);
+
+    // 1. Pre-existing duplicated localStorage watermarks (e.g. from v4.6.2) are auto-healed on load
+    const w1 = { type: 'text', text: 'AI Generated 58', fontSize: 25, color: '#FFFFFF', textOpacity: 0.8, bgColor: '#000000', bgOpacity: 0.5, position: 'top-right', enabled: true };
+    const w2 = { type: 'text', text: 'Attribution to11.ai', fontSize: 20, color: '#FFFFFF', textOpacity: 1.0, bgColor: '#000000', bgOpacity: 0.5, position: 'bottom-left', enabled: true };
+    const w3Pkg = { type: 'image', imagePath: 'local-media:///C:/Users/User/AppData/Local/Programs/VideoKit/resources/assets/colossyan.png', imageScale: 100, imageAnchor: 'center', opacity: 1.0, position: 'center', enabled: false };
+    const w3Dev = { type: 'image', imagePath: 'assets/colossyan.png', imageScale: 100, imageAnchor: 'center', opacity: 1.0, position: 'center', enabled: false };
+    store.set('reels_watermarks', JSON.stringify([w1, w2, w3Pkg, { ...w1 }, { ...w2 }, { ...w3Dev }]));
+    vm.runInContext(`_reelsLoadWatermarks();`, sandbox);
+    assert.equal(vm.runInContext(`window._reelsState.watermarks.length`, sandbox), 3);
+    assert.equal(JSON.parse(store.get('reels_watermarks')).length, 3);
+
+    // 2. Opening 3 live projects via reelsApplyLibraryProjects does NOT triple watermarks (stays 3, NOT 9!)
+    await sandbox.window.reelsApplyLibraryProjects([
+        { tplData: { id: 'lp1', name: '工程1', projectData: { tasks: [{ id: 't1', baseName: 'a' }], style: {}, exportOpts: {}, watermarks: [w1, w2, w3Pkg] } }, summary: { id: 'lp1', name: '工程1' } },
+        { tplData: { id: 'lp2', name: '工程2', projectData: { tasks: [{ id: 't2', baseName: 'b' }], style: {}, exportOpts: {}, watermarks: [w1, w2, w3Dev] } }, summary: { id: 'lp2', name: '工程2' } },
+        { tplData: { id: 'lp3', name: '工程3', projectData: { tasks: [{ id: 't3', baseName: 'c' }], style: {}, exportOpts: {}, watermarks: [w1, w2, w3Pkg] } }, summary: { id: 'lp3', name: '工程3' } },
+    ], { folderId: 'f1', folderPath: '主工程区', confirmSwitch: false });
+    assert.equal(vm.runInContext(`window._reelsState.watermarks.length`, sandbox), 3);
+    assert.equal(countEl.textContent, '3 个');
+    assert.equal(wmListEl._rows.length, 3);
+
+    // 3. Watermark controls remain responsive:
+    // 3a. Single click focuses & selects numeric input; dragging updates value & syncs to state + preview
+    const numEvents = new Map();
+    const origQueryAll = wmListEl.querySelectorAll.bind(wmListEl);
+    wmListEl.querySelectorAll = (sel) => {
+        const res = origQueryAll(sel);
+        if (sel === 'input[type="number"]') {
+            for (const el of res) {
+                el._onInputSync = () => sandbox.window._reelsSyncWatermarkFromUI?.();
+                el.addEventListener = (t, fn) => {
+                    if (!numEvents.has(el)) numEvents.set(el, new Map());
+                    const m = numEvents.get(el);
+                    if (!m.has(t)) m.set(t, []);
+                    m.get(t).push(fn);
+                };
+            }
+        }
+        return res;
+    };
+    vm.runInContext(`_reelsRefreshWatermarkUI(); window._reelsSyncWatermarkFromUI = _reelsSyncWatermarkFromUI;`, sandbox);
+    const activeNumEl = wmListEl._numEls[0];
+    const mdownFn = numEvents.get(activeNumEl).get('mousedown')[0];
+
+    mdownFn({ stopPropagation() {}, preventDefault() {}, clientX: 100 });
+    for (const fn of [...(docListeners.get('mouseup:false') || [])]) fn({});
+    assert.equal(focusCalls, 1, 'single click on numeric watermark field must focus for direct typing');
+    assert.equal(selectCalls, 1, 'single click on numeric watermark field must select for direct typing');
+
+    const beforeDragPreview = previewCalls();
+    mdownFn({ stopPropagation() {}, preventDefault() {}, clientX: 100 });
+    for (const fn of [...(docListeners.get('mousemove:false') || [])]) fn({ clientX: 112, shiftKey: false });
+    for (const fn of [...(docListeners.get('mouseup:false') || [])]) fn({});
+    assert.equal(Number(activeNumEl.value), 37);
+    assert.equal(vm.runInContext(`window._reelsState.watermarks[0].fontSize`, sandbox), 37);
+    assert.ok(previewCalls() > beforeDragPreview);
+
+    // 3b. Add & Remove watermark update preview AND mark live tabs dirty immediately
+    const beforeAddPreview = previewCalls();
+    vm.runInContext(`_batchTableState.tabs.forEach(t => { t._libraryDirty = false; }); reelsAddWatermark();`, sandbox);
+    assert.equal(vm.runInContext(`window._reelsState.watermarks.length`, sandbox), 4);
+    assert.ok(previewCalls() > beforeAddPreview, 'reelsAddWatermark must trigger preview refresh');
+    assert.equal(vm.runInContext(`_batchTableState.tabs.some(t => t._libraryDirty)`, sandbox), true);
+
+    const afterAddPreview = previewCalls();
+    vm.runInContext(`_batchTableState.tabs.forEach(t => { t._libraryDirty = false; }); reelsRemoveWatermark(3);`, sandbox);
+    assert.equal(vm.runInContext(`window._reelsState.watermarks.length`, sandbox), 3);
+    assert.ok(previewCalls() > afterAddPreview, 'reelsRemoveWatermark must trigger preview refresh');
+    assert.equal(vm.runInContext(`_batchTableState.tabs.some(t => t._libraryDirty)`, sandbox), true);
+
+    // Syncing live projects back persists deduplicated watermarks
+    const saveRes = await sandbox.window.reelsSyncWorkspaceTabsBackToLibraryFolder({ silent: true, onlyDirty: true });
+    assert.ok(saveRes.updated >= 1);
+    assert.equal(savedBackPayloads[0].projectData.watermarks.length, 3);
+
+    // 4. Discrete control (checkbox) in subtitle inspector marks live tab dirty immediately,
+    //    and _reelsHistoryRangeGesture clears even if pointerup happens outside editor or on blur
+    vm.runInContext(`_batchTableState.tabs.forEach(t => { t._libraryDirty = false; });`, sandbox);
+    for (const fn of (docListeners.get('input:false') || [])) {
+        fn({ type: 'input', target: boldCheckEl });
+    }
+    assert.equal(vm.runInContext(`_batchTableState.tabs.some(t => t._libraryDirty)`, sandbox), true);
+
+    for (const fn of (docListeners.get('pointerdown:true') || [])) {
+        fn({ type: 'pointerdown', target: { type: 'range', closest: () => batchPanelEl } });
+    }
+    assert.equal(vm.runInContext(`_reelsHistoryRangeGesture`, sandbox), true);
+    for (const fn of (docListeners.get('pointerup:false') || [])) {
+        fn({ type: 'pointerup', target: { closest: () => null } });
+    }
+    assert.equal(vm.runInContext(`_reelsHistoryRangeGesture`, sandbox), false);
+
+    // 5. Cloud/network project import NEVER appends onto local watermarks; tabs with dedicated
+    //    watermarks use their own, while tabs without dedicated watermarks fall back to local default
+    const cloudWm = { type: 'text', text: '@CloudExclusive', fontSize: 22, position: 'bottom-right', enabled: true };
+    await vm.runInContext(`_applyDownloadedCloudProjectToBatchTable(${JSON.stringify({
+        version: '2.0',
+        watermarks: [cloudWm],
+        tabs: [{ name: '云端专属工程', tasks: [{ id: 'tc1', baseName: 'c1' }] }],
+    })}, '', 'append', '云端专属工程')`, sandbox);
+    // Active state switches ONLY to the cloud tab's watermark (length 1, NOT 3+1=4!)
+    assert.deepEqual(
+        JSON.parse(vm.runInContext(`JSON.stringify(window._reelsState.watermarks.map(w => w.text))`, sandbox)),
+        ['@CloudExclusive']
+    );
+    // LocalStorage default remains intact for local tabs!
+    assert.equal(JSON.parse(store.get('reels_watermarks')).length, 3);
+    assert.match(scopeBarEl.innerHTML, /专属水印/);
+
+    // Importing a second cloud project WITHOUT watermarks uses local default for that new tab
+    await vm.runInContext(`_applyDownloadedCloudProjectToBatchTable(${JSON.stringify({
+        version: '2.0',
+        tabs: [{ name: '无水印云端工程', tasks: [{ id: 'tc2', baseName: 'c2' }] }],
+    })}, '', 'append', '无水印云端工程')`, sandbox);
+    assert.equal(
+        vm.runInContext(`window._resolveReelsWatermarksForTask(_batchTableState.tabs.find(t => t.name === '云端专属工程').tasks[0]).map(w => w.text).join(',')`, sandbox),
+        '@CloudExclusive'
+    );
+    assert.equal(
+        vm.runInContext(`window._resolveReelsWatermarksForTask(_batchTableState.tabs.find(t => t.name === '无水印云端工程').tasks[0]).length`, sandbox),
+        3
+    );
+
+    // Switching back to the first local tab shows local default again & updates scope bar
+    vm.runInContext(`_switchToTab(_batchTableState.tabs[0].id);`, sandbox);
+    assert.equal(vm.runInContext(`window._reelsState.watermarks.length`, sandbox), 3);
+    assert.match(scopeBarEl.innerHTML, /本机默认水印/);
+
+    // Switching back to cloud tab -> fork/reset/promote helpers work cleanly
+    vm.runInContext(`_switchToTab(_batchTableState.tabs.find(t => t.name === '云端专属工程').id);`, sandbox);
+    assert.deepEqual(
+        JSON.parse(vm.runInContext(`JSON.stringify(window._reelsState.watermarks.map(w => w.text))`, sandbox)),
+        ['@CloudExclusive']
+    );
+    vm.runInContext(`reelsResetTabWatermarkToDefault();`, sandbox);
+    assert.equal(vm.runInContext(`window._reelsState.watermarks.length`, sandbox), 3);
+    assert.match(scopeBarEl.innerHTML, /本机默认水印/);
+
+    // Syncing replace mode keeps only the latest watermarks
+    vm.runInContext(`reelsForkTabWatermarkFromDefault(); window._reelsState.watermarks = [${JSON.stringify(cloudWm)}]; reelsPromoteTabWatermarkToDefault();`, sandbox);
+    assert.deepEqual(JSON.parse(store.get('reels_watermarks')).map(w => w.text), ['@CloudExclusive']);
+});

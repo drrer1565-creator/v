@@ -1414,7 +1414,7 @@
         if (!overlayAboveSubtitle) drawOverlays(ctx, task, overlayTime, w, h, phase, 'overlay');
         drawSubtitles(ctx, task, subtitleTime, w, h, phase);
         if (overlayAboveSubtitle) drawOverlays(ctx, task, overlayTime, w, h, phase, 'overlay');
-        drawWatermarks(ctx, w, h);
+        drawWatermarks(ctx, w, h, task);
         updateTimeUI(Math.min(t, dur || t), dur);
         syncTimelinePlayhead(t, task);
         syncTimelineDuration(dur, task);
@@ -1998,9 +1998,12 @@
         ctx.restore();
     }
 
-    function drawWatermarks(ctx, w, h) {
-        const watermarks = (window._reelsState && window._reelsState.watermarks) || [];
-        if (!Array.isArray(watermarks) || watermarks.length === 0) return;
+    function drawWatermarks(ctx, w, h, task = null) {
+        const resolved = typeof window !== 'undefined' && typeof window._resolveReelsWatermarksForTask === 'function'
+            ? window._resolveReelsWatermarksForTask(task)
+            : ((window._reelsState && window._reelsState.watermarks) || []);
+        const watermarks = Array.isArray(resolved) ? resolved : [];
+        if (watermarks.length === 0) return;
         for (const wm of watermarks) {
             if (!wm || !wm.enabled) continue;
             if (wm.type === 'image') drawImageWatermark(ctx, wm, w, h);
