@@ -11487,8 +11487,22 @@ test('Christmas sticker icons (32 shaded vector icons), draggable sticker overla
 
     const panelSrc = fs.readFileSync(path.join(ROOT, 'src/reels-overlay-panel.js'), 'utf8');
     const htmlSrc = fs.readFileSync(path.join(ROOT, 'src/index.html'), 'utf8');
+    const batchSrc = fs.readFileSync(path.join(ROOT, 'src/batch-reels.js'), 'utf8');
     assert.match(panelSrc, /rop-add-sticker/);
     assert.match(panelSrc, /'sticker'/);
+    assert.match(panelSrc, /data-pos="sub-below"/);
+    assert.match(panelSrc, /data-pos="bottom-center"/);
+    assert.match(panelSrc, /data-pos="bottom-left"/);
+    assert.match(panelSrc, /data-pos="bottom-right"/);
     assert.match(htmlSrc, /reels-xmas-subtitle-icon-grid/);
+    assert.match(htmlSrc, /reels-xmas-icon-adjust-bar/);
+    assert.match(htmlSrc, /reels-xmas-ctl-size/);
+    assert.match(htmlSrc, /reels-xmas-ctl-x/);
+    assert.match(htmlSrc, /reels-xmas-ctl-y/);
+    assert.match(htmlSrc, /reels-xmas-ctl-angle/);
+    assert.match(htmlSrc, /reels-xmas-ctl-anim/);
+    assert.match(htmlSrc, /data-pos="sub-below"/);
+    assert.match(htmlSrc, /data-pos="bottom-center"/);
     assert.match(htmlSrc, /reelsApplyChristmasComboPreset\('xmas_combo_tree_bells'\)/);
+    assert.match(batchSrc, /reelsSyncChristmasIconAdjustUI/);
 });

@@ -4263,6 +4263,7 @@ window.reelsAddChristmasStickerIcon = function(kind = 'jingle_bell', options = {
     if (typeof _saveCurrentTaskToStore === 'function') _saveCurrentTaskToStore();
     if (typeof window.reelsSaveHistory === 'function') window.reelsSaveHistory();
     if (typeof reelsUpdatePreview === 'function') reelsUpdatePreview(true);
+    if (typeof window.reelsSyncChristmasIconAdjustUI === 'function') window.reelsSyncChristmasIconAdjustUI(ov);
     return ov;
 };
 
@@ -4340,11 +4341,258 @@ window.reelsInitChristmasIconPickers = function() {
                 }
             } else {
                 if (typeof window.reelsAddChristmasStickerIcon === 'function') {
-                    window.reelsAddChristmasStickerIcon(kind);
+                    const ov = window.reelsAddChristmasStickerIcon(kind);
+                    if (ov && typeof window.reelsSyncChristmasIconAdjustUI === 'function') {
+                        window.reelsSyncChristmasIconAdjustUI(ov);
+                    }
                 }
             }
         });
     }
+
+    const findActiveStickerOverlay = () => {
+        const panel = _reelsState?.overlayPanel;
+        if (panel && panel._selectedOv && panel._selectedOv.type === 'sticker') return panel._selectedOv;
+        const mgr = _reelsState?.overlayProxy?.overlayMgr;
+        const list = mgr?.overlays || (typeof _getSelectedTask === 'function' ? _getSelectedTask()?.overlays : null) || [];
+        for (let i = list.length - 1; i >= 0; i--) {
+            if (list[i] && list[i].type === 'sticker') return list[i];
+        }
+        return null;
+    };
+
+    const getXmasIconMode = () => {
+        const modeEl = document.querySelector('input[name="reels-xmas-icon-mode"]:checked');
+        return modeEl ? modeEl.value : 'sticker';
+    };
+
+    window.reelsSyncChristmasIconAdjustUI = function(explicitOv) {
+        if (typeof document === 'undefined') return;
+        const bar = document.getElementById('reels-xmas-icon-adjust-bar');
+        if (!bar) return;
+        const mode = getXmasIconMode();
+        const targetEl = document.getElementById('reels-xmas-ctl-target');
+        const delBtn = document.getElementById('reels-xmas-ctl-delete');
+        const animRow = document.getElementById('reels-xmas-ctl-anim-row');
+        const sizeEl = document.getElementById('reels-xmas-ctl-size');
+        const sizeValEl = document.getElementById('reels-xmas-ctl-size-val');
+        const xEl = document.getElementById('reels-xmas-ctl-x');
+        const xValEl = document.getElementById('reels-xmas-ctl-x-val');
+        const yEl = document.getElementById('reels-xmas-ctl-y');
+        const yValEl = document.getElementById('reels-xmas-ctl-y-val');
+        const angleEl = document.getElementById('reels-xmas-ctl-angle');
+        const angleValEl = document.getElementById('reels-xmas-ctl-angle-val');
+        const animEl = document.getElementById('reels-xmas-ctl-anim');
+
+        if (mode === 'cursor') {
+            if (animRow) animRow.style.display = 'none';
+            if (delBtn) delBtn.textContent = '🚫 关闭跟读图标';
+            const kindSel = document.getElementById('reels-fullpage-typewriter-cursor-kind');
+            const kindLabel = kindSel && kindSel.selectedOptions?.[0]?.textContent ? kindSel.selectedOptions[0].textContent : '跟读图标';
+            if (targetEl) targetEl.textContent = `✍️ 调整字幕跟读图标: ${kindLabel}`;
+            const scale = Math.max(0.2, Math.min(4, Number(document.getElementById('reels-fullpage-typewriter-cursor-scale')?.value) || 1.15));
+            const offX = Math.round(Number(document.getElementById('reels-fullpage-typewriter-cursor-offset-x')?.value) || 0);
+            const offY = Math.round(Number(document.getElementById('reels-fullpage-typewriter-cursor-offset-y')?.value) || 0);
+            const ang = Math.round(Number(document.getElementById('reels-fullpage-typewriter-cursor-angle')?.value) || 0);
+            if (sizeEl) { sizeEl.min = '20'; sizeEl.max = '400'; sizeEl.step = '5'; sizeEl.value = String(Math.round(scale * 100)); }
+            if (sizeValEl) sizeValEl.textContent = `${scale.toFixed(2)}x`;
+            if (xEl) { xEl.min = '-500'; xEl.max = '500'; xEl.step = '2'; xEl.value = String(offX); }
+            if (xValEl) xValEl.textContent = String(offX);
+            if (yEl) { yEl.min = '-500'; yEl.max = '500'; yEl.step = '2'; yEl.value = String(offY); }
+            if (yValEl) yValEl.textContent = String(offY);
+            if (angleEl) angleEl.value = String(ang);
+            if (angleValEl) angleValEl.textContent = `${ang}°`;
+            return;
+        }
+
+        if (animRow) animRow.style.display = 'flex';
+        if (delBtn) delBtn.textContent = '🗑 删除当前图标';
+        const ov = (explicitOv && explicitOv.type === 'sticker') ? explicitOv : findActiveStickerOverlay();
+        if (targetEl) {
+            targetEl.textContent = ov
+                ? `🎛 调整画面小图标: ${ov.name || ov.sticker_kind || '圣诞小图标'}`
+                : '🎛 画面小图标（上方/下方点一下图标或拖滑块即可放上）';
+        }
+        const sz = ov ? Math.max(40, Math.min(500, Math.round(Number(ov.w) || 250))) : 250;
+        const cx = ov ? ((Number(ov.x) || 0) + sz / 2) : 540;
+        const cy = ov ? ((Number(ov.y) || 0) + (Number(ov.h) || sz) / 2) : 355;
+        const relX = Math.round(cx - 540);
+        const relY = Math.round(cy - 960);
+        const ang = ov ? Math.round(Number(ov.rotation) || 0) : 0;
+        if (sizeEl) { sizeEl.min = '40'; sizeEl.max = '500'; sizeEl.step = '5'; sizeEl.value = String(sz); }
+        if (sizeValEl) sizeValEl.textContent = `${sz}px`;
+        if (xEl) { xEl.min = '-540'; xEl.max = '540'; xEl.step = '2'; xEl.value = String(relX); }
+        if (xValEl) xValEl.textContent = String(relX);
+        if (yEl) { yEl.min = '-960'; yEl.max = '960'; yEl.step = '2'; yEl.value = String(relY); }
+        if (yValEl) yValEl.textContent = String(relY);
+        if (angleEl) angleEl.value = String(ang);
+        if (angleValEl) angleValEl.textContent = `${ang}°`;
+        if (animEl && ov) animEl.value = ov.cta_loop_anim || 'sway_bell';
+    };
+
+    const commitAdjustedSticker = (ov) => {
+        if (!ov) return;
+        const panel = _reelsState?.overlayPanel;
+        const vc = panel?.videoCanvas || _reelsState?.overlayProxy;
+        const task = typeof _getSelectedTask === 'function' ? _getSelectedTask() : null;
+        if (task && vc?.overlayMgr) task.overlays = [...vc.overlayMgr.overlays];
+        if (panel && typeof panel._syncFromOverlay === 'function') panel._syncFromOverlay(ov);
+        if (vc && typeof vc.render === 'function') vc.render();
+        if (vc && typeof vc.onOverlayChange === 'function') vc.onOverlayChange(ov);
+        else {
+            if (typeof window._syncOverlayStackToScopeTasks === 'function') window._syncOverlayStackToScopeTasks();
+            if (typeof _saveCurrentTaskToStore === 'function') _saveCurrentTaskToStore();
+            if (typeof reelsUpdatePreview === 'function') reelsUpdatePreview(true);
+        }
+    };
+
+    const adjustBar = document.getElementById('reels-xmas-icon-adjust-bar');
+    if (adjustBar && !adjustBar.dataset.bound) {
+        adjustBar.dataset.bound = '1';
+
+        document.querySelectorAll('input[name="reels-xmas-icon-mode"]').forEach((radio) => {
+            radio.addEventListener('change', () => window.reelsSyncChristmasIconAdjustUI());
+        });
+
+        const ensureCursorModeActive = () => {
+            const subCursorEl = document.getElementById('reels-subtitle-cursor-enabled');
+            const fpCursorEl = document.getElementById('reels-fullpage-typewriter-cursor');
+            if (subCursorEl) subCursorEl.checked = true;
+            if (fpCursorEl) fpCursorEl.checked = true;
+        };
+
+        const syncAdjustAndCommit = (mutateSticker, mutateCursor) => {
+            if (getXmasIconMode() === 'cursor') {
+                ensureCursorModeActive();
+                mutateCursor();
+                if (typeof _persistSubtitleStyleByScope === 'function') _persistSubtitleStyleByScope(_readStyleFromUI());
+                if (typeof reelsRefreshSpeechWritingPreview === 'function') reelsRefreshSpeechWritingPreview();
+                window.reelsSyncChristmasIconAdjustUI();
+                return;
+            }
+            let ov = findActiveStickerOverlay();
+            if (!ov && typeof window.reelsAddChristmasStickerIcon === 'function') {
+                ov = window.reelsAddChristmasStickerIcon('jingle_bell');
+            }
+            if (!ov) return;
+            mutateSticker(ov);
+            commitAdjustedSticker(ov);
+            window.reelsSyncChristmasIconAdjustUI(ov);
+        };
+
+        document.getElementById('reels-xmas-ctl-size')?.addEventListener('input', (e) => {
+            const val = Number(e.target.value) || 250;
+            syncAdjustAndCommit(
+                (ov) => {
+                    const sz = Math.max(40, Math.min(900, Math.round(val)));
+                    const cx = (Number(ov.x) || 0) + (Number(ov.w) || sz) / 2;
+                    const cy = (Number(ov.y) || 0) + (Number(ov.h) || sz) / 2;
+                    ov.w = sz;
+                    ov.h = sz;
+                    ov.x = Math.round(cx - sz / 2);
+                    ov.y = Math.round(cy - sz / 2);
+                },
+                () => {
+                    const el = document.getElementById('reels-fullpage-typewriter-cursor-scale');
+                    if (el) el.value = String(Math.max(0.2, Math.min(4, val / 100)).toFixed(2));
+                }
+            );
+        });
+
+        document.getElementById('reels-xmas-ctl-x')?.addEventListener('input', (e) => {
+            const val = Math.round(Number(e.target.value) || 0);
+            syncAdjustAndCommit(
+                (ov) => { ov.x = Math.round(540 + val - (Number(ov.w) || 250) / 2); },
+                () => {
+                    const el = document.getElementById('reels-fullpage-typewriter-cursor-offset-x');
+                    if (el) el.value = String(val);
+                }
+            );
+        });
+
+        document.getElementById('reels-xmas-ctl-y')?.addEventListener('input', (e) => {
+            const val = Math.round(Number(e.target.value) || 0);
+            syncAdjustAndCommit(
+                (ov) => { ov.y = Math.round(960 + val - (Number(ov.h) || 250) / 2); },
+                () => {
+                    const el = document.getElementById('reels-fullpage-typewriter-cursor-offset-y');
+                    if (el) el.value = String(val);
+                }
+            );
+        });
+
+        document.getElementById('reels-xmas-ctl-angle')?.addEventListener('input', (e) => {
+            const val = Math.round(Number(e.target.value) || 0);
+            syncAdjustAndCommit(
+                (ov) => { ov.rotation = val; },
+                () => {
+                    const el = document.getElementById('reels-fullpage-typewriter-cursor-angle');
+                    if (el) el.value = String(val);
+                }
+            );
+        });
+
+        document.getElementById('reels-xmas-ctl-anim')?.addEventListener('change', (e) => {
+            const val = e.target.value || 'sway_bell';
+            syncAdjustAndCommit(
+                (ov) => { ov.cta_loop_anim = val; },
+                () => {}
+            );
+        });
+
+        adjustBar.querySelectorAll('.reels-xmas-ctl-pos').forEach((btn) => {
+            btn.addEventListener('click', () => {
+                const pos = btn.dataset.pos;
+                syncAdjustAndCommit(
+                    (ov) => {
+                        const w = Number(ov.w) || 250;
+                        const h = Number(ov.h) || 250;
+                        if (pos === 'tree-top') { ov.x = Math.round(540 - w / 2); ov.y = 220; }
+                        else if (pos === 'above-sub') { ov.x = Math.round(540 - w / 2); ov.y = Math.round(1080 - h); }
+                        else if (pos === 'sub-below') { ov.x = Math.round(540 - w / 2); ov.y = 1480; }
+                        else if (pos === 'bottom-center') { ov.x = Math.round(540 - w / 2); ov.y = Math.round(1720 - h); }
+                        else if (pos === 'center') { ov.x = Math.round(540 - w / 2); ov.y = Math.round(960 - h / 2); }
+                    },
+                    () => {
+                        const oy = document.getElementById('reels-fullpage-typewriter-cursor-offset-y');
+                        if (!oy) return;
+                        if (pos === 'tree-top' || pos === 'above-sub') oy.value = '-95';
+                        else if (pos === 'sub-below' || pos === 'bottom-center') oy.value = '95';
+                        else oy.value = '0';
+                    }
+                );
+            });
+        });
+
+        document.getElementById('reels-xmas-ctl-delete')?.addEventListener('click', () => {
+            if (getXmasIconMode() === 'cursor') {
+                if (typeof window.reelsDisableSubtitleCursor === 'function') window.reelsDisableSubtitleCursor();
+                window.reelsSyncChristmasIconAdjustUI();
+                return;
+            }
+            const ov = findActiveStickerOverlay();
+            if (!ov) return;
+            const mgr = _reelsState?.overlayProxy?.overlayMgr;
+            if (mgr && Array.isArray(mgr.overlays)) {
+                const idx = mgr.overlays.indexOf(ov);
+                if (idx !== -1) mgr.overlays.splice(idx, 1);
+            }
+            const task = typeof _getSelectedTask === 'function' ? _getSelectedTask() : null;
+            if (task && mgr) task.overlays = [...mgr.overlays];
+            const panel = _reelsState?.overlayPanel;
+            if (panel) {
+                if (panel._selectedOv === ov && typeof panel.deselectOverlay === 'function') panel.deselectOverlay();
+                if (typeof panel._refreshList === 'function') panel._refreshList();
+            }
+            if (typeof window._syncOverlayStackToScopeTasks === 'function') window._syncOverlayStackToScopeTasks();
+            if (typeof _saveCurrentTaskToStore === 'function') _saveCurrentTaskToStore();
+            if (typeof window.reelsSaveHistory === 'function') window.reelsSaveHistory();
+            if (typeof reelsUpdatePreview === 'function') reelsUpdatePreview(true);
+            window.reelsSyncChristmasIconAdjustUI();
+        });
+    }
+
+    window.reelsSyncChristmasIconAdjustUI();
 };
 
 if (typeof document !== 'undefined' && typeof document.addEventListener === 'function') {
@@ -20007,6 +20255,7 @@ window.reelsSetSpeechWritingTip = function(kind, standardSubtitleMode = false) {
         _persistSubtitleStyleByScope(_readStyleFromUI());
     }
     reelsRefreshSpeechWritingPreview();
+    if (typeof window.reelsSyncChristmasIconAdjustUI === 'function') window.reelsSyncChristmasIconAdjustUI();
 };
 window.reelsDisableSubtitleCursor = function() {
     const subCursorEl = document.getElementById('reels-subtitle-cursor-enabled');
@@ -20019,6 +20268,7 @@ window.reelsDisableSubtitleCursor = function() {
         _persistSubtitleStyleByScope(_readStyleFromUI());
     }
     reelsRefreshSpeechWritingPreview();
+    if (typeof window.reelsSyncChristmasIconAdjustUI === 'function') window.reelsSyncChristmasIconAdjustUI();
 };
 window.reelsRefreshSpeechWritingPreview = function() {
     if(typeof reelsUpdatePreview==='function')reelsUpdatePreview();

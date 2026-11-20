@@ -5148,9 +5148,9 @@
                     <!-- 🎄 圣诞快速入口（无需折叠展开，直接可见） -->
                     <div style="margin-top:7px; padding-top:7px; border-top:1px dashed rgba(250,204,21,0.3); display:flex; align-items:center; gap:5px; flex-wrap:wrap;">
                       <span style="font-size:11px; font-weight:700; color:#fde68a;">🎄 圣诞快配:</span>
-                      <button type="button" class="btn btn-secondary" style="font-size:11px; padding:3px 8px; background:linear-gradient(135deg,#15803d,#dc2626); color:#fff; border:1px solid #fde68a; font-weight:700;" onclick="window.reelsInspectorSwitch && reelsInspectorSwitch('overlay', document.querySelector('.inspector-tab[data-tab=&quot;overlay&quot;]')); window.reelsAddChristmasStickerIcon && window.reelsAddChristmasStickerIcon('jingle_bell');" title="立即在画面上方居中放入圣诞小图标，并打开32款小图标库供切换和拖拽">+ 🎄 放上方小图标(32款)</button>
+                      <button type="button" class="btn btn-secondary" style="font-size:11px; padding:3px 8px; background:linear-gradient(135deg,#15803d,#dc2626); color:#fff; border:1px solid #fde68a; font-weight:700;" onclick="var sec=document.getElementById('reels-xmas-icons-accordion'); if(sec){var p=sec.closest('details:not(#reels-xmas-icons-accordion)'); if(p)p.open=true; sec.open=true; sec.scrollIntoView({behavior:'smooth',block:'center'});} window.reelsAddChristmasStickerIcon && window.reelsAddChristmasStickerIcon('jingle_bell');" title="立即在画面上方居中放入圣诞小图标，并在 T字幕 内展开32款图标与位置/大小滑块">+ 🎄 放画面小图标(32款)</button>
                       <button type="button" class="btn btn-secondary" style="font-size:11px; padding:3px 8px; background:#129E4D; color:#fff; border:1px solid #86EFAC; font-weight:700;" onclick="window.reelsApplyChristmasComboPreset && window.reelsApplyChristmasComboPreset('xmas_combo_tree_bells')" title="在画面上方添加金色双铃铛并同步切换翡翠绿胶囊圣诞字幕（图1同款）">🔔 树顶铃铛+翡翠绿字幕</button>
-                      <button type="button" class="btn btn-secondary" style="font-size:11px; padding:3px 8px; border-color:rgba(250,204,21,0.45); color:#fde68a;" onclick="var sec=document.getElementById('reels-xmas-icons-accordion'); if(sec){var p=sec.closest('details:not(#reels-xmas-icons-accordion)'); if(p)p.open=true; sec.open=true; sec.scrollIntoView({behavior:'smooth',block:'center'});}">✨ 打开32款图标+搭配区</button>
+                      <button type="button" class="btn btn-secondary" style="font-size:11px; padding:3px 8px; border-color:rgba(250,204,21,0.45); color:#fde68a;" onclick="var sec=document.getElementById('reels-xmas-icons-accordion'); if(sec){var p=sec.closest('details:not(#reels-xmas-icons-accordion)'); if(p)p.open=true; sec.open=true; sec.scrollIntoView({behavior:'smooth',block:'center'});}">✨ 打开32款图标+下方调节</button>
                     </div>
                   </div>
 
@@ -5590,9 +5590,9 @@
                           <button type="button" class="btn btn-secondary btn-small" style="font-size:11px; padding:3px 8px; background:#124229; color:#FEF08A; border:1px solid #FDE047; font-weight:700;" onclick="window.reelsApplyChristmasComboPreset && window.reelsApplyChristmasComboPreset('xmas_combo_angel')">👼 天使+松林覆雪金字</button>
                         </div>
 
-                        <details id="reels-xmas-icons-accordion" style="border-top:1px dashed rgba(255,255,255,0.15); padding-top:6px;">
+                        <details id="reels-xmas-icons-accordion" open style="border-top:1px dashed rgba(255,255,255,0.15); padding-top:6px;">
                           <summary style="cursor:pointer; font-size:11px; color:#fef08a; font-weight:700; display:flex; align-items:center; justify-content:space-between; list-style:none;">
-                            <span>✨ 展开全部 32 款圣诞小图标库（点击放置到画面，或设成字幕跟读小图标）</span>
+                            <span>✨ 全部 32 款圣诞小图标库（点击放置到画面，或设成字幕跟读小图标）</span>
                             <span style="font-size:10px; padding:1px 6px; border-radius:999px; background:rgba(250,204,21,0.18); color:#fde68a;">32款 ▾</span>
                           </summary>
                           <div style="margin-top:6px;">
@@ -5603,6 +5603,52 @@
                               </div>
                             </div>
                             <div id="reels-xmas-subtitle-icon-grid" style="display:grid; grid-template-columns:repeat(4, minmax(0, 1fr)); gap:5px; max-height:220px; overflow-y:auto; padding:3px; background:rgba(0,0,0,0.22); border-radius:6px;"></div>
+                            <div id="reels-xmas-icon-adjust-bar" style="margin-top:7px; padding:7px 8px; border-radius:6px; background:rgba(15,23,42,0.55); border:1px solid rgba(250,204,21,0.25);">
+                              <div style="display:flex; align-items:center; justify-content:space-between; gap:6px; flex-wrap:wrap; margin-bottom:6px;">
+                                <span id="reels-xmas-ctl-target" style="font-size:10.5px; font-weight:700; color:#fde68a;">🎛 调整当前画面小图标（上方/下方均可在下面调）</span>
+                                <button type="button" id="reels-xmas-ctl-delete" class="btn btn-secondary btn-small" style="font-size:10px; padding:1px 7px; color:#fca5a5; border-color:rgba(248,113,113,0.4);">🗑 删除当前图标</button>
+                              </div>
+                              <div style="display:flex; gap:4px; flex-wrap:wrap; margin-bottom:6px;">
+                                <button type="button" class="btn btn-secondary btn-small reels-xmas-ctl-pos" data-pos="tree-top" style="font-size:10px; padding:2px 6px;">🌲 树顶上方</button>
+                                <button type="button" class="btn btn-secondary btn-small reels-xmas-ctl-pos" data-pos="above-sub" style="font-size:10px; padding:2px 6px;">💬 字幕上方</button>
+                                <button type="button" class="btn btn-secondary btn-small reels-xmas-ctl-pos" data-pos="sub-below" style="font-size:10px; padding:2px 6px;">💬 字幕下方</button>
+                                <button type="button" class="btn btn-secondary btn-small reels-xmas-ctl-pos" data-pos="bottom-center" style="font-size:10px; padding:2px 6px;">⬇ 底部居中</button>
+                                <button type="button" class="btn btn-secondary btn-small reels-xmas-ctl-pos" data-pos="center" style="font-size:10px; padding:2px 6px;">🎯 画面中心</button>
+                              </div>
+                              <div style="display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:6px 10px; font-size:10.5px; color:#cbd5e1;">
+                                <label style="display:flex; align-items:center; gap:5px; margin:0;">
+                                  <span style="min-width:34px;">大小</span>
+                                  <input type="range" id="reels-xmas-ctl-size" min="40" max="500" step="5" value="250" style="flex:1; min-width:0;">
+                                  <span id="reels-xmas-ctl-size-val" style="min-width:38px; text-align:right; color:#fef08a;">250px</span>
+                                </label>
+                                <label style="display:flex; align-items:center; gap:5px; margin:0;">
+                                  <span style="min-width:34px;">左右X</span>
+                                  <input type="range" id="reels-xmas-ctl-x" min="-540" max="540" step="2" value="0" style="flex:1; min-width:0;">
+                                  <span id="reels-xmas-ctl-x-val" style="min-width:36px; text-align:right; color:#fef08a;">0</span>
+                                </label>
+                                <label style="display:flex; align-items:center; gap:5px; margin:0;">
+                                  <span style="min-width:34px;">上下Y</span>
+                                  <input type="range" id="reels-xmas-ctl-y" min="-960" max="960" step="2" value="-605" style="flex:1; min-width:0;">
+                                  <span id="reels-xmas-ctl-y-val" style="min-width:36px; text-align:right; color:#fef08a;">-605</span>
+                                </label>
+                                <label style="display:flex; align-items:center; gap:5px; margin:0;">
+                                  <span style="min-width:34px;">角度</span>
+                                  <input type="range" id="reels-xmas-ctl-angle" min="-180" max="180" step="1" value="0" style="flex:1; min-width:0;">
+                                  <span id="reels-xmas-ctl-angle-val" style="min-width:36px; text-align:right; color:#fef08a;">0°</span>
+                                </label>
+                              </div>
+                              <div id="reels-xmas-ctl-anim-row" style="display:flex; align-items:center; gap:6px; margin-top:6px; font-size:10.5px; color:#cbd5e1;">
+                                <span style="min-width:48px;">持续动效:</span>
+                                <select id="reels-xmas-ctl-anim" class="select" style="flex:1; font-size:10.5px; padding:2px 6px;">
+                                  <option value="sway_bell">🔔 铃铛摆动</option>
+                                  <option value="twinkle">✨ 星光闪烁</option>
+                                  <option value="float">☁️ 轻盈漂浮</option>
+                                  <option value="pulse">💓 心跳呼吸</option>
+                                  <option value="ring">📳 欢快摇铃</option>
+                                  <option value="none">⏸ 静止</option>
+                                </select>
+                              </div>
+                            </div>
                           </div>
                         </details>
                       </div>
@@ -8272,7 +8318,7 @@
           <div class="form-section">
             <h3 class="section-title">关于</h3>
             <div class="about-info">
-              <p><strong>VideoKit</strong> <span id="app-version-display">v4.6.5-beta</span></p>
+              <p><strong>VideoKit</strong> <span id="app-version-display">v4.6.6-beta</span></p>
               <p>视频工具包-批量：音频生成-reels视频制作-多媒体转换</p>
               <div style="margin-top: 12px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
                 <button id="check-update-btn" class="btn btn-secondary" onclick="checkAppUpdate()"

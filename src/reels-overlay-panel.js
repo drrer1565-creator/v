@@ -831,6 +831,10 @@ class ReelsOverlayPanel {
                         <button type="button" class="rop-btn rop-sticker-align-btn" data-pos="top-right" style="padding:2px 7px;font-size:10.5px;">↗ 右上方</button>
                         <button type="button" class="rop-btn rop-sticker-align-btn" data-pos="center" style="padding:2px 7px;font-size:10.5px;">🎯 画面中心</button>
                         <button type="button" class="rop-btn rop-sticker-align-btn" data-pos="above-sub" style="padding:2px 7px;font-size:10.5px;">💬 字幕上方</button>
+                        <button type="button" class="rop-btn rop-sticker-align-btn" data-pos="sub-below" style="padding:2px 7px;font-size:10.5px;">💬 字幕下方</button>
+                        <button type="button" class="rop-btn rop-sticker-align-btn" data-pos="bottom-center" style="padding:2px 7px;font-size:10.5px;">⬇ 底部居中</button>
+                        <button type="button" class="rop-btn rop-sticker-align-btn" data-pos="bottom-left" style="padding:2px 7px;font-size:10.5px;">↙ 左下角</button>
+                        <button type="button" class="rop-btn rop-sticker-align-btn" data-pos="bottom-right" style="padding:2px 7px;font-size:10.5px;">↘ 右下角</button>
                     </div>
 
                     <div style="padding-top:6px;border-top:1px dashed rgba(250,204,21,0.28);">
@@ -5059,6 +5063,7 @@ class ReelsOverlayPanel {
             if (refreshList) this._refreshList();
             if (typeof this.videoCanvas?.render === 'function') this.videoCanvas.render();
             if (typeof this.videoCanvas?.onOverlayChange === 'function') this.videoCanvas.onOverlayChange(ov);
+            if (typeof window.reelsSyncChristmasIconAdjustUI === 'function') window.reelsSyncChristmasIconAdjustUI(ov);
         };
 
         panel.querySelectorAll('.rop-sticker-cat-tab').forEach((btn) => {
@@ -5145,6 +5150,10 @@ class ReelsOverlayPanel {
                 else if (pos === 'top-right') { ov.x = Math.round(1010 - w); ov.y = 190; }
                 else if (pos === 'center') { ov.x = Math.round(540 - w / 2); ov.y = Math.round(960 - h / 2); }
                 else if (pos === 'above-sub') { ov.x = Math.round(540 - w / 2); ov.y = Math.round(1080 - h); }
+                else if (pos === 'sub-below') { ov.x = Math.round(540 - w / 2); ov.y = 1480; }
+                else if (pos === 'bottom-center') { ov.x = Math.round(540 - w / 2); ov.y = Math.round(1720 - h); }
+                else if (pos === 'bottom-left') { ov.x = 70; ov.y = Math.round(1720 - h); }
+                else if (pos === 'bottom-right') { ov.x = Math.round(1010 - w); ov.y = Math.round(1720 - h); }
                 this._syncFromOverlay(ov);
                 commitSticker(ov);
             });
@@ -6299,8 +6308,8 @@ class ReelsOverlayPanel {
         const hideTime = isScroll || isCard;
         if (timeInTransform) timeInTransform.style.display = hideTime ? 'none' : 'contents';
 
-        // 媒体覆层（image/video）自动展开变换面板，方便设置位置和 A→B 过渡
-        if (isImg && transformGroup && transformGroup.classList.contains('rop-collapsed')) {
+        // 媒体/贴纸覆层（image/video/sticker）自动展开变换面板，方便设置位置、旋转与大小
+        if ((isImg || ov.type === 'sticker') && transformGroup && transformGroup.classList.contains('rop-collapsed')) {
             transformGroup.classList.remove('rop-collapsed');
             const icon = transformGroup.querySelector('.rop-collapse-icon');
             if (icon) icon.textContent = '▾';
@@ -6308,6 +6317,9 @@ class ReelsOverlayPanel {
 
         this._syncFromOverlay(ov);
         this._refreshList();
+        if (ov.type === 'sticker' && typeof window.reelsSyncChristmasIconAdjustUI === 'function') {
+            window.reelsSyncChristmasIconAdjustUI(ov);
+        }
     }
 
     deselectOverlay() {
