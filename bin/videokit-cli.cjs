@@ -12,7 +12,8 @@
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
-const { spawn, spawnSync } = require('child_process');
+const https = require('https');
+const { spawn, spawnSync, execFileSync } = require('child_process');
 const ReelsSubtitleProcessor = require('../src/reels-subtitle-processor.js');
 const {
     REELS_BUILTIN_PRESETS,
@@ -117,6 +118,8 @@ Usage:
   videokit-cli reels --batch <tasks-dir-or-manifest.json> [--output-dir <dir>] [options]
   videokit-cli validate --task <task.json>
   videokit-cli tts --task <tts-task.json> [--config <config.json>]
+  videokit-cli presets
+  videokit-cli update [--check] [--beta] [--stash] [--json] [--branch <name>]
   videokit-cli --version
   videokit-cli --help
 
@@ -135,6 +138,11 @@ Options:
   --quiet, -q                Suppress progress JSON lines on stdout
   --keep-temp                Keep temporary .ass and working directory for debugging
   --jobs <N>                 Parallel worker count in batch mode (default: 1)
+  --check                    Check for updates without modifying files (update subcommand)
+  --beta                     Include beta prereleases when checking updates
+  --stash                    Auto-stash uncommitted local changes before git pull
+  --json                     Output machine-readable JSON (update subcommand)
+  --branch <name>            Git branch to pull when updating (default: current or main)
 
 Exit Codes:
   0  Success
@@ -171,6 +179,11 @@ function parseArgs(argv) {
         quiet: false,
         keepTemp: false,
         jobs: 1,
+        check: false,
+        beta: false,
+        stash: false,
+        json: false,
+        branch: null,
         version: false,
         help: false,
     };
@@ -211,6 +224,22 @@ function parseArgs(argv) {
         }
         if (token === '--keep-temp') {
             args.keepTemp = true;
+            continue;
+        }
+        if (token === '--check') {
+            args.check = true;
+            continue;
+        }
+        if (token === '--beta') {
+            args.beta = true;
+            continue;
+        }
+        if (token === '--stash') {
+            args.stash = true;
+            continue;
+        }
+        if (token === '--json') {
+            args.json = true;
             continue;
         }
 
@@ -285,6 +314,10 @@ function parseArgs(argv) {
                 throw new CLIError('INVALID_ARGS', `Invalid --jobs value: ${val}`, EXIT_CODES.VALIDATION_ERROR);
             }
             args.jobs = val;
+        } else if (token === '--branch') {
+            args.branch = readValue('--branch');
+        } else if (token.startsWith('--branch=')) {
+            args.branch = token.slice('--branch='.length);
         } else if (token.startsWith('-')) {
             throw new CLIError('INVALID_ARGS', `Unknown option: ${token}`, EXIT_CODES.VALIDATION_ERROR);
         } else {
@@ -1149,31 +1182,53 @@ function validateTaskFile(taskFilePath, cliArgs = {}) {
     // Check font availability
     const fontInfo = resolveFontFamily(subConfig.font_family || 'Arial', taskId);
 
-    // Compute target duration
+    // Compute target duration (accounting for optional countdown/hook intro delay)
     const maxSegEnd = segments.reduce((m, s) => Math.max(m, s.end), 0);
     let probedAudioDuration = 0;
     if (audioPath) {
         probedAudioDuration = probeMediaDuration(binaries.ffprobe, audioPath);
     }
 
-    let targetDuration = Number(task.duration);
-    if (!Number.isFinite(targetDuration) || targetDuration <= 0) {
-        if (probedAudioDuration > 0) {
-            targetDuration = probedAudioDuration;
-        } else if (maxSegEnd > 0) {
-            targetDuration = maxSegEnd;
-        } else {
-            targetDuration = 10;
-        }
+    const introDelaySec = getIntroDelaySecForOverlays(overlays, task.voiceDelay);
+    const hasActiveIntroOverlay = overlays.some(ov => ov && !ov.disabled && (ov.type === 'intro_countdown' || ov.is_intro_countdown));
+    const hasBodyOverlays = overlays.some(ov => ov && !ov.disabled && ov.type !== 'intro_countdown' && !ov.is_intro_countdown && ov.type !== 'decor');
+    const explicitDuration = Number(task.duration);
+    const hasExplicitDuration = Number.isFinite(explicitDuration) && explicitDuration > 0;
+
+    let bodyDuration = 0;
+    let targetDuration = 0;
+    if (hasExplicitDuration) {
+        targetDuration = introDelaySec > 0 ? Math.max(explicitDuration, introDelaySec) : explicitDuration;
+        bodyDuration = introDelaySec > 0 ? Math.max(0, targetDuration - introDelaySec) : targetDuration;
+    } else if (probedAudioDuration > 0) {
+        bodyDuration = probedAudioDuration;
+        targetDuration = bodyDuration + introDelaySec;
+    } else if (maxSegEnd > 0) {
+        bodyDuration = maxSegEnd;
+        targetDuration = bodyDuration + introDelaySec;
+    } else if (hasActiveIntroOverlay && !contentVideoPath && !hasBodyOverlays) {
+        const activeIntro = [...overlays].reverse().find(ov => ov && !ov.disabled && (ov.type === 'intro_countdown' || ov.is_intro_countdown));
+        const introEnd = Math.max(0.5, Number(activeIntro && activeIntro.end) || introDelaySec || 3.5);
+        bodyDuration = 0;
+        targetDuration = Math.max(introDelaySec, introEnd);
+    } else {
+        bodyDuration = 10;
+        targetDuration = bodyDuration + introDelaySec;
     }
+    bodyDuration = Math.round(bodyDuration * 1000) / 1000;
     targetDuration = Math.round(targetDuration * 1000) / 1000;
 
-    // Ensure scroll overlays default their end time to targetDuration when not explicitly bounded
+    const voiceVolume = Number.isFinite(Number(task.voiceVolume)) ? Math.max(0, Number(task.voiceVolume)) : undefined;
+    const bgVolume = Number.isFinite(Number(task.bgVolume)) ? Math.max(0, Number(task.bgVolume)) : undefined;
+    const bgmVolume = Number.isFinite(Number(task.bgmVolume)) ? Math.max(0, Number(task.bgmVolume)) : undefined;
+
+    // Ensure scroll overlays default their end time cleanly when not explicitly bounded
+    const scrollAutoEnd = bodyDuration > 0 ? bodyDuration : targetDuration;
     for (const ov of overlays) {
         if (ov && String(ov.type || '').toLowerCase() === 'scroll') {
             if (ov.start === undefined || ov.start === null) ov.start = 0;
             if (ov.end === undefined || ov.end === null || Number(ov.end) >= 9999 || ov.scroll_end_auto === true) {
-                ov.end = targetDuration;
+                ov.end = scrollAutoEnd;
                 ov.scroll_end_auto = true;
             }
         }
@@ -1226,16 +1281,40 @@ function validateTaskFile(taskFilePath, cliArgs = {}) {
         engineReason,
         fontInfo,
         binaries,
+        introDelaySec,
+        bodyDuration,
         targetDuration,
+        voiceVolume,
+        bgVolume,
+        bgmVolume,
         outputPath,
     };
+}
+
+/**
+ * Compute opening intro silence/delay seconds (e.g. from active intro_countdown overlay or explicit voiceDelay).
+ */
+function getIntroDelaySecForOverlays(overlays, explicitVoiceDelay) {
+    if (explicitVoiceDelay !== undefined && explicitVoiceDelay !== null && explicitVoiceDelay !== '') {
+        const numeric = Number(explicitVoiceDelay);
+        if (Number.isFinite(numeric)) return Math.max(0, numeric);
+    }
+    if (!Array.isArray(overlays) || overlays.length === 0) return 0;
+    for (let i = overlays.length - 1; i >= 0; i--) {
+        const ov = overlays[i];
+        if (ov && !ov.disabled && (ov.type === 'intro_countdown' || ov.is_intro_countdown) && ov.intro_delay_body !== false) {
+            const endSec = Number(ov.end);
+            return Number.isFinite(endSec) ? Math.max(0, endSec) : 0;
+        }
+    }
+    return 0;
 }
 
 /**
  * Generate ASS subtitle content for a validated task plan.
  */
 function buildTaskASS(plan) {
-    const { width, height, segments, subtitle: sub, fontInfo, targetDuration } = plan;
+    const { width, height, segments, subtitle: sub, fontInfo, targetDuration, introDelaySec } = plan;
     const scale = width / 1080;
 
     const baseFontSize = Number(sub.fontsize) > 0 ? Number(sub.fontsize) : 74;
@@ -1278,8 +1357,17 @@ function buildTaskASS(plan) {
         credit_position: sub.credit_position || 'top-right',
     };
 
+    const delaySec = Math.max(0, Number(introDelaySec) || 0);
+    const shiftedSegments = delaySec > 0
+        ? segments.map(s => ({
+            ...s,
+            start: Math.max(0, (Number(s.start) || 0) + delaySec),
+            end: Math.max(0, (Number(s.end) || 0) + delaySec),
+        }))
+        : segments;
+
     const segmentsWithWords = ReelsSubtitleProcessor.srtToSegmentsWithWords(
-        segments.map(s => ({ ...s, _timeUnit: 'sec' }))
+        shiftedSegments.map(s => ({ ...s, _timeUnit: 'sec' }))
     );
 
     return ReelsSubtitleProcessor.generateEnhancedASS(segmentsWithWords, styleObj, {
@@ -1312,6 +1400,9 @@ function buildFFmpegArgs(plan, tmpOutputPath) {
         bgmPath,
         segments,
         subtitle,
+        introDelaySec,
+        voiceVolume,
+        bgmVolume,
         targetDuration,
         binaries,
     } = plan;
@@ -1397,27 +1488,35 @@ function buildFFmpegArgs(plan, tmpOutputPath) {
     }
 
     // 2. Audio Inputs
+    const introDelayMs = Math.max(0, Math.round((Number(introDelaySec) || 0) * 1000));
+    const voiceDelayFilter = introDelayMs > 0 ? `adelay=${introDelayMs}|${introDelayMs},` : '';
+    const voiceVolFilter = (Number.isFinite(Number(voiceVolume)) && Number(voiceVolume) !== 1)
+        ? `,volume=${Number(voiceVolume).toFixed(2)}`
+        : '';
+    const effectiveBgmVol = Number.isFinite(Number(bgmVolume)) ? Math.max(0, Number(bgmVolume)) : 0.20;
+
     if (audioPath && bgmPath) {
         inputs.push('-i', audioPath);
         const voiceIdx = inputIdx++;
         inputs.push('-stream_loop', '-1', '-t', durStr, '-i', bgmPath);
         const bgmIdx = inputIdx++;
         filterParts.push(
-            `[${voiceIdx}:a]aresample=48000,apad=whole_dur=${durStr},atrim=0:${durStr},asetpts=PTS-STARTPTS[voice];` +
-            `[${bgmIdx}:a]aresample=48000,volume=0.20,atrim=0:${durStr},asetpts=PTS-STARTPTS[bgm];` +
+            `[${voiceIdx}:a]aresample=48000,${voiceDelayFilter}apad=whole_dur=${durStr},atrim=0:${durStr},asetpts=PTS-STARTPTS${voiceVolFilter}[voice];` +
+            `[${bgmIdx}:a]aresample=48000,volume=${effectiveBgmVol.toFixed(2)},atrim=0:${durStr},asetpts=PTS-STARTPTS[bgm];` +
             `[voice][bgm]amix=inputs=2:duration=first:dropout_transition=2[aout]`
         );
     } else if (audioPath) {
         inputs.push('-i', audioPath);
         const voiceIdx = inputIdx++;
         filterParts.push(
-            `[${voiceIdx}:a]aresample=48000,apad=whole_dur=${durStr},atrim=0:${durStr},asetpts=PTS-STARTPTS[aout]`
+            `[${voiceIdx}:a]aresample=48000,${voiceDelayFilter}apad=whole_dur=${durStr},atrim=0:${durStr},asetpts=PTS-STARTPTS${voiceVolFilter}[aout]`
         );
     } else if (bgmPath) {
         inputs.push('-stream_loop', '-1', '-t', durStr, '-i', bgmPath);
         const bgmIdx = inputIdx++;
+        const soloBgmVolFilter = Number.isFinite(Number(bgmVolume)) ? `,volume=${effectiveBgmVol.toFixed(2)}` : '';
         filterParts.push(
-            `[${bgmIdx}:a]aresample=48000,atrim=0:${durStr},asetpts=PTS-STARTPTS[aout]`
+            `[${bgmIdx}:a]aresample=48000${soloBgmVolFilter},atrim=0:${durStr},asetpts=PTS-STARTPTS[aout]`
         );
     } else {
         inputs.push('-f', 'lavfi', '-t', durStr, '-i', 'anullsrc=channel_layout=stereo:sample_rate=48000');
@@ -1504,11 +1603,15 @@ function runElectronWysiwygWorker(plan, cliArgs, tmpOutputPath, tempDir) {
             contentVideoPath: plan.contentVideoPath || null,
             voicePath: plan.audioPath || '',
             bgmPath: plan.bgmPath || '',
+            voiceDelay: plan.introDelaySec || 0,
+            ...(plan.voiceVolume !== undefined ? { voiceVolume: plan.voiceVolume } : {}),
+            ...(plan.bgVolume !== undefined ? { bgVolume: plan.bgVolume } : {}),
+            ...(plan.bgmVolume !== undefined ? { bgmVolume: plan.bgmVolume } : {}),
             outputPath: tmpOutputPath,
             targetWidth: plan.width,
             targetHeight: plan.height,
             fps: plan.fps,
-            customDuration: plan.targetDuration,
+            customDuration: plan.bodyDuration !== undefined ? plan.bodyDuration : plan.targetDuration,
             crf: qualityCrfMap[plan.quality] || 18,
             qualityPreset: qualityPresetMap[plan.quality] || 'medium',
         },
@@ -1528,9 +1631,9 @@ function runElectronWysiwygWorker(plan, cliArgs, tmpOutputPath, tempDir) {
             const xvfbProbe = spawnSync('xvfb-run', ['--help'], { stdio: 'ignore', timeout: 3000 });
             if (!xvfbProbe.error && xvfbProbe.status === 0) {
                 cmd = 'xvfb-run';
-                args = ['-a', electronBin, '--no-sandbox', '--disable-gpu', mainJsPath, '--headless-wysiwyg-worker', jobFile];
+                args = ['-a', electronBin, '--no-sandbox', '--disable-dev-shm-usage', '--disable-gpu', mainJsPath, '--headless-wysiwyg-worker', jobFile];
             } else {
-                args = ['--headless', '--ozone-platform=headless', '--disable-gpu', '--no-sandbox', mainJsPath, '--headless-wysiwyg-worker', jobFile];
+                args = ['--headless', '--ozone-platform=headless', '--disable-gpu', '--no-sandbox', '--disable-dev-shm-usage', mainJsPath, '--headless-wysiwyg-worker', jobFile];
             }
         }
 
@@ -2143,6 +2246,303 @@ async function runTtsCommand(taskFilePath, cliArgs = {}) {
     });
 }
 
+function parseSemverTag(raw) {
+    const cleaned = String(raw || '').trim().replace(/^v/i, '');
+    const m = /^(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?/.exec(cleaned);
+    if (!m) return null;
+    return {
+        raw: cleaned,
+        major: Number(m[1]),
+        minor: Number(m[2]),
+        patch: Number(m[3]),
+        pre: m[4] || '',
+    };
+}
+
+function compareSemverStrings(a, b) {
+    const pa = parseSemverTag(a);
+    const pb = parseSemverTag(b);
+    if (!pa && !pb) return 0;
+    if (!pa) return -1;
+    if (!pb) return 1;
+    if (pa.major !== pb.major) return pa.major > pb.major ? 1 : -1;
+    if (pa.minor !== pb.minor) return pa.minor > pb.minor ? 1 : -1;
+    if (pa.patch !== pb.patch) return pa.patch > pb.patch ? 1 : -1;
+    if (!pa.pre && pb.pre) return 1;
+    if (pa.pre && !pb.pre) return -1;
+    if (pa.pre === pb.pre) return 0;
+    return pa.pre > pb.pre ? 1 : -1;
+}
+
+function parseGithubRepoSlug(remoteUrl) {
+    const s = String(remoteUrl || '').trim();
+    const m = /(?:github\.com[:/])([A-Za-z0-9._-]+)\/([A-Za-z0-9._-]+?)(?:\.git)?\/?$/i.exec(s);
+    if (m) {
+        return { owner: m[1], repo: m[2] };
+    }
+    return { owner: 'golsaysea', repo: 'videokit-Y' };
+}
+
+function fetchGithubReleasesJson(owner, repo, userAgent) {
+    if (!/^[A-Za-z0-9._-]+$/.test(owner) || !/^[A-Za-z0-9._-]+$/.test(repo)) {
+        return Promise.reject(new Error('Invalid repository slug'));
+    }
+    return new Promise((resolve, reject) => {
+        const req = https.get(
+            {
+                hostname: 'api.github.com',
+                path: `/repos/${owner}/${repo}/releases?per_page=10`,
+                headers: {
+                    Accept: 'application/vnd.github+json',
+                    'User-Agent': userAgent || 'videokit-cli',
+                },
+                timeout: 12000,
+            },
+            (res) => {
+                let body = '';
+                res.setEncoding('utf-8');
+                res.on('data', (chunk) => {
+                    if (body.length < 512 * 1024) body += chunk;
+                });
+                res.on('end', () => {
+                    if (res.statusCode && res.statusCode >= 200 && res.statusCode < 300) {
+                        try {
+                            const parsed = JSON.parse(body);
+                            resolve(Array.isArray(parsed) ? parsed : []);
+                        } catch (e) {
+                            reject(new Error(`Invalid JSON from GitHub releases API: ${e.message}`));
+                        }
+                    } else {
+                        reject(new Error(`GitHub API HTTP ${res.statusCode || 0}`));
+                    }
+                });
+            }
+        );
+        req.on('timeout', () => req.destroy(new Error('GitHub releases API timeout')));
+        req.on('error', reject);
+    });
+}
+
+function defaultExecGit(repoRoot, gitArgs) {
+    return execFileSync('git', gitArgs, {
+        cwd: repoRoot,
+        encoding: 'utf-8',
+        stdio: ['ignore', 'pipe', 'pipe'],
+        timeout: 60000,
+        windowsHide: true,
+    }).trim();
+}
+
+function defaultExecNpm(repoRoot, npmArgs) {
+    // Prefer running npm-cli.js directly through Node so Windows and Linux never need shell: true
+    const npmCliCandidates = [
+        path.join(path.dirname(process.execPath), 'node_modules', 'npm', 'bin', 'npm-cli.js'),
+        path.resolve(path.dirname(process.execPath), '..', 'lib', 'node_modules', 'npm', 'bin', 'npm-cli.js'),
+    ];
+    const npmCliPath = npmCliCandidates.find((p) => fs.existsSync(p));
+    if (npmCliPath) {
+        return execFileSync(process.execPath, [npmCliPath, ...npmArgs], {
+            cwd: repoRoot,
+            encoding: 'utf-8',
+            stdio: ['ignore', 'pipe', 'pipe'],
+            timeout: 180000,
+            windowsHide: true,
+        });
+    }
+    return execFileSync('npm', npmArgs, {
+        cwd: repoRoot,
+        encoding: 'utf-8',
+        stdio: ['ignore', 'pipe', 'pipe'],
+        timeout: 180000,
+        windowsHide: true,
+    });
+}
+
+async function runSelfUpdateCommand(args = {}, deps = {}) {
+    const repoRoot = deps.repoRoot || path.resolve(__dirname, '..');
+    const execGit = deps.execGit || ((gitArgs) => defaultExecGit(repoRoot, gitArgs));
+    const execNpm = deps.execNpm || ((npmArgs) => defaultExecNpm(repoRoot, npmArgs));
+    const readVersion = deps.getVersion || getPackageVersion;
+    const currentVersion = readVersion();
+    const allowBeta = Boolean(args.beta) || /-beta|-alpha|-rc/i.test(currentVersion);
+
+    let remoteUrl = '';
+    try {
+        remoteUrl = execGit(['remote', 'get-url', 'origin']);
+    } catch (_) {}
+    const slug = parseGithubRepoSlug(remoteUrl);
+
+    let branch = args.branch ? String(args.branch).trim() : '';
+    if (!branch) {
+        try {
+            const cur = execGit(['rev-parse', '--abbrev-ref', 'HEAD']);
+            if (cur && cur !== 'HEAD') branch = cur;
+        } catch (_) {}
+    }
+    if (!branch) branch = 'main';
+    if (!/^[A-Za-z0-9._/-]+$/.test(branch) || branch.startsWith('-')) {
+        throw new CLIError('INVALID_ARGS', `Invalid git branch name: ${branch}`, EXIT_CODES.VALIDATION_ERROR);
+    }
+
+    let currentCommit = '';
+    try {
+        currentCommit = execGit(['rev-parse', '--short', 'HEAD']);
+    } catch (_) {}
+
+    let porcelain = '';
+    try {
+        porcelain = execGit(['status', '--porcelain']);
+    } catch (_) {}
+    const dirty = Boolean(porcelain);
+
+    let latestRelease = null;
+    let releaseWarning = '';
+    const fetchReleases = deps.fetchReleases || ((owner, repo) => fetchGithubReleasesJson(owner, repo, `videokit-cli/${currentVersion}`));
+    try {
+        const releases = await fetchReleases(slug.owner, slug.repo);
+        const candidates = (Array.isArray(releases) ? releases : [])
+            .filter((r) => r && !r.draft && (allowBeta || !r.prerelease))
+            .map((r) => ({
+                tag: String(r.tag_name || '').trim(),
+                version: String(r.tag_name || '').trim().replace(/^v/i, ''),
+                prerelease: Boolean(r.prerelease),
+                url: r.html_url || '',
+                published_at: r.published_at || '',
+            }))
+            .filter((c) => parseSemverTag(c.version));
+        candidates.sort((a, b) => compareSemverStrings(b.version, a.version));
+        if (candidates.length > 0) latestRelease = candidates[0];
+    } catch (err) {
+        releaseWarning = err && err.message ? err.message : String(err);
+    }
+
+    // Fallback to git ls-remote tags if GitHub Releases API failed or was rate-limited
+    if (!latestRelease) {
+        try {
+            const rawTags = execGit(['ls-remote', '--tags', 'origin']);
+            const tagVers = String(rawTags || '')
+                .split(/\r?\n/)
+                .map((line) => line.split('\t')[1] || '')
+                .filter((ref) => ref && !ref.endsWith('^{}'))
+                .map((ref) => ref.replace(/^refs\/tags\//, '').trim())
+                .filter((tag) => allowBeta || !/-beta|-alpha|-rc/i.test(tag))
+                .map((tag) => ({
+                    tag,
+                    version: tag.replace(/^v/i, ''),
+                    prerelease: /-beta|-alpha|-rc/i.test(tag),
+                    url: `https://github.com/${slug.owner}/${slug.repo}/releases/tag/${tag}`,
+                    published_at: '',
+                }))
+                .filter((c) => parseSemverTag(c.version));
+            tagVers.sort((a, b) => compareSemverStrings(b.version, a.version));
+            if (tagVers.length > 0) {
+                latestRelease = tagVers[0];
+                releaseWarning = '';
+            }
+        } catch (_) {}
+    }
+
+    const latestVersion = latestRelease ? latestRelease.version : currentVersion;
+    const updateAvailable = Boolean(latestRelease && compareSemverStrings(latestVersion, currentVersion) > 0);
+
+    if (args.check) {
+        const report = {
+            status: 'ok',
+            mode: 'check',
+            repo: `${slug.owner}/${slug.repo}`,
+            branch,
+            commit: currentCommit || null,
+            dirty,
+            beta_channel: allowBeta,
+            current_version: currentVersion,
+            latest_version: latestVersion,
+            latest_tag: latestRelease ? latestRelease.tag : null,
+            release_url: latestRelease ? latestRelease.url : null,
+            update_available: updateAvailable,
+            ...(releaseWarning ? { warning: releaseWarning } : {}),
+        };
+        if (!deps.silent) emitStdoutJson(report);
+        return report;
+    }
+
+    if (dirty && !args.stash) {
+        throw new CLIError(
+            'DIRTY_WORKTREE',
+            'Working tree has uncommitted local changes; re-run with --stash to auto-stash before updating.',
+            EXIT_CODES.GENERAL_ERROR
+        );
+    }
+
+    let stashed = false;
+    if (dirty && args.stash) {
+        execGit(['stash', 'push', '-u', '-m', `videokit-cli-update-${Date.now()}`]);
+        stashed = true;
+    }
+
+    execGit(['fetch', '--tags', 'origin', branch]);
+    const beforeCommit = execGit(['rev-parse', '--short', 'HEAD']);
+    execGit(['pull', '--ff-only', 'origin', branch]);
+    const afterCommit = execGit(['rev-parse', '--short', 'HEAD']);
+    const pulledNewCommits = beforeCommit !== afterCommit;
+
+    let depsInstalled = false;
+    let builtDist = false;
+    let changedFiles = [];
+    if (pulledNewCommits) {
+        try {
+            const diffRaw = execGit(['diff', '--name-only', beforeCommit, afterCommit]);
+            changedFiles = diffRaw ? diffRaw.split(/\r?\n/).filter(Boolean) : [];
+        } catch (_) {}
+    }
+
+    const needNpmInstall = !fs.existsSync(path.join(repoRoot, 'node_modules'))
+        || changedFiles.some((f) => f === 'package.json' || f === 'package-lock.json');
+    if (needNpmInstall) {
+        try {
+            execNpm(['ci', '--omit=optional']);
+        } catch (_) {
+            execNpm(['install', '--omit=optional']);
+        }
+        depsInstalled = true;
+    }
+
+    const distIndexPath = path.join(repoRoot, 'dist', 'index.html');
+    if (pulledNewCommits || !fs.existsSync(distIndexPath)) {
+        execNpm(['run', 'build']);
+        builtDist = true;
+    }
+
+    let stashConflict = false;
+    if (stashed) {
+        try {
+            execGit(['stash', 'pop']);
+        } catch (_) {
+            stashConflict = true;
+        }
+    }
+
+    const updatedVersion = readVersion();
+    const result = {
+        status: 'ok',
+        mode: 'update',
+        repo: `${slug.owner}/${slug.repo}`,
+        branch,
+        updated: pulledNewCommits || updatedVersion !== currentVersion,
+        previous_version: currentVersion,
+        current_version: updatedVersion,
+        previous_commit: beforeCommit,
+        current_commit: afterCommit,
+        latest_release_tag: latestRelease ? latestRelease.tag : null,
+        deps_installed: depsInstalled,
+        dist_rebuilt: builtDist,
+        stashed,
+        stash_conflict: stashConflict,
+        ...(releaseWarning ? { warning: releaseWarning } : {}),
+    };
+    if (!deps.silent) emitStdoutJson(result);
+    return result;
+}
+
 /**
  * Main CLI entrypoint
  */
@@ -2161,7 +2561,12 @@ async function runCli(argv = process.argv.slice(2)) {
         }
 
         if (!args.subcommand) {
-            throw new CLIError('INVALID_ARGS', 'Missing subcommand (expected: reels, validate, or tts)', EXIT_CODES.VALIDATION_ERROR);
+            throw new CLIError('INVALID_ARGS', 'Missing subcommand (expected: reels, validate, tts, presets, or update)', EXIT_CODES.VALIDATION_ERROR);
+        }
+
+        if (args.subcommand === 'update') {
+            await runSelfUpdateCommand(args);
+            return EXIT_CODES.OK;
         }
 
         if (args.subcommand === 'presets') {
@@ -2187,6 +2592,7 @@ async function runCli(argv = process.argv.slice(2)) {
                 engine: plan.engine,
                 engine_reason: plan.engineReason,
                 preset: plan.preset || null,
+                intro_delay_sec: plan.introDelaySec || 0,
                 duration: plan.targetDuration,
                 width: plan.width,
                 height: plan.height,
@@ -2243,6 +2649,10 @@ module.exports = {
     CLIError,
     CANVAS_EXCLUSIVE_ANIMATIONS,
     ASS_SUPPORTED_ANIMATIONS,
+    getPackageVersion,
+    getIntroDelaySecForOverlays,
+    parseSemverTag,
+    compareSemverStrings,
     parseArgs,
     resolveFontFamily,
     resolveTaskEngine,
@@ -2251,5 +2661,6 @@ module.exports = {
     buildFFmpegArgs,
     renderReelsTask,
     runBatchReels,
+    runSelfUpdateCommand,
     runCli,
 };

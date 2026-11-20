@@ -1578,6 +1578,7 @@ async function startSession(opts) {
         audioDurScale = 100,
         reverbEnabled = false, reverbPreset = 'hall', reverbMix = 30, stereoWidth = 100, audioFxTarget = 'all',
         insertAudioClips = [],
+        voiceDelay = 0,
         renderedAudioPath = null,
         targetDuration = 0,
         totalFrames = 0,
@@ -1824,6 +1825,7 @@ async function startSession(opts) {
         audioDurScale,
         reverbEnabled, reverbPreset, reverbMix, stereoWidth, audioFxTarget,
         insertAudioClips,
+        voiceDelay: Math.max(0, Number(voiceDelay) || 0),
         renderedAudioPath,
         targetDuration,
         totalFrames,
@@ -2514,6 +2516,14 @@ async function mixAudio(session) {
         if (stereoFilter) {
             filterParts.push(stereoFilter);
             voiceOutLabel = '[vstereo]';
+        }
+
+        // 开场留白延迟人声（在 apad 补尾之前执行 adelay，确保前 N 秒纯静音并保持整体时长完整）
+        const voiceDelayMs = Math.max(0, Math.round((Number(session.voiceDelay) || 0) * 1000));
+        if (voiceDelayMs > 0) {
+            filterParts.push(`${voiceOutLabel}adelay=${voiceDelayMs}|${voiceDelayMs}[vdelayed]`);
+            voiceOutLabel = '[vdelayed]';
+            console.log(`[WYSIWYG] 开场延迟人声: ${voiceDelayMs}ms`);
         }
 
         // 重命名为 [voice]（当有固定视频总时长时补充 apad，防止短音频在 -shortest 下把 2 分钟成片截断成 30 秒）

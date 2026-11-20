@@ -296,7 +296,23 @@
     }
 
     function sanitizeFilename(text) {
-        return String(text || '').trim().slice(0, 14).replace(/[\\/:*?"<>|\r\n]/g, '_') || 'untitled';
+        let cleaned = String(text || '')
+            .replace(/<[^>]*>/g, ' ')
+            .replace(/\[[^\]]*\]/g, ' ')
+            .replace(/^\s*\d+\s*[.、)\-]\s*/, '')
+            .replace(/^["'“”‘’«»「」『』\s]+/, '')
+            .trim();
+        const firstLine = cleaned.split(/[\r\n]+/).map(l => l.trim()).find(Boolean) || '';
+        const sentenceMatch = firstLine.match(/^(.{2,120}?)(?:[.!?。！？；;…]+(?=\s|$|["'”’»」』]|[\u4e00-\u9fff])|$)/);
+        let firstSentence = (sentenceMatch ? sentenceMatch[1] : firstLine).trim();
+        firstSentence = firstSentence
+            .replace(/[\\/:*?"<>|\r\n]/g, '_')
+            .replace(/["'“”‘’«»「」『』.,!?。！？；;，、:：…]+$/g, '')
+            .replace(/\s+/g, ' ')
+            .trim()
+            .slice(0, 40)
+            .trim();
+        return firstSentence || 'untitled';
     }
 
     function updateTotal() {

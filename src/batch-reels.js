@@ -4476,6 +4476,13 @@ function _reelsUpdatePreviewInternal() {
         }
     }
 
+    const subtitleToggle = document.getElementById('reels-subtitle-toggle');
+    const showSubtitle = !subtitleToggle || subtitleToggle.checked;
+    const showOverlay = _isReelsOverlayToggleEnabled();
+    const showDecor = _isReelsDecorToggleEnabled();
+    const rangeToggle = document.getElementById('reels-show-subtitle-range');
+    const showSubtitleRange = !rangeToggle || rangeToggle.checked;
+
     let cycleTime = _getPreviewCurrentTime();
     // Subtract hook and cover duration so content time starts at 0 after hook ends
     const _hookDur = _reelsState.hookDuration || 0;
@@ -4487,19 +4494,14 @@ function _reelsUpdatePreviewInternal() {
         cycleTime = Math.max(0, cycleTime - _hookDur - _coverDur);
     }
     if (!(cycleTime > 0)) {
-        // 检查是否有媒体正在播放
-        const video = document.getElementById('reels-preview-video');
-        const audio = document.getElementById('reels-preview-audio');
-        const isMediaPlaying = _isPreviewMediaPlaying(video) || _isPreviewMediaPlaying(audio);
-
-        if (isMediaPlaying) {
-            // 媒体正在播放但 currentTime 尚为0，等下一帧
-            cycleTime = 0;
-        } else {
-            // 没有媒体在播放 → 静止在 time=0 (不再自动循环)
-            cycleTime = 0;
-        }
+        cycleTime = 0;
     }
+
+    const _introDelay = (!inCoverEditMode && !_inHookPhase && !_inCoverPhase)
+        ? _getTaskIntroDelaySec(_selectedTask, { showOverlay, showDecor })
+        : 0;
+    const _inIntroLeadIn = _introDelay > 0 && cycleTime < _introDelay;
+    const bodyCycleTime = _introDelay > 0 ? (cycleTime - _introDelay) : cycleTime;
 
     const demoWords = previewText.split(/\s+/).filter(Boolean);
     const wordCount = demoWords.length || 1;
@@ -4521,12 +4523,12 @@ function _reelsUpdatePreviewInternal() {
     // If an actual task and segment exists, try to sync it.
     // For now, render exactly what the user inputs as a test segment if no timeline clip matches.
     // A more sophisticated system will find the correct segment based on video.currentTime
-    let activeSegment = (_inHookPhase || _inCoverPhase) ? null : segment; // Hook 或 Cover 阶段不显示字母
+    let activeSegment = (_inHookPhase || _inCoverPhase || _inIntroLeadIn) ? null : segment; // Hook / Cover / Intro 留白阶段不显示正文 T 字幕
     const taskForAudio = _getSelectedTask();
     const aDurScale = taskForAudio && taskForAudio.audioDurScale ? taskForAudio.audioDurScale / 100 : 1;
-    const audioCycleTime = cycleTime / aDurScale;
+    const audioCycleTime = Math.max(0, bodyCycleTime) / aDurScale;
 
-    if (_reelsState.selectedIdx !== -1 && taskForAudio) {
+    if (!_inHookPhase && !_inCoverPhase && !_inIntroLeadIn && _reelsState.selectedIdx !== -1 && taskForAudio) {
         const segs = taskForAudio.segments || [];
         // Find segment
         const s = segs.find(s => audioCycleTime >= s.start && audioCycleTime <= s.end);
@@ -4547,13 +4549,6 @@ function _reelsUpdatePreviewInternal() {
             activeSegment = null;
         }
     }
-
-    const subtitleToggle = document.getElementById('reels-subtitle-toggle');
-    const showSubtitle = !subtitleToggle || subtitleToggle.checked;
-    const showOverlay = _isReelsOverlayToggleEnabled();
-    const showDecor = _isReelsDecorToggleEnabled();
-    const rangeToggle = document.getElementById('reels-show-subtitle-range');
-    const showSubtitleRange = !rangeToggle || rangeToggle.checked;
 
     // 可按任务决定覆层与动态字幕的前后关系；默认保持旧项目的“覆层在上”。
     // 点缀与颗粒层(decor)和插片轨(_insertClip)固定位于视频素材前面、T字幕与普通覆层后面（中间层，绝不遮挡字幕）。
@@ -4592,8 +4587,12 @@ function _reelsUpdatePreviewInternal() {
             });
             for (const ov of sorted) {
                 ov._allOverlays = allEnabledOverlays;
+                const isBodyOv = !ov.is_intro_countdown && ov.type !== 'intro_countdown' && ov.type !== 'decor' && !ov._insertClip && !ov.intro_keep_visible;
+                if (_introDelay > 0 && isBodyOv && bodyCycleTime < 0 && !(_reelsState._scrollPreviewEnd && ov.type === 'scroll')) {
+                    continue;
+                }
                 // "显示终点" 模式：滚动字幕用终点时间渲染
-                let ovTime = cycleTime;
+                let ovTime = (_introDelay > 0 && isBodyOv) ? bodyCycleTime : cycleTime;
                 if (_reelsState._scrollPreviewEnd && ov.type === 'scroll') {
                     ovTime = parseFloat(ov.end || 10); // 用 end 时间，确保在时间范围内
                 }
@@ -4609,11 +4608,14 @@ function _reelsUpdatePreviewInternal() {
                     });
                 }
 
-                const offset = (_reelsState.hookDuration || 0) + (_selectedTask?.cover?.enabled ? (Number(_selectedTask.cover.duration) || .01) : 0);
+                const offset = (_reelsState.hookDuration || 0) + (_selectedTask?.cover?.enabled ? (Number(_selectedTask.cover.duration) || .01) : 0) + (_introDelay > 0 && isBodyOv ? _introDelay : 0);
                 const bodyDuration = Math.max(0, _getPreviewDuration() - offset);
-                const renderOv = window.ReelsScrollTiming?.renderingOverlay(ov, _selectedTask, {
+                const baseRenderOv = window.ReelsScrollTiming?.renderingOverlay(ov, _selectedTask, {
                     bodyDuration, mediaDurations: _reelsState._mediaDurations,
                 }) || ov;
+                const renderOv = (baseRenderOv.type === 'intro_countdown' || baseRenderOv.is_intro_countdown)
+                    ? { ...baseRenderOv, _previewPlaying: Boolean(isMediaPlaying || _reelsState.mockPlaying) }
+                    : baseRenderOv;
                 if (ov.type === 'scroll' && Number.isFinite(Number(renderOv.end))) {
                     ov._scrollResolvedEndTime = Number(renderOv.end);
                 }
@@ -4700,8 +4702,29 @@ function _reelsUpdatePreviewInternal() {
         _updatePreviewTimeUI(cTime, dDur);
     }
 
-    // ── Hook → Main 自动切换 ──
+    // ── Hook → Main / Intro 留白 → 朗读自动切换 ──
     _syncHookPhaseTransition();
+
+    // 当开启了开场留白推迟人声且开启循环播放时，到达片尾后自动重启 0.00s（因为 audio.loop 已让位于整片时钟循环）
+    if (_isPreviewLoopEnabled() && dDur > 0 && cTime >= dDur - 0.03 && _getTaskIntroDelaySec(_getSelectedTask()) > 0) {
+        const audio = document.getElementById('reels-preview-audio');
+        const video = document.getElementById('reels-preview-video');
+        const fadeVideo = _reelsState.previewFadeVideo;
+        const bgmAudio = _reelsState._bgmAudioEl;
+        const btn = document.getElementById('reels-preview-play');
+        const isPlaying = _isPreviewMediaPlaying(audio) || _isPreviewMediaPlaying(video) || _reelsState.mockPlaying;
+        if (isPlaying) {
+            if (audio && !audio.paused) audio.pause();
+            if (audio) audio.currentTime = 0;
+            if (video) video.currentTime = 0;
+            if (fadeVideo) fadeVideo.currentTime = 0;
+            if (bgmAudio && _selectedTask) bgmAudio.currentTime = _getTaskBgmStart(_selectedTask);
+            _reelsState.mockPausedTime = 0;
+            _reelsState.mockPlaying = true;
+            _reelsState.mockStartTime = performance.now() / 1000;
+            if (btn) btn.textContent = '⏸️';
+        }
+    }
 
     // 检查是否到达终点以自动停止
     if (!_isPreviewLoopEnabled() && dDur > 0 && cTime >= dDur) {
@@ -7552,6 +7575,17 @@ function _isPreviewLoopEnabled() {
     return el ? !!el.checked : true;
 }
 
+function _getTaskIntroDelaySec(task, customOptions = {}) {
+    if (!task || typeof window === 'undefined' || !window.ReelsOverlay?.getIntroDelaySec) return 0;
+    const showOverlay = customOptions.showOverlay !== undefined ? customOptions.showOverlay : _isReelsOverlayToggleEnabled();
+    const showDecor = customOptions.showDecor !== undefined ? customOptions.showDecor : _isReelsDecorToggleEnabled();
+    const isCurrent = task === _getSelectedTask();
+    const ovs = (isCurrent && _reelsState.overlayProxy?.overlayMgr?.overlays)
+        ? _reelsState.overlayProxy.overlayMgr.overlays
+        : (task.overlays || []);
+    return window.ReelsOverlay.getIntroDelaySec(ovs, { showOverlay, showDecor });
+}
+
 function _applyPreviewLoopMode() {
     const enabled = _isPreviewLoopEnabled();
     const task = _getSelectedTask();
@@ -7561,11 +7595,12 @@ function _applyPreviewLoopMode() {
     const bgm = _reelsState._bgmAudioEl;
 
     const hasAudio = _hasTaskVoiceAudio(task, audio);
+    const introDelay = _getTaskIntroDelaySec(task);
     const previewBg = _resolvePreviewBackgroundPath(task);
     const hasVideo = !!(task && !previewBg.isMulti && previewBg.path && !_isImagePath(previewBg.path) && video && video.src);
     const hasCvVideo = !!(task && task.contentVideoPath && cvVideo && cvVideo.src);
 
-    if (audio) audio.loop = enabled && hasAudio;
+    if (audio) audio.loop = enabled && hasAudio && !(introDelay > 0);
     if (video) video.loop = hasVideo && (enabled || hasAudio || _getPreviewDuration() > (_getVideoDuration(task) || 0) + 0.1);
     if (cvVideo) cvVideo.loop = hasCvVideo && (enabled || hasAudio || _getPreviewDuration() > (_getContentVideoDuration(task) || 0) + 0.1);
     if (bgm) bgm.loop = true;
@@ -7581,12 +7616,13 @@ function _getPreviewCurrentTime() {
     const hookDur = _reelsState.hookDuration || 0;
     const coverDur = (task && task.cover && task.cover.enabled) ? (parseFloat(task.cover.duration) || 0.01) : 0;
     const offsetDur = hookDur + coverDur;
+    const introDelay = _getTaskIntroDelaySec(task);
 
     if (_isPreviewSeekLocked()) {
         return _reelsState.previewSeekLock.target;
     }
 
-    // When mock clock is running (Cover/Hook phases, or no-media mode), use it as primary
+    // When mock clock is running (Cover/Hook phases, Intro lead-in, or no-media mode), use it as primary
     if (_reelsState.mockPlaying) {
         const elapsed = Math.max(0, (performance.now() / 1000) - (_reelsState.mockStartTime || 0));
         if (_isPreviewLoopEnabled()) {
@@ -7605,7 +7641,8 @@ function _getPreviewCurrentTime() {
             t = Math.max(0, t - trimStart);
         }
         const aDurScale = _getEffectiveTaskVoiceDurScale(task) / 100;
-        return (t * aDurScale) + offsetDur;
+        const voiceShift = (master.id === 'reels-preview-audio') ? introDelay : 0;
+        return (t * aDurScale) + offsetDur + voiceShift;
     }
 
     // Paused state (initial, after seek, after user pause): use saved position
@@ -7617,6 +7654,7 @@ function _getPreviewPlaybackTimeForPause() {
     const hookDur = _reelsState.hookDuration || 0;
     const coverDur = (task && task.cover && task.cover.enabled) ? (parseFloat(task.cover.duration) || 0.01) : 0;
     const offsetDur = hookDur + coverDur;
+    const introDelay = _getTaskIntroDelaySec(task);
 
     if (_reelsState.mockPlaying) {
         const elapsed = Math.max(0, (performance.now() / 1000) - (_reelsState.mockStartTime || 0));
@@ -7642,7 +7680,8 @@ function _getPreviewPlaybackTimeForPause() {
             t = Math.max(0, t - trimStart);
         }
         const aDurScale = _getEffectiveTaskVoiceDurScale(task) / 100;
-        return (t * aDurScale) + offsetDur;
+        const voiceShift = (master.id === 'reels-preview-audio') ? introDelay : 0;
+        return (t * aDurScale) + offsetDur + voiceShift;
     }
 
     return _reelsState.mockPausedTime || 0;
@@ -7706,9 +7745,11 @@ function _getPreviewDuration() {
     const hookDur = _reelsState.hookDuration || 0;
     const coverDur = (task && task.cover && task.cover.enabled) ? (parseFloat(task.cover.duration) || 0.01) : 0;
     const offsetDur = hookDur + coverDur;
+    const introDelay = _getTaskIntroDelaySec(task);
+    const bodyOffsetDur = offsetDur + introDelay;
 
     if (maxFlipperDuration > 0) {
-        return maxFlipperDuration + offsetDur;
+        return maxFlipperDuration + bodyOffsetDur;
     }
 
     // 自定义时长优先
@@ -7716,11 +7757,11 @@ function _getPreviewDuration() {
     const globalCustomDuration = parseFloat(globalCustomEl ? globalCustomEl.value : '0') || 0;
     const effectiveCustomDuration = resolveReelsCustomDuration(task, globalCustomDuration);
     if (effectiveCustomDuration > 0) {
-        return effectiveCustomDuration + offsetDur;
+        return effectiveCustomDuration + bodyOffsetDur;
     }
     // 有音频时以变速后的音频时长为准（背景自动循环）
     if (scaledADur > 0) {
-        return scaledADur + offsetDur;
+        return scaledADur + bodyOffsetDur;
     }
 
     // ── 内容视频 (Content Video) 时长优先于背景 ──
@@ -7743,13 +7784,13 @@ function _getPreviewDuration() {
         }
     }
     if (cvDur > 0) {
-        return Math.max(cvDur, subDur) + offsetDur;
+        return Math.max(cvDur, subDur) + bodyOffsetDur;
     }
 
     if (task && task.bgMode === 'multi' && _getEffectiveBgClipPool(task).length > 0) {
         const isCardingMode = task.bgClipOrder === 'random_align' || task.bgClipOrder === 'sequence_align';
         if (isCardingMode && subDur > 0) {
-            return subDur + offsetDur;
+            return subDur + bodyOffsetDur;
         }
         const pool = _getPreviewMultiClipPool(task);
         const rawMultiDur = pool.reduce((sum, path) => {
@@ -7757,14 +7798,15 @@ function _getPreviewDuration() {
         }, 0);
         const transOverlap = task.bgTransition !== 'none' ? (parseFloat(task.bgTransDur) || 0.5) : 0;
         const multiDur = Math.max(0.5, rawMultiDur - transOverlap * Math.max(0, pool.length - 1));
-        if (multiDur > 0) return Math.max(multiDur, subDur) + offsetDur;
+        if (multiDur > 0) return Math.max(multiDur, subDur > 0 ? subDur + introDelay : 0) + offsetDur;
     }
 
     // 无音频、无覆层视频时以背景视频时长为准，若仍无时长则推算虚拟进度
     const bDurScale = (task && task.bgDurScale) ? (task.bgDurScale / 100) : 1;
     // 由“文案自动剪辑”送入的任务会在接收时直接记录导出成片时长，避免
     // 媒体元数据尚未异步读取完成时，预览错误地退回到字幕最后一句的时间。
-    const baseDur = Math.max(vDur * bDurScale, Number(task?.duration) || 0, subDur, 0);
+    const shiftedSubDur = subDur > 0 ? (subDur + introDelay) : 0;
+    const baseDur = Math.max(vDur * bDurScale, Number(task?.duration) || 0, shiftedSubDur, introDelay, 0);
     if (baseDur <= 0 && !_getPreviewMasterElement()) {
         let maxOverlayEnd = 0;
         if (_reelsState.overlayProxy && _reelsState.overlayProxy.overlayMgr) {
@@ -8575,7 +8617,7 @@ function _syncBackgroundVideoToMaster() {
             try { video.currentTime = target; } catch (e) { }
         }
         // 某些容器在 ended 后会暂停，手动拉起继续播，保证背景持续循环。
-        if (audio && !audio.paused && video.paused) {
+        if ((_reelsState.mockPlaying || (audio && !audio.paused)) && video.paused) {
             video.play().catch(() => { });
         }
 
@@ -8658,7 +8700,11 @@ function _updateTimelineForTask(task) {
             const rawBackgroundDuration = isVoicedSingleVideo
                 ? Math.max(_getVideoDuration(task), Number(task.duration) || 0, subtitleDuration)
                 : _getVideoDuration(task);
-            const outputDuration = Math.max(subtitleDuration, _getAudioDuration(task), _getContentVideoDuration(task), Number(task.duration) || 0, task.customDuration || 0, rawBackgroundDuration || 0, 1);
+            const introDelayForTimeline = _getTaskIntroDelaySec(task);
+            const aDurScaleForTimeline = task.audioDurScale ? (task.audioDurScale / 100) : 1;
+            const voiceTimelineDur = (_getAudioDuration(task) * aDurScaleForTimeline) + (introDelayForTimeline > 0 && _getAudioDuration(task) > 0 ? introDelayForTimeline : 0);
+            const subTimelineDur = subtitleDuration > 0 ? (subtitleDuration + introDelayForTimeline) : 0;
+            const outputDuration = Math.max(subTimelineDur, voiceTimelineDur, _getContentVideoDuration(task) + introDelayForTimeline, Number(task.duration) || 0, task.customDuration ? Number(task.customDuration) + introDelayForTimeline : 0, rawBackgroundDuration || 0, introDelayForTimeline, 1);
             if (backgroundPath) {
                 const loopDuration = rawBackgroundDuration > 0.05 ? rawBackgroundDuration : outputDuration;
                 for (let start = 0, index = 0; start < outputDuration - 0.001; start += loopDuration, index++) {
@@ -8675,10 +8721,11 @@ function _updateTimelineForTask(task) {
                 }
             }
         }
+        const introDelayOpt = _getTaskIntroDelaySec(task);
         const tracks = window.ReelsRenderPlan.getEditorTracks(task, {
             // 媒体元数据还没读到时，字幕末尾仍能给出可靠的整片长度，避免
             // 主视频/人声在时间线中退化为 0 秒的细竖条。
-            duration: Math.max(_getAudioDuration(task), _getVideoDuration(task), _getContentVideoDuration(task), Number(task.duration) || 0, subtitleDuration, task.customDuration || 0, 1),
+            duration: Math.max((_getAudioDuration(task) > 0 ? _getAudioDuration(task) + introDelayOpt : 0), _getVideoDuration(task), _getContentVideoDuration(task) + introDelayOpt, Number(task.duration) || 0, (subtitleDuration > 0 ? subtitleDuration + introDelayOpt : 0), task.customDuration ? Number(task.customDuration) + introDelayOpt : 0, introDelayOpt, 1),
             width: _reelsState.targetWidth || 1080,
             height: _reelsState.targetHeight || 1920,
             backgroundSegments,
@@ -10940,7 +10987,7 @@ function reelsSelectTask(idx, options = {}) {
             prevTask.overlays = [...(_reelsState.overlayProxy.overlayMgr.overlays || [])];
         }
         // 若点缀面板勾选了“同步”且上一任务已有 decor 图层或邀约电话，切换任务前自动确保作用范围内任务均已同步
-        if (!_reelsState._coverEditMode && (prevTask.overlays || []).some(o => o && (o.type === 'decor' || o.is_phone_cta))) {
+        if (!_reelsState._coverEditMode && (prevTask.overlays || []).some(o => o && (o.type === 'decor' || o.is_phone_cta || o.is_intro_countdown || o.type === 'intro_countdown'))) {
             if (_reelsState.decorPanel && typeof _reelsState.decorPanel._syncDecorStackToScopeTasks === 'function') {
                 _reelsState.decorPanel._syncDecorStackToScopeTasks();
             }
@@ -11673,9 +11720,11 @@ function reelsTogglePlay() {
 
     const hookDur = _reelsState.hookDuration || 0;
     const coverDur = (task && task.cover && task.cover.enabled) ? (parseFloat(task.cover.duration) || 0.01) : 0;
+    const introDelay = _getTaskIntroDelaySec(task);
     
     const inCoverPhase = coverDur > 0 && curT < coverDur;
     const inHookPhase = hookDur > 0 && curT >= coverDur && curT < (coverDur + hookDur);
+    const inIntroLeadPhase = !inCoverPhase && !inHookPhase && introDelay > 0 && curT < (coverDur + hookDur + introDelay);
 
     if (inCoverPhase) {
         if (hasHook && hookVideo) hookVideo.pause();
@@ -11693,6 +11742,29 @@ function reelsTogglePlay() {
         // 主音视频暂不播放（Hook 结束后由 _syncHookPhaseTransition 启动）
         if (!hasMedia) {
             // 就用 mock 时钟
+        }
+    } else if (inIntroLeadPhase) {
+        // ── 开场倒计时留白期：背景视频 & BGM 连播，人声暂停在 0s 等候 ──
+        if (hasHook && hookVideo) hookVideo.pause();
+        if (hasAudio && audio) {
+            if (!audio.paused) audio.pause();
+            try { audio.currentTime = 0; } catch (_) {}
+        }
+        _reelsState.mockPlaying = true;
+        _reelsState.mockStartTime = (performance.now() / 1000) - curT;
+        if (hasVideo && video) {
+            const bDurScale = (task && task.bgDurScale) || 100;
+            video.playbackRate = (bDurScale !== 100) ? (100 / bDurScale) : 1.0;
+            const vDur = _getVideoDuration(task);
+            const relBgT = Math.max(0, curT - coverDur - hookDur);
+            if (vDur > 0) {
+                try { video.currentTime = relBgT % vDur; } catch (_) {}
+            }
+            video.play().catch(() => { });
+            if (fadeVideo) {
+                fadeVideo.playbackRate = video.playbackRate;
+                fadeVideo.play().catch(() => { });
+            }
         }
     } else {
         // ── 正片阶段：正常播放 ──
@@ -11716,7 +11788,7 @@ function reelsTogglePlay() {
                 
                 const vDur = _getVideoDuration(task);
                 if (hasAudio && task && vDur > 0) {
-                    try { video.currentTime = (audio.currentTime || 0) % vDur; } catch (e) { }
+                    try { video.currentTime = ((audio.currentTime || 0) * ((_getEffectiveTaskVoiceDurScale(task) || 100) / 100) + introDelay) % vDur; } catch (e) { }
                 }
                 video.play().catch(() => { });
                 if (fadeVideo && hasAudio && task && task.audioPath) {
@@ -11732,9 +11804,9 @@ function reelsTogglePlay() {
         }
     }
 
-    // ── 同步播放 BGM (仅正片阶段) ──
+    // ── 同步播放 BGM (开场 & 正片全程连播) ──
     if (!inHookPhase && bgmAudio && bgmAudio.src && task && _getEffectiveBgmPath(task, _reelsState.selectedIdx)) {
-        const bgmTime = _getTaskBgmStart(task) + (_getPreviewCurrentTime() || 0);
+        const bgmTime = _getTaskBgmStart(task) + Math.max(0, (_getPreviewCurrentTime() || 0) - coverDur - hookDur);
         bgmAudio.currentTime = bgmAudio.duration > 0 ? bgmTime % bgmAudio.duration : bgmTime;
         bgmAudio.play().catch(() => { });
     }
@@ -11755,11 +11827,14 @@ function _syncHookPhaseTransition() {
     const hookVideo = document.getElementById('reels-preview-hook-video');
     const coverDur = (task.cover && task.cover.enabled) ? (parseFloat(task.cover.duration) || 0.01) : 0;
     const hookDur = _reelsState.hookDuration || 0;
+    const introDelay = _getTaskIntroDelaySec(task);
     
-    if (coverDur <= 0 && hookDur <= 0) return;
+    if (coverDur <= 0 && hookDur <= 0 && introDelay <= 0) return;
 
     const inHookPhase = hookDur > 0 && curT >= coverDur && curT < (coverDur + hookDur);
-    const inMainPhase = curT >= (coverDur + hookDur);
+    const mainOffset = coverDur + hookDur;
+    const inIntroLeadPhase = introDelay > 0 && curT >= mainOffset && curT < (mainOffset + introDelay);
+    const inMainPhase = curT >= (mainOffset + introDelay);
 
     if (_reelsState.mockPlaying) {
         // 进入 Hook 阶段
@@ -11767,8 +11842,24 @@ function _syncHookPhaseTransition() {
             hookVideo.playbackRate = task.hookSpeed || 1.0;
             hookVideo.play().catch(() => { });
         }
+
+        // 从 Cover/Hook 进入开场留白阶段：先开启背景与 BGM 连播
+        if (inIntroLeadPhase) {
+            const video = document.getElementById('reels-preview-video');
+            const bgmAudio = _reelsState._bgmAudioEl;
+            const previewBg = _resolvePreviewBackgroundPath(task);
+            const hasVideo = !!(task && !previewBg.isMulti && previewBg.path && !_isImagePath(previewBg.path) && video && video.src && !(task.contentVideoDirectBg && task.contentVideoPath));
+            if (hasVideo && video.paused) {
+                const bDurScale = task.bgDurScale || 100;
+                video.playbackRate = (bDurScale !== 100) ? (100 / bDurScale) : 1.0;
+                video.play().catch(() => { });
+            }
+            if (bgmAudio && bgmAudio.src && bgmAudio.paused && _getEffectiveBgmPath(task, _reelsState.selectedIdx)) {
+                bgmAudio.play().catch(() => { });
+            }
+        }
         
-        // 进入 主视频 阶段
+        // 进入 正片朗读 阶段
         if (inMainPhase) {
             if (hookVideo && !hookVideo.paused) hookVideo.pause();
 
@@ -11787,9 +11878,9 @@ function _syncHookPhaseTransition() {
         const transDur = hookTransition !== 'none' ? (task.hookTransDuration || 0.5) : 0;
 
         if (hasAudio && audio) {
-            // 有转场时，正片从转场重叠量开始（与 FFmpeg acrossfade 一致）
+            // 有转场时，正片从转场重叠量开始（与 FFmpeg acrossfade 一致）；若经过了开场留白，则正片人声从 0s 开始
             const voiceDur = ((task && task.audioPath) ? _getAudioDuration(task) : _getVideoDuration(task)) || 0;
-            audio.currentTime = transDur > 0 ? Math.min(transDur, voiceDur) : 0;
+            audio.currentTime = (introDelay <= 0 && transDur > 0) ? Math.min(transDur, voiceDur) : 0;
             const aDurScale = _getEffectiveTaskVoiceDurScale(task);
             audio.playbackRate = (aDurScale !== 100) ? (100 / aDurScale) : 1.0;
             audio.preservesPitch = true;
@@ -11798,9 +11889,11 @@ function _syncHookPhaseTransition() {
         if (hasVideo && video) {
             const bDurScale = task.bgDurScale || 100;
             video.playbackRate = (bDurScale !== 100) ? (100 / bDurScale) : 1.0;
-            video.currentTime = 0;
-            video.play().catch(() => { });
-            if (fadeVideo && task && task.audioPath) {
+            if (introDelay <= 0) {
+                video.currentTime = 0;
+            }
+            if (video.paused) video.play().catch(() => { });
+            if (fadeVideo && task && task.audioPath && fadeVideo.paused) {
                 fadeVideo.playbackRate = video.playbackRate;
                 fadeVideo.play().catch(() => { });
             }
@@ -11809,7 +11902,7 @@ function _syncHookPhaseTransition() {
         // 覆层视频作为 master 时也要启动播放
         const cvEl = document.getElementById('reels-preview-contentvideo');
         if (cvEl && cvEl.src && cvEl.paused) {
-            cvEl.currentTime = 0;
+            if (introDelay <= 0) cvEl.currentTime = 0;
             cvEl.play().catch(() => { });
         }
 
@@ -11822,12 +11915,12 @@ function _syncHookPhaseTransition() {
 
         // 启动 BGM
         const bgmAudio = _reelsState._bgmAudioEl;
-        if (bgmAudio && bgmAudio.src && task && _getEffectiveBgmPath(task, _reelsState.selectedIdx)) {
+        if (bgmAudio && bgmAudio.src && bgmAudio.paused && task && _getEffectiveBgmPath(task, _reelsState.selectedIdx)) {
             bgmAudio.currentTime = bgmAudio.duration > 0 ? _getTaskBgmStart(task) % bgmAudio.duration : _getTaskBgmStart(task);
             bgmAudio.play().catch(() => { });
         }
 
-        console.log(`[Preview] Hook phase ended (transition: ${hookTransition}, transDur: ${transDur}s), starting main content`);
+        console.log(`[Preview] ${introDelay > 0 ? 'Intro countdown' : 'Hook'} ended, starting main reading`);
         }
     }
 }
@@ -12126,12 +12219,20 @@ function _actualSeek(e) {
 
     // ── Main content seek (offset by hookDur + coverDur) ──
     const contentTarget = hookDur > 0 || coverDur > 0 ? Math.max(0, target - hookDur - coverDur) : target;
+    const introDelay = _getTaskIntroDelaySec(task);
+    const bodyTarget = introDelay > 0 ? Math.max(0, contentTarget - introDelay) : contentTarget;
 
     const hasAudio = _hasTaskVoiceAudio(task, audio);
     const aDur = (task && task.audioPath) ? _getAudioDuration(task) : (hasAudio ? _getVideoDuration(task) : 0);
     if (hasAudio && aDur > 0) {
         const aDurScale = _getEffectiveTaskVoiceDurScale(task) / 100;
-        const audioTarget = Math.max(0, Math.min(contentTarget / Math.max(aDurScale, 0.0001), aDur));
+        const audioTarget = Math.max(0, Math.min(bodyTarget / Math.max(aDurScale, 0.0001), aDur));
+        if (introDelay > 0 && contentTarget < introDelay) {
+            if (audio && !audio.paused) audio.pause();
+            if (document.getElementById('reels-preview-play')?.textContent === '⏸️') {
+                _reelsState.mockPlaying = true;
+            }
+        }
         console.log(`[Seek] Seeking Audio to ${audioTarget.toFixed(3)}s`);
         _queuePreviewMediaSeek(seekedMedia, audio, audioTarget);
     }
@@ -15931,6 +16032,7 @@ async function _reelsStartExportImpl(options = {}) {
                 // ═══ V3 并行影子窗口检测 ═══
                 const cpuCores = navigator.hardwareConcurrency || 4;
                 const parallelConcurrency = Math.min(3, Math.max(1, Math.floor(cpuCores / 2)));
+                const introDelaySec = _getTaskIntroDelaySec(task, { showOverlay, showDecor: _isReelsDecorToggleEnabled() });
                 let estimatedDuration = 0;
                 try {
                     let maxFlipperDuration = 0;
@@ -15950,11 +16052,11 @@ async function _reelsStartExportImpl(options = {}) {
                         }
                     }
                     if (maxFlipperDuration > 0) {
-                        estimatedDuration = maxFlipperDuration;
+                        estimatedDuration = maxFlipperDuration + introDelaySec;
                     } else if (task.customDuration > 0) {
-                        estimatedDuration = task.customDuration;
+                        estimatedDuration = task.customDuration + introDelaySec;
                     } else if ((task.audioPath || resolvedVoiceSource) && window.electronAPI.getMediaDuration) {
-                        estimatedDuration = await window.electronAPI.getMediaDuration(task.audioPath || resolvedVoiceSource);
+                        estimatedDuration = (await window.electronAPI.getMediaDuration(task.audioPath || resolvedVoiceSource)) + introDelaySec;
                     }
                     if (!estimatedDuration) {
                         if (task.contentVideoDirectBg && task.contentVideoPath) {
@@ -16163,6 +16265,7 @@ async function _reelsStartExportImpl(options = {}) {
                     contentVideoFlipV: task.contentVideoFlipV || false,
                     bgDurScale: task.bgDurScale || 100,
                     audioDurScale: effectiveAudioDurScale,
+                    voiceDelay: introDelaySec,
                     reverbEnabled: (() => { const rc = _getReverbConfig(); console.log('[Export] Reverb config:', JSON.stringify(rc)); return rc.enabled; })(),
                     reverbPreset: _getReverbConfig().preset,
                     reverbMix: _getReverbConfig().mix,
@@ -17797,7 +17900,7 @@ function _getTaskRenderOverlays(task, customOptions = {}) {
     const filterByToggle = (ov) => {
         if (!ov) return false;
         if (ov._insertClip) return true;
-        if (ov.is_phone_cta) return !ov.disabled && Boolean(showDecor || showOverlay);
+        if (ov.is_phone_cta || ov.is_intro_countdown || ov.type === 'intro_countdown') return !ov.disabled && Boolean(showDecor || showOverlay);
         if (ov.type === 'decor') return Boolean(showDecor);
         return Boolean(showOverlay);
     };

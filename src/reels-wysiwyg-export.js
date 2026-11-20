@@ -568,12 +568,18 @@ async function reelsWysiwygExport(params) {
 
     // 获取时长：优先文字翻转器，其次自定义时长，否则音频时长，否则覆层视频时长，否则背景视频时长
     let duration = 0;
+    const activeIntroOv = window.ReelsOverlay?.getActiveIntroCountdownOverlay?.(taskOverlays) || null;
+    const introEndSec = activeIntroOv ? Math.max(0, Number(activeIntroOv.end) || 0) : 0;
+    const introDelaySec = Number.isFinite(Number(params.voiceDelay))
+        ? Math.max(0, Number(params.voiceDelay))
+        : (window.ReelsOverlay?.getIntroDelaySec?.(taskOverlays) || 0);
     const _audioDurFactor = (audioDurScale || 100) / 100;
     const _bgDurFactor = (bgDurScale || 100) / 100;
     const rawSubDuration = Array.isArray(segments) && segments.length > 0
         ? (parseFloat(segments[segments.length - 1].end) || 0)
         : 0;
     const effectiveSubDuration = voicePath ? rawSubDuration * _audioDurFactor : rawSubDuration;
+    const effectiveShiftedSubDuration = effectiveSubDuration > 0 ? (effectiveSubDuration + introDelaySec) : 0;
     const requireMediaDuration = async (label, mediaPath) => {
         const fileName = String(mediaPath || '').split(/[/\\]/).pop() || '未知文件';
         if (window.electronAPI.getMediaDurationDetail) {
@@ -686,7 +692,7 @@ async function reelsWysiwygExport(params) {
                 const scaledPoolDur = poolTotalDur * _bgDurFactor;
                 const transOverlap = bgTransition !== 'none' ? Math.max(0, bgTransDur || 0) : 0;
                 const overlapTotal = transOverlap > 0 ? transOverlap * Math.max(0, poolClipCount - 1) : 0;
-                duration = Math.max(0.5, scaledPoolDur - overlapTotal, effectiveSubDuration);
+                duration = Math.max(0.5, scaledPoolDur - overlapTotal, effectiveShiftedSubDuration);
                 log(`多素材池有效时长: ${scaledPoolDur.toFixed(2)}s - 转场重叠 ${overlapTotal.toFixed(2)}s = ${duration.toFixed(2)}s`);
             } else if (backgroundPath) {
                 log('正在获取背景视频时长...');
@@ -694,10 +700,10 @@ async function reelsWysiwygExport(params) {
                     ? 5
                     : await requireMediaDuration('背景视频', backgroundPath);
                 if (rawBgDur > 0 && _bgDurFactor !== 1.0) {
-                    duration = Math.max(rawBgDur * _bgDurFactor, effectiveSubDuration);
+                    duration = Math.max(rawBgDur * _bgDurFactor, effectiveShiftedSubDuration);
                     log(`背景原始时长: ${rawBgDur.toFixed(2)}s × ${bgDurScale}% = ${duration.toFixed(2)}s`);
                 } else {
-                    duration = Math.max(rawBgDur, effectiveSubDuration);
+                    duration = Math.max(rawBgDur, effectiveShiftedSubDuration);
                 }
                 const scaledExpectedBgDur = (Number(expectedDuration) || 0) * _bgDurFactor;
                 if (isAutoEditTask && scaledExpectedBgDur > duration) {
@@ -708,15 +714,27 @@ async function reelsWysiwygExport(params) {
         }
         if (!duration || duration <= 0) {
             // 图片背景无音频时默认 5 秒
-            duration = 5;
+            duration = Math.max(5, effectiveShiftedSubDuration);
             log(`无法获取时长，使用默认 ${duration}s`);
+        } else if (introDelaySec > 0 && (maxFlipperDuration > 0 || customDuration > 0 || voicePath || contentVideoPath)) {
+            duration += introDelaySec;
         }
+    }
+    if (maxFlipperDuration > 0 || customDuration > 0) {
+        if (introDelaySec > 0) duration += introDelaySec;
+    }
+    if (introEndSec > 0 && duration < introEndSec) {
+        duration = introEndSec;
+    }
+    if (introDelaySec > 0) {
+        log(`🎬 开场前置留白: ${introDelaySec.toFixed(2)}s（人声、字幕与正文覆层延后至 ${introDelaySec.toFixed(2)}s 起播，背景连播总时长 ${duration.toFixed(2)}s）`);
     }
     const totalFrames = Math.max(1, Math.round(duration * fps));
     const outputDuration = totalFrames / fps;
-    // Every exported scroll overlay uses this task's actual encoded body duration.
+    // Every exported scroll overlay uses this task's actual encoded body duration (excluding intro delay).
     if (Array.isArray(taskOverlays) && window.ReelsScrollTiming?.renderingOverlay) {
-        taskOverlays = taskOverlays.map(ov => window.ReelsScrollTiming.renderingOverlay(ov, null, { bodyDuration: outputDuration }));
+        const bodyDurationForScroll = Math.max(0.1, outputDuration - introDelaySec);
+        taskOverlays = taskOverlays.map(ov => window.ReelsScrollTiming.renderingOverlay(ov, null, { bodyDuration: bodyDurationForScroll }));
     }
     log(`时长: ${duration.toFixed(2)}s, 帧数: ${totalFrames}, FPS: ${fps}`);
     if (bgScale !== 100) log(`背景缩放: ${bgScale}%`);
@@ -999,6 +1017,7 @@ async function reelsWysiwygExport(params) {
         stereoWidth,
         audioFxTarget,
         insertAudioClips,
+        voiceDelay: introDelaySec,
         useGPU,
         crf,
         qualityPreset,
@@ -1102,6 +1121,8 @@ async function reelsWysiwygExport(params) {
                 throw new Error('__CANCELLED__');
             }
             const t = frameIdx / fps;
+            const bodyTime = introDelaySec > 0 ? (t - introDelaySec) : t;
+            const _isBodyOvTimeSynced = (ov) => Boolean(ov && !ov.is_intro_countdown && ov.type !== 'intro_countdown' && ov.type !== 'decor' && !ov._insertClip && !ov.intro_keep_visible);
 
             // ── 预加载内容视频帧 ──
             if (contentVideoPath && cvFramesDir) {
@@ -1164,11 +1185,12 @@ async function reelsWysiwygExport(params) {
                     if (ov.type === 'video' && !ov.disabled) {
                         const ovStart = parseFloat(ov.start || 0);
                         const ovEnd = parseFloat(ov.end || 9999);
-                        if (t < ovStart || t > ovEnd) {
+                        const ovT = (introDelaySec > 0 && _isBodyOvTimeSynced(ov)) ? bodyTime : t;
+                        if (ovT < ovStart || ovT > ovEnd) {
                             _releaseExportOverlayFrame(ov);
                             continue;
                         }
-                        let relTime = Math.max(0, t - ovStart);
+                        let relTime = Math.max(0, ovT - ovStart);
                         let frameIdxOv = Math.floor(relTime * fps);
                         
                         let fPath = null;
@@ -1277,6 +1299,7 @@ async function reelsWysiwygExport(params) {
             // ── 动态字幕 ──
             const renderSubtitle = () => {
                 if (!showSubtitle) return;
+                if (introDelaySec > 0 && bodyTime < 0) return;
                 const hasKineticBackdrop = style.anim_in_type === 'kinetic_glow_stack' &&
                     typeof renderer.renderKineticGlowBackdrop === 'function';
                 if (hasKineticBackdrop) {
@@ -1284,26 +1307,26 @@ async function reelsWysiwygExport(params) {
                 }
                 let activeSeg = null;
                 if (segments && segments.length > 0) {
-                    while (segCursor < segments.length - 1 && (segments[segCursor].end || 0) < t) {
+                    while (segCursor < segments.length - 1 && (segments[segCursor].end || 0) < bodyTime) {
                         segCursor++;
                     }
                     const cand = segments[segCursor];
-                    if (cand && t >= (cand.start || 0) && t <= (cand.end || 0)) {
+                    if (cand && bodyTime >= (cand.start || 0) && bodyTime <= (cand.end || 0)) {
                         activeSeg = cand;
                     } else {
-                        activeSeg = segments.find(seg => t >= (seg.start || 0) && t <= (seg.end || 0));
+                        activeSeg = segments.find(seg => bodyTime >= (seg.start || 0) && bodyTime <= (seg.end || 0));
                     }
                 }
                 // Scrolling/typewriter mode: find nearest segment during gaps (same as preview logic)
                 if (!activeSeg && (style.scrolling_mode || style.fullpage_typewriter || style.anim_in_type === 'rolling_rainbow_karaoke' || style.anim_in_type === 'rolling_quill_karaoke') && segments.length > 0) {
                     let best = segments[0];
                     for (const seg of segments) {
-                        if ((seg.start || 0) <= t) best = seg;
+                        if ((seg.start || 0) <= bodyTime) best = seg;
                     }
                     activeSeg = best;
                 }
                 if (activeSeg) {
-                    renderer.renderSubtitle(style, activeSeg, t, designW, designH, false, hasKineticBackdrop);
+                    renderer.renderSubtitle(style, activeSeg, bodyTime, designW, designH, false, hasKineticBackdrop);
                 }
             };
 
@@ -1313,16 +1336,17 @@ async function reelsWysiwygExport(params) {
                     ov._allOverlays = taskOverlays;
                     const ovStart = parseFloat(ov.start || 0);
                     const ovEnd = parseFloat(ov.end || 9999);
+                    const ovT = (introDelaySec > 0 && _isBodyOvTimeSynced(ov)) ? bodyTime : t;
                     // scroll 覆层不受 end 限制（动画完成后保持最终位置）
-                    if (t >= ovStart && (ov.type === 'scroll' || t <= ovEnd)) {
+                    if (ovT >= ovStart && (ov.type === 'scroll' || ovT <= ovEnd)) {
                         // 导出时不画辅助线和选中框
                         const origSelected = ov._selected;
                         try {
                             ov._selected = false;
                             ov._exporting = true;
-                            ov._exportDuration = duration; // 让 scroll 覆层知道实际导出时长
+                            ov._exportDuration = Math.max(0.1, duration - (_isBodyOvTimeSynced(ov) ? introDelaySec : 0)); // 让 scroll 覆层知道实际正文时长
                             ov._taskSegments = segments;
-                            ReelsOverlay.drawOverlay(ctx, ov, t, designW, designH);
+                            ReelsOverlay.drawOverlay(ctx, ov, ovT, designW, designH);
                         } finally {
                             ov._selected = origSelected;
                             delete ov._exporting;

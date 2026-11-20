@@ -73,8 +73,14 @@ class PresetThumbRenderer {
                 }
             }
 
-            // 时间置零以显示初始状态
-            const currentTime = Math.max(parseFloat(renderOv.start || 0), 0);
+            // 缩略图静止时间选择：倒计时开场展示 65% 弧线与星芒，含入场动画的卡片展示入场完成态
+            let currentTime = Math.max(parseFloat(renderOv.start || 0), 0);
+            if (renderOv.type === 'intro_countdown' || renderOv.is_intro_countdown) {
+                const dur = Math.max(0.6, Number(renderOv.end || 3.0) - currentTime);
+                currentTime += dur * 0.65;
+            } else if (renderOv.anim_in_type && renderOv.anim_in_type !== 'none') {
+                currentTime += Math.max(0.5, Number(renderOv.anim_in_duration || 0.3));
+            }
 
             if (typeof ReelsOverlay !== 'undefined' && ReelsOverlay.drawOverlay) {
                 ReelsOverlay.drawOverlay(ctx, renderOv, currentTime, 1080, 1920);

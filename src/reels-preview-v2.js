@@ -1222,6 +1222,7 @@
         const task = getTask();
         const phase = getPhaseInfo(time, task);
         const mainTime = phase.mainTime;
+        const bodyTime = phase.bodyTime != null ? phase.bodyTime : mainTime;
         const bgDur = mediaDuration(state.bgVideo);
         const audioDur = mediaDuration(state.audio);
         const bgmDur = mediaDuration(state.bgmAudio);
@@ -1232,7 +1233,7 @@
         const isMultiBg = isMultiBackgroundTask(task);
 
         if (state.audio.src && audioDur > 0) {
-            setMediaTime(state.audio, clamp(mainTime / getAudioDurationScale(task), 0, audioDur));
+            setMediaTime(state.audio, clamp(bodyTime / getAudioDurationScale(task), 0, audioDur));
         }
         if (!isMultiBg && state.bgVideo.src && bgDur > 0) {
             const bgTime = mainTime / getBgDurationScale(task);
@@ -1317,7 +1318,7 @@
         }
         state.coverVideo?.pause();
         state.hookVideo?.pause();
-        playMainMedia(task);
+        playMainMedia(task, phase);
     }
 
     function pauseMainMedia() {
@@ -1328,11 +1329,18 @@
         state.contentVideo?.pause();
     }
 
-    function playMainMedia(task) {
+    function playMainMedia(task, phase = null) {
         if (state.audioCtx && state.audioCtx.state === 'suspended') {
             state.audioCtx.resume().catch(() => {});
         }
-        if (state.audio.src && task && task.audioPath && state.audio.paused) state.audio.play().catch(() => {});
+        if (phase && phase.inIntroLead) {
+            if (state.audio && !state.audio.paused) state.audio.pause();
+            if (state.audio && state.audio.src) {
+                try { state.audio.currentTime = 0; } catch (_) {}
+            }
+        } else if (state.audio.src && task && task.audioPath && state.audio.paused) {
+            state.audio.play().catch(() => {});
+        }
         if (state.bgVideo.src && state.bgVideo.paused) state.bgVideo.play().catch(() => {});
         if (state.bgFadeVideo.src && state.bgFadeVideo.paused) state.bgFadeVideo.play().catch(() => {});
         if (state.contentVideo.src && state.contentVideo.paused) state.contentVideo.play().catch(() => {});
@@ -1398,9 +1406,10 @@
         syncMediaWhilePlaying(t);
         const phase = getPhaseInfo(t, task);
         const drawTime = phase.mainTime;
+        const bodyTime = phase.bodyTime != null ? phase.bodyTime : drawTime;
         const overlayTime = phase.inCover ? phase.time : drawTime;
-        // 与原始预览一致：配音时长缩放后，用原始音频时间查找/渲染字幕。
-        const subtitleTime = drawTime / getAudioDurationScale(task);
+        // 与原始预览一致：配音时长缩放后，用原始音频时间查找/渲染字幕（含开场留白推迟）。
+        const subtitleTime = bodyTime / getAudioDurationScale(task);
 
         ctx.clearRect(0, 0, w, h);
         drawBackground(ctx, task, w, h, phase);
@@ -1775,7 +1784,7 @@
             // This is an editing guide, not subtitle content. Keep it visible
             // through subtitle gaps (and cover/hook phases) whenever enabled.
             drawSubtitleRange(ctx, style, w, h);
-            if (!show || phase.inCover || phase.inHook) return;
+            if (!show || phase.inCover || phase.inHook || phase.inIntroLead) return;
             const hasKineticBackdrop = style.anim_in_type === 'kinetic_glow_stack' &&
                 typeof state.renderer.renderKineticGlowBackdrop === 'function';
             if (hasKineticBackdrop) {
@@ -1828,7 +1837,7 @@
         const filterByToggle = (ov) => {
             if (!ov) return false;
             if (ov._insertClip) return true;
-            if (ov.is_phone_cta) return !ov.disabled && Boolean(showDecor || showOverlay);
+            if (ov.is_phone_cta || ov.is_intro_countdown || ov.type === 'intro_countdown') return !ov.disabled && Boolean(showDecor || showOverlay);
             if (ov.type === 'decor') return showDecor;
             return showOverlay;
         };
@@ -1843,6 +1852,13 @@
             ? window.ReelsRenderPlan.getCompositedOverlays(task, { width: w, height: h }).filter(filterByToggle)
             : [...inserts, ...overlays.filter(filterByToggle)];
         const drawable = allEnabled.filter(filterByPass);
+        const introDelay = Math.max(0, Number(phase?.introDelay) || 0);
+        const resolveOverlayEvalTime = (ov) => {
+            if (!(introDelay > 0) || !ov || ov.is_intro_countdown || ov.type === 'intro_countdown' || ov.type === 'decor' || ov._insertClip || ov.intro_keep_visible) {
+                return time;
+            }
+            return time - introDelay;
+        };
         // Compute scroll anchors before compositing, without changing layer order.
         // Rendering a preview copy must publish its anchor to the bound media.
         if (drawable.some(ov => ov?.bind_scroll_overlay_id)) {
@@ -1855,13 +1871,14 @@
                 if (!ov || ov.type !== 'scroll') continue;
                 delete ov._scrollBodyFirstLineY;
                 delete ov._scrollBodyCurX;
-                if (ov.disabled || time < numberOr(ov.start, 0)) continue;
+                const evalTime = resolveOverlayEvalTime(ov);
+                if (ov.disabled || evalTime < numberOr(ov.start, 0)) continue;
                 const measured = { ...(window.ReelsScrollTiming?.renderingOverlay(ov, task, {
-                    bodyDuration: Math.max(0, computeDuration() - getTimelineOffset(task)),
+                    bodyDuration: Math.max(0, computeDuration() - getTimelineOffset(task) - introDelay),
                     mediaDurations: window._reelsState?._mediaDurations || {},
                 }) || ov), _taskSegments: task.segments, _exporting: false, _previewPlaying: Boolean(state.isPlaying) };
                 try {
-                    window.ReelsOverlay.drawOverlay(measureCtx, measured, time, w, h);
+                    window.ReelsOverlay.drawOverlay(measureCtx, measured, evalTime, w, h);
                     ov._scrollBodyFirstLineY = measured._scrollBodyFirstLineY;
                     ov._scrollBodyCurX = measured._scrollBodyCurX;
                     if (Number.isFinite(Number(measured.end))) ov._scrollResolvedEndTime = Number(measured.end);
@@ -1872,19 +1889,21 @@
             if (!ov || ov.disabled) continue;
             const start = numberOr(ov.start, 0);
             const end = numberOr(ov.end, 9999);
+            const evalTime = resolveOverlayEvalTime(ov);
             // 与 WYSIWYG 输出一致：普通覆层只在时间范围内显示；
             // 滚动覆层到达结束时间后保留最终位置。
-            if (time < start || (ov.type !== 'scroll' && time > end)) continue;
+            if (evalTime < start || (ov.type !== 'scroll' && evalTime > end)) continue;
                 if (typeof ctx?.save === 'function') ctx.save();
                 try {
                     // Preview must never inherit a stale/concurrent export marker,
                     // otherwise ReelsOverlay intentionally suppresses guide boxes.
+                    const bodySpan = (ov.is_intro_countdown || ov.type === 'intro_countdown' || ov.type === 'decor' || ov._insertClip) ? 0 : introDelay;
                     const effective = window.ReelsScrollTiming?.renderingOverlay(ov, task, {
-                        bodyDuration: Math.max(0, computeDuration() - getTimelineOffset(task)),
+                        bodyDuration: Math.max(0, computeDuration() - getTimelineOffset(task) - bodySpan),
                         mediaDurations: window._reelsState?._mediaDurations || {},
                     }) || ov;
                     const previewOv = { ...effective, _allOverlays: allEnabled, _taskSegments: task.segments, _exporting: false, _previewPlaying: Boolean(state.isPlaying) };
-                    window.ReelsOverlay.drawOverlay(ctx, previewOv, time, w, h);
+                    window.ReelsOverlay.drawOverlay(ctx, previewOv, evalTime, w, h);
                     // Keep computed bounds available to hit-testing/property UI.
                     for (const key of ['_renderedX', '_renderedY', '_renderedW', '_renderedH', '_scrollBodyFirstLineY', '_scrollBodyCurX']) {
                         if (previewOv[key] != null) ov[key] = previewOv[key];
@@ -2217,6 +2236,8 @@
         const task = getTask();
         if (!task) return 0;
         const offset = getTimelineOffset(task);
+        const introDelay = getIntroDelayDuration(task);
+        const bodyOffset = offset + introDelay;
 
         // ⏱ 文字翻转器 (Dynamic Flipper) 时长优先
         let maxFlipperDuration = 0;
@@ -2237,27 +2258,28 @@
             }
         }
         if (maxFlipperDuration > 0) {
-            return maxFlipperDuration + offset;
+            return maxFlipperDuration + bodyOffset;
         }
 
         const custom = getEffectiveCustomDuration(task);
-        if (custom > 0) return custom + offset;
+        if (custom > 0) return custom + bodyOffset;
         const cachedAudioDur = (task.audioPath && window._reelsState?._mediaDurations?.[task.audioPath]) || 0;
         const audioDur = mediaDuration(state.audio) || (Number.isFinite(Number(cachedAudioDur)) && Number(cachedAudioDur) > 0 ? Number(cachedAudioDur) : 0);
         const audioScale = getAudioDurationScale(task);
-        if (audioDur > 0) return (audioDur * Math.max(0.01, audioScale)) + offset;
+        if (audioDur > 0) return (audioDur * Math.max(0.01, audioScale)) + bodyOffset;
         const cvDur = mediaDuration(state.contentVideo);
         if (cvDur > 0) {
             const trimStart = parseFloat(task.contentVideoTrimStart) || 0;
             const trimEnd = parseFloat(task.contentVideoTrimEnd) || 0;
             const usable = trimEnd > trimStart ? trimEnd - trimStart : Math.max(0, cvDur - trimStart);
-            return Math.max(usable, subtitleDuration(task)) + offset;
+            return Math.max(usable, subtitleDuration(task)) + bodyOffset;
         }
         const bgDur = mediaDuration(state.bgVideo);
         const isMultiBg = isMultiBackgroundTask(task);
         const multiDur = isMultiBg ? getMultiBackgroundDuration(task) : 0;
         const subDur = subtitleDuration(task);
-        return Math.max(isMultiBg ? 0 : bgDur * getBgDurationScale(task), multiDur, subDur, numberOr(task.duration, 0), state.bgImage ? 5 : 0, state.contentImage ? 5 : 0) + offset;
+        const shiftedSubDur = subDur > 0 ? subDur + introDelay : 0;
+        return Math.max(isMultiBg ? 0 : bgDur * getBgDurationScale(task), multiDur, shiftedSubDur, numberOr(task.duration, 0), introDelay, state.bgImage ? 5 : 0, state.contentImage ? 5 : 0) + offset;
     }
 
     function getEffectiveCustomDuration(task) {
@@ -2748,6 +2770,13 @@
         return Math.max(0, trimEnd - trimStart) / speed;
     }
 
+    function getIntroDelayDuration(task) {
+        if (!task || !window.ReelsOverlay?.getIntroDelaySec) return 0;
+        const showOverlay = state.root?.querySelector('[data-role="overlays"]')?.checked !== false;
+        const showDecor = state.root?.querySelector('[data-role="decor"]')?.checked !== false;
+        return window.ReelsOverlay.getIntroDelaySec(getLiveOverlays(task), { showOverlay, showDecor });
+    }
+
     function getTimelineOffset(task) {
         return getCoverDuration(task) + getHookDuration(task);
     }
@@ -2755,15 +2784,22 @@
     function getPhaseInfo(time, task) {
         const coverDuration = getCoverDuration(task);
         const hookDuration = getHookDuration(task);
+        const introDelay = getIntroDelayDuration(task);
         const inCover = coverDuration > 0 && time < coverDuration;
         const inHook = !inCover && hookDuration > 0 && time < coverDuration + hookDuration;
+        const mainTime = Math.max(0, time - coverDuration - hookDuration);
+        const inIntroLead = !inCover && !inHook && introDelay > 0 && mainTime < introDelay;
+        const bodyTime = introDelay > 0 ? Math.max(0, mainTime - introDelay) : mainTime;
         return {
             time,
             coverDuration,
             hookDuration,
+            introDelay,
             inCover,
             inHook,
-            mainTime: Math.max(0, time - coverDuration - hookDuration),
+            inIntroLead,
+            mainTime,
+            bodyTime,
         };
     }
 

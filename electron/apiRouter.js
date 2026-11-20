@@ -991,7 +991,7 @@ async function routeAPI(endpoint, data, progressSender = null, sender = null) {
             const items = data.items || [];
             if (items.length === 0) throw new Error('缺少生成项目');
 
-            const modelId = data.model_id || 'eleven_multilingual_v2';
+            const defaultModelId = data.model_id || data.default_model_id || 'eleven_multilingual_v2';
             let stabilityVal = parseFloat(data.stability || 0.5);
             if (stabilityVal > 1) stabilityVal /= 100;
             const outputFormat = data.output_format || 'mp3_44100_128';
@@ -999,19 +999,23 @@ async function routeAPI(endpoint, data, progressSender = null, sender = null) {
             const results = [];
             for (let i = 0; i < items.length; i++) {
                 const item = items[i];
+                const itemModelId = item.model_id || defaultModelId;
+                const parsedSeq = Number(item.seq_num);
+                const seqNum = Number.isFinite(parsedSeq) && parsedSeq > 0 ? Math.floor(parsedSeq) : (i + 1);
+                const seqPrefix = String(seqNum).padStart(3, '0');
                 try {
                     const { audio, usedKey } = await elevenlabsService.requestTTSWithRotation(
                         keys, item.voice_id || data.voice_id, item.text,
-                        modelId, stabilityVal, outputFormat, item.key_index || data.key_index
+                        itemModelId, stabilityVal, outputFormat, item.key_index ?? data.key_index
                     );
                     let savePath = item.save_path;
                     if (!savePath) {
-                        savePath = elevenlabsService.buildTTSSavePath(item.text, outputFormat, 'batch', `${String(i + 1).padStart(3, '0')}`);
+                        savePath = elevenlabsService.buildTTSSavePath(item.text, outputFormat, 'batch', seqPrefix);
                     }
                     fs.writeFileSync(savePath, audio);
-                    results.push({ index: i, success: true, file_path: savePath, used_key: usedKey });
+                    results.push({ index: i, seq_num: seqNum, success: true, file_path: savePath, used_key: usedKey });
                 } catch (e) {
-                    results.push({ index: i, success: false, error: e.message });
+                    results.push({ index: i, seq_num: seqNum, success: false, error: e.message });
                 }
             }
             return { results, total: items.length, success_count: results.filter(r => r.success).length };

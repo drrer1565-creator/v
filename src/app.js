@@ -10450,12 +10450,32 @@ function updateBatchVoiceMode() {
     });
 }
 
+function updateBatchRowNumbers() {
+    const list = document.getElementById('tts-batch-list');
+    if (!list) return;
+    const rows = Array.from(list.querySelectorAll('.batch-row'));
+    rows.forEach((row, idx) => {
+        let badge = row.querySelector('.batch-seq-badge');
+        if (!badge) {
+            badge = document.createElement('span');
+            badge.className = 'batch-seq-badge';
+            badge.style.cssText = 'font-size: 12px; font-weight: 700; color: var(--text-secondary); min-width: 34px; text-align: center; user-select: none;';
+            row.insertBefore(badge, row.firstChild);
+        }
+        badge.textContent = `#${String(idx + 1).padStart(2, '0')}`;
+    });
+}
+
 function addBatchRow(initialText = '', initialVoiceId = '') {
     const list = document.getElementById('tts-batch-list');
     if (!list) return;
 
     const row = document.createElement('div');
     row.className = 'batch-row';
+
+    const seqBadge = document.createElement('span');
+    seqBadge.className = 'batch-seq-badge';
+    seqBadge.style.cssText = 'font-size: 12px; font-weight: 700; color: var(--text-secondary); min-width: 34px; text-align: center; user-select: none;';
 
     const voiceSelect = document.createElement('select');
     voiceSelect.className = 'select batch-voice-select';
@@ -10476,15 +10496,18 @@ function addBatchRow(initialText = '', initialVoiceId = '') {
         if (list.children.length === 0) {
             addBatchRow();
         } else {
+            updateBatchRowNumbers();
             updateBatchVoiceMode();
         }
     });
 
+    row.appendChild(seqBadge);
     row.appendChild(voiceSelect);
     row.appendChild(textArea);
     row.appendChild(removeButton);
     list.appendChild(row);
 
+    updateBatchRowNumbers();
     syncBatchVoiceOptions();
     updateBatchVoiceMode();
 
@@ -10686,13 +10709,15 @@ async function generateTTSBatch() {
             return;
         }
 
+        const seqNum = tasks.length + 1;
+        row.dataset.seqNum = String(seqNum);
         tasks.push({
             rowIndex: i,
             row: row,
             text: text,
             voice_id: voiceId,
             model_id: modelId,
-            seq_num: tasks.length + 1  // 序号
+            seq_num: seqNum  // 序号
         });
     }
 
@@ -10782,7 +10807,7 @@ async function generateTTSBatch() {
                 const retryBtn = row.querySelector('.batch-retry');
                 if (retryBtn) retryBtn.remove();
 
-                return { success: true, file_path: r.file_path };
+                return { success: true, file_path: r.file_path, seq_num };
             } else {
                 failCount++;
                 statusSpan.textContent = `❌ ${(r?.error || '未知错误').substring(0, 20)}`;
@@ -10854,11 +10879,12 @@ async function generateTTSBatch() {
 
     loadQuota();
 
-    // 自动下载成功的文件
+    // 自动按序号排序并下载成功的文件
     if (successResults.length > 0) {
-        showToast(`正在下载 ${successResults.length} 个文件...`, 'info');
+        successResults.sort((a, b) => (Number(a.seq_num) || 0) - (Number(b.seq_num) || 0));
+        showToast(`正在按顺序下载 ${successResults.length} 个文件...`, 'info');
         for (const r of successResults) {
-            const filename = r.file_path.split('/').pop();
+            const filename = String(r.file_path || '').split(/[\\/]/).pop();
             const link = document.createElement('a');
             link.href = normalizeFilePath(r.file_path);
             link.download = filename;
@@ -10910,6 +10936,24 @@ async function retrySingleBatch(row) {
         return;
     }
 
+    let seqNum = parseInt(row.dataset.seqNum || '', 10);
+    if (!Number.isFinite(seqNum) || seqNum <= 0) {
+        const list = document.getElementById('tts-batch-list');
+        const allRows = list ? Array.from(list.querySelectorAll('.batch-row')) : [];
+        let validIdx = 0;
+        for (const r of allRows) {
+            if (r.querySelector('.batch-text')?.value?.trim()) {
+                validIdx++;
+            }
+            if (r === row) {
+                seqNum = validIdx || 1;
+                break;
+            }
+        }
+    }
+    if (!Number.isFinite(seqNum) || seqNum <= 0) seqNum = 1;
+    row.dataset.seqNum = String(seqNum);
+
     const statusSpan = row.querySelector('.batch-status');
     if (statusSpan) {
         statusSpan.textContent = '⏳ 重试中...';
@@ -10922,7 +10966,7 @@ async function retrySingleBatch(row) {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-                items: [{ text, voice_id: voiceId, model_id: modelId }],
+                items: [{ text, voice_id: voiceId, model_id: modelId, seq_num: seqNum }],
                 default_model_id: modelId,
                 output_format: 'mp3_44100_128'
             })
@@ -10943,7 +10987,7 @@ async function retrySingleBatch(row) {
 
             // 下载文件
             if (r.file_path) {
-                const filename = r.file_path.split('/').pop();
+                const filename = String(r.file_path || '').split(/[\\/]/).pop();
                 const link = document.createElement('a');
                 link.href = normalizeFilePath(r.file_path);
                 link.download = filename;

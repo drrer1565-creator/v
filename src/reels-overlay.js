@@ -1268,6 +1268,304 @@ function applyDecorStylePreset(ov, styleId) {
     return ov;
 }
 
+const INTRO_RING_THEMES = {
+    xmas_rainbow: {
+        name: '🎄 圣诞四色炫彩 (黄→橙→红→绿)',
+        colors: ['#FDE047', '#F97316', '#DC2626', '#16A34A'],
+        centerColor: '#FACC15',
+        underlineColor: '#FACC15',
+        sparkColor: '#FEF08A',
+    },
+    autumn_warm: {
+        name: '🍂 感恩暖秋丰收 (金→琥珀→赤陶)',
+        colors: ['#FDE047', '#F59E0B', '#EA580C', '#9A3412'],
+        centerColor: '#FBBF24',
+        underlineColor: '#F59E0B',
+        sparkColor: '#FDE68A',
+    },
+    gold_ivory: {
+        name: '✨ 圣夜金白奢华 (象牙白→鎏金)',
+        colors: ['#FFFBEB', '#FDE68A', '#D4AF37', '#B45309'],
+        centerColor: '#FDE047',
+        underlineColor: '#E5C165',
+        sparkColor: '#FFFBEB',
+    },
+    frost_aurora: {
+        name: '❄️ 冰雪极光星夜 (冰蓝→靛紫)',
+        colors: ['#E0F2FE', '#38BDF8', '#6366F1', '#A855F7'],
+        centerColor: '#FFFFFF',
+        underlineColor: '#7DD3FC',
+        sparkColor: '#E0F2FE',
+    },
+    ruby_emerald: {
+        name: '🎁 冬青红绿礼赞 (圣红→金→松绿)',
+        colors: ['#FCA5A5', '#DC2626', '#EAB308', '#15803D'],
+        centerColor: '#FACC15',
+        underlineColor: '#F87171',
+        sparkColor: '#FEF08A',
+    },
+};
+
+const INTRO_COUNTDOWN_PRESETS = {
+    xmas_cp01: {
+        id: 'xmas_cp01',
+        name: '🎄 圣诞倒计时光环 (cp-01同款)',
+        tag: 'DAYS BEFORE 37 Christmas',
+        duration: 3.0,
+        intro_delay_body: true,
+        intro_top_text: 'DAYS BEFORE',
+        intro_center_mode: 'fixed',
+        intro_center_text: '37',
+        intro_target_date: '12-25',
+        intro_day_offset: 0,
+        intro_bottom_text: 'Christmas',
+        intro_top_font_family: 'Montserrat',
+        intro_center_font_family: 'Anton',
+        intro_bottom_font_family: 'Pacifico',
+        intro_ring_theme: 'xmas_rainbow',
+        intro_snow_enabled: true,
+        intro_snow_density: 32,
+        intro_backdrop_scrim: 16,
+    },
+    xmas_auto_days: {
+        id: 'xmas_auto_days',
+        name: '📅 圣诞自动日历倒数',
+        tag: '自动算距 12/25 天数',
+        duration: 3.0,
+        intro_delay_body: true,
+        intro_top_text: 'DAYS BEFORE',
+        intro_center_mode: 'days_to_date',
+        intro_center_text: '36',
+        intro_target_date: '12-25',
+        intro_day_offset: 0,
+        intro_bottom_text: 'Christmas',
+        intro_top_font_family: 'Montserrat',
+        intro_center_font_family: 'Anton',
+        intro_bottom_font_family: 'Pacifico',
+        intro_ring_theme: 'xmas_rainbow',
+        intro_snow_enabled: true,
+        intro_snow_density: 34,
+        intro_backdrop_scrim: 16,
+    },
+    thx_auto_days: {
+        id: 'thx_auto_days',
+        name: '🍂 感恩节暖秋倒计时',
+        tag: 'THANKSGIVING 暖秋环',
+        duration: 2.8,
+        intro_delay_body: true,
+        intro_top_text: 'DAYS BEFORE',
+        intro_center_mode: 'days_to_date',
+        intro_center_text: '7',
+        intro_target_date: '11-26',
+        intro_day_offset: 0,
+        intro_bottom_text: 'Thanksgiving',
+        intro_top_font_family: 'Montserrat',
+        intro_center_font_family: 'Anton',
+        intro_bottom_font_family: 'Dancing Script',
+        intro_ring_theme: 'autumn_warm',
+        intro_snow_enabled: false,
+        intro_snow_density: 20,
+        intro_backdrop_scrim: 18,
+    },
+    newyear_countdown: {
+        id: 'newyear_countdown',
+        name: '🎆 新年祝福金环开场',
+        tag: 'DAYS TO New Year',
+        duration: 3.0,
+        intro_delay_body: true,
+        intro_top_text: 'DAYS UNTIL',
+        intro_center_mode: 'days_to_date',
+        intro_center_text: '43',
+        intro_target_date: '01-01',
+        intro_day_offset: 0,
+        intro_bottom_text: 'New Year',
+        intro_top_font_family: 'Montserrat',
+        intro_center_font_family: 'Anton',
+        intro_bottom_font_family: 'Pacifico',
+        intro_ring_theme: 'gold_ivory',
+        intro_snow_enabled: true,
+        intro_snow_density: 26,
+        intro_backdrop_scrim: 20,
+    },
+    ready_321: {
+        id: 'ready_321',
+        name: '⏱️ 3·2·1 紧迫读秒开场',
+        tag: '逐秒 3 → 2 → 1 吸睛停顿',
+        duration: 3.0,
+        intro_delay_body: true,
+        intro_top_text: 'PRAYER STARTS IN',
+        intro_center_mode: 'countdown_sec',
+        intro_center_text: '3',
+        intro_target_date: '12-25',
+        intro_day_offset: 0,
+        intro_bottom_text: "Don't Scroll",
+        intro_top_font_family: 'Montserrat',
+        intro_center_font_family: 'Anton',
+        intro_bottom_font_family: 'Pacifico',
+        intro_ring_theme: 'frost_aurora',
+        intro_snow_enabled: true,
+        intro_snow_density: 22,
+        intro_backdrop_scrim: 22,
+    },
+    morning_prayer_gold: {
+        id: 'morning_prayer_gold',
+        name: '✝️ 圣光晨祷金环开场',
+        tag: "TODAY'S PRAYER Amen",
+        duration: 2.5,
+        intro_delay_body: true,
+        intro_top_text: "TODAY'S PRAYER",
+        intro_center_mode: 'fixed',
+        intro_center_text: '✝️',
+        intro_target_date: '12-25',
+        intro_day_offset: 0,
+        intro_bottom_text: 'Amen',
+        intro_top_font_family: 'Montserrat',
+        intro_center_font_family: 'Anton',
+        intro_bottom_font_family: 'Great Vibes',
+        intro_ring_theme: 'gold_ivory',
+        intro_snow_enabled: false,
+        intro_snow_density: 16,
+        intro_backdrop_scrim: 20,
+    },
+};
+
+function computeIntroDaysRemaining(targetDateStr = '12-25', offsetDays = 0, nowDate = null) {
+    const now = nowDate instanceof Date ? new Date(nowDate.getTime()) : new Date();
+    const todayMidnight = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const clean = String(targetDateStr || '12-25').trim();
+    let target = null;
+    const fullMatch = clean.match(/^(\d{4})\s*[-/.年]\s*(\d{1,2})\s*[-/.月]\s*(\d{1,2})\s*日?$/);
+    const mdMatch = clean.match(/^(\d{1,2})\s*[-/.月]\s*(\d{1,2})\s*日?$/);
+    if (fullMatch) {
+        target = new Date(Number(fullMatch[1]), Number(fullMatch[2]) - 1, Number(fullMatch[3]));
+    } else if (mdMatch) {
+        const m = Number(mdMatch[1]) - 1;
+        const d = Number(mdMatch[2]);
+        target = new Date(now.getFullYear(), m, d);
+        if (target.getTime() < todayMidnight.getTime()) {
+            target = new Date(now.getFullYear() + 1, m, d);
+        }
+    }
+    if (!target || Number.isNaN(target.getTime())) {
+        return Math.max(0, Math.round(Number(offsetDays) || 0));
+    }
+    const diffDays = Math.round((target.getTime() - todayMidnight.getTime()) / 86400000);
+    return Math.max(0, diffDays + (Number(offsetDays) || 0));
+}
+
+function createIntroCountdownOverlay(opts = {}) {
+    const presetId = opts.intro_style || 'xmas_cp01';
+    const preset = INTRO_COUNTDOWN_PRESETS[presetId] || INTRO_COUNTDOWN_PRESETS.xmas_cp01;
+    const ringThemeId = opts.intro_ring_theme || preset.intro_ring_theme || 'xmas_rainbow';
+    const ringTheme = INTRO_RING_THEMES[ringThemeId] || INTRO_RING_THEMES.xmas_rainbow;
+    const dur = Math.max(0.4, Number(opts.end ?? preset.duration ?? 3.0) || 3.0);
+    return {
+        id: opts.id || _overlayId(),
+        name: opts.name || '🎬 节日倒计时光环开场',
+        type: 'intro_countdown',
+        is_intro_countdown: true,
+        disabled: opts.disabled ?? false,
+        x: opts.x ?? 0,
+        y: opts.y ?? 0,
+        w: opts.w ?? 1080,
+        h: opts.h ?? 1920,
+        rotation: opts.rotation ?? 0,
+        opacity: opts.opacity ?? 255,
+        start: Math.max(0, Number(opts.start ?? 0) || 0),
+        end: dur,
+        intro_style: preset.id,
+        intro_delay_body: opts.intro_delay_body !== undefined ? Boolean(opts.intro_delay_body) : Boolean(preset.intro_delay_body ?? true),
+        intro_top_text: opts.intro_top_text ?? preset.intro_top_text ?? 'DAYS BEFORE',
+        intro_top_font_family: opts.intro_top_font_family || preset.intro_top_font_family || 'Montserrat',
+        intro_top_fontsize: opts.intro_top_fontsize ?? 44,
+        intro_top_letter_spacing: opts.intro_top_letter_spacing ?? 12,
+        intro_top_color: opts.intro_top_color || '#FFFFFF',
+        intro_center_mode: opts.intro_center_mode || preset.intro_center_mode || 'fixed',
+        intro_center_text: opts.intro_center_text ?? preset.intro_center_text ?? '37',
+        intro_target_date: opts.intro_target_date ?? preset.intro_target_date ?? '12-25',
+        intro_day_offset: Number(opts.intro_day_offset ?? preset.intro_day_offset ?? 0) || 0,
+        intro_center_font_family: opts.intro_center_font_family || preset.intro_center_font_family || 'Anton',
+        intro_center_fontsize: opts.intro_center_fontsize ?? 256,
+        intro_center_color: opts.intro_center_color || ringTheme.centerColor || '#FACC15',
+        intro_center_stroke_color: opts.intro_center_stroke_color || '#0A0A0C',
+        intro_center_stroke_width: opts.intro_center_stroke_width ?? 14,
+        intro_bottom_text: opts.intro_bottom_text ?? preset.intro_bottom_text ?? 'Christmas',
+        intro_bottom_font_family: opts.intro_bottom_font_family || preset.intro_bottom_font_family || 'Pacifico',
+        intro_bottom_fontsize: opts.intro_bottom_fontsize ?? 108,
+        intro_bottom_color: opts.intro_bottom_color || '#FFFFFF',
+        intro_bottom_underline_enabled: opts.intro_bottom_underline_enabled !== undefined ? Boolean(opts.intro_bottom_underline_enabled) : true,
+        intro_bottom_underline_color: opts.intro_bottom_underline_color || ringTheme.underlineColor || '#FACC15',
+        intro_ring_theme: ringThemeId,
+        intro_ring_colors: Array.isArray(opts.intro_ring_colors) ? [...opts.intro_ring_colors] : [...ringTheme.colors],
+        intro_ring_radius: opts.intro_ring_radius ?? 268,
+        intro_ring_thickness: opts.intro_ring_thickness ?? 12,
+        intro_ring_track_color: opts.intro_ring_track_color || '#FFFFFF',
+        intro_ring_track_opacity: opts.intro_ring_track_opacity ?? 72,
+        intro_ring_spark_enabled: opts.intro_ring_spark_enabled !== undefined ? Boolean(opts.intro_ring_spark_enabled) : true,
+        intro_ring_spark_color: opts.intro_ring_spark_color || ringTheme.sparkColor || '#FEF08A',
+        intro_snow_enabled: opts.intro_snow_enabled !== undefined ? Boolean(opts.intro_snow_enabled) : Boolean(preset.intro_snow_enabled ?? true),
+        intro_snow_density: opts.intro_snow_density ?? preset.intro_snow_density ?? 32,
+        intro_backdrop_scrim: opts.intro_backdrop_scrim ?? preset.intro_backdrop_scrim ?? 16,
+        intro_scale: opts.intro_scale ?? 100,
+        intro_offset_x: opts.intro_offset_x ?? 0,
+        intro_offset_y: opts.intro_offset_y ?? -20,
+        intro_fade_in: opts.intro_fade_in ?? 0.30,
+        intro_fade_out: opts.intro_fade_out ?? 0.20,
+        anim_in_type: 'none',
+        anim_out_type: 'none',
+        transition_preset: 'none',
+    };
+}
+
+function applyIntroCountdownPreset(ov, presetId) {
+    if (!ov || !presetId) return ov;
+    const preset = INTRO_COUNTDOWN_PRESETS[presetId];
+    if (!preset) return ov;
+    const theme = INTRO_RING_THEMES[preset.intro_ring_theme] || INTRO_RING_THEMES.xmas_rainbow;
+    ov.intro_style = preset.id;
+    ov.intro_top_text = preset.intro_top_text;
+    ov.intro_center_mode = preset.intro_center_mode;
+    ov.intro_center_text = preset.intro_center_text;
+    ov.intro_target_date = preset.intro_target_date;
+    ov.intro_day_offset = preset.intro_day_offset || 0;
+    ov.intro_bottom_text = preset.intro_bottom_text;
+    ov.intro_top_font_family = preset.intro_top_font_family;
+    ov.intro_center_font_family = preset.intro_center_font_family;
+    ov.intro_bottom_font_family = preset.intro_bottom_font_family;
+    ov.intro_ring_theme = preset.intro_ring_theme;
+    ov.intro_ring_colors = [...theme.colors];
+    ov.intro_center_color = theme.centerColor;
+    ov.intro_bottom_underline_color = theme.underlineColor;
+    ov.intro_ring_spark_color = theme.sparkColor;
+    ov.intro_snow_enabled = Boolean(preset.intro_snow_enabled);
+    ov.intro_snow_density = preset.intro_snow_density ?? 32;
+    ov.intro_backdrop_scrim = preset.intro_backdrop_scrim ?? 16;
+    ov.start = 0;
+    ov.end = Number(preset.duration) || 3.0;
+    ov.intro_delay_body = preset.intro_delay_body !== false;
+    return ov;
+}
+
+function getActiveIntroCountdownOverlay(overlays, options = {}) {
+    if (!Array.isArray(overlays) || overlays.length === 0) return null;
+    if (options.showDecor === false && options.showOverlay === false) return null;
+    for (let i = overlays.length - 1; i >= 0; i--) {
+        const ov = overlays[i];
+        if (!ov || ov.disabled) continue;
+        if (ov.type === 'intro_countdown' || ov.is_intro_countdown) {
+            return ov;
+        }
+    }
+    return null;
+}
+
+function getIntroDelaySec(overlays, options = {}) {
+    const intro = getActiveIntroCountdownOverlay(overlays, options);
+    if (!intro || intro.intro_delay_body === false) return 0;
+    const endSec = Number(intro.end);
+    return Number.isFinite(endSec) && endSec > 0 ? endSec : 0;
+}
+
 // ═══════════════════════════════════════════════════════
 // 2. Overlay Renderer
 // ═══════════════════════════════════════════════════════
@@ -2114,6 +2412,8 @@ function drawOverlay(ctx, origOv, currentTime = 0, canvasW = 1920, canvasH = 108
             _drawScrollOverlay(ctx, ov, x, y, w, h, currentTime, canvasW, canvasH);
         } else if (ov.type === 'decor') {
             _drawDecorOverlay(ctx, ov, x, y, w, h, currentTime, canvasW, canvasH);
+        } else if (ov.type === 'intro_countdown') {
+            _drawIntroCountdownOverlay(ctx, ov, x, y, w, h, currentTime, canvasW, canvasH);
         } else if (ov.type === 'video') {
             _drawVideoOverlay(ctx, ov, x, y, w, h, currentTime);
         }
@@ -3420,9 +3720,10 @@ function _drawTextCardOverlay(ctx, ov, x, y, w, h, canvasW, canvasH, currentTime
         const rects = [];
         for (const b of boxes) {
             if (!b.lw || b.lw <= 0) continue;
-            const rx = b.lx - bgPadH - extLeft;
+            const useFull = mode === 'inline-full' && Number.isFinite(b.fullX) && Number.isFinite(b.fullW) && b.fullW > 0;
+            const rx = (useFull ? b.fullX : b.lx) - bgPadH - extLeft;
             const ry = b.y - fontAscent - bgPadTop - extTop;
-            const rw = b.lw + bgPadH * 2 + extLeft + extRight;
+            const rw = (useFull ? b.fullW : b.lw) + bgPadH * 2 + extLeft + extRight;
             const rh = bgH;
             
             _roundRectPath(ctx, rx, ry, rw, rh, bgR);
@@ -3484,13 +3785,14 @@ function _drawTextCardOverlay(ctx, ov, x, y, w, h, canvasW, canvasH, currentTime
             }
             let ty = titleTextTopY + titleFM.ascent;
             const titleBgMode = ov.title_bg_mode || 'block';
-            if (indep && ov.title_bg_enabled && (titleBgMode === 'inline' || titleBgMode === 'inline-joined')) {
+            if (indep && ov.title_bg_enabled && (titleBgMode === 'inline' || titleBgMode === 'inline-joined' || titleBgMode === 'inline-full')) {
                 const boxes = [];
+                const secX = _sectionX(tW, customX);
                 let bY = ty;
                 for (const line of drawTitleLines) {
-                    const lx = _alignX(ctx, line, _sectionX(tW, customX), tW, ov.title_align || 'center');
+                    const lx = _alignX(ctx, line, secX, tW, ov.title_align || 'center');
                     const lw = ctx.measureText(line).width;
-                    boxes.push({ lx, y: bY, lw });
+                    boxes.push({ lx, y: bY, lw, fullX: secX, fullW: tW });
                     bY += titleLineH;
                 }
                 _drawInlineBgGroup(ctx, 'title', boxes, titleFM.ascent, titleFM.descent, titleFontSize, fx);
@@ -3686,13 +3988,14 @@ function _drawTextCardOverlay(ctx, ov, x, y, w, h, canvasW, canvasH, currentTime
             }
             let by = bodyTextTopY + bodyFM.ascent;
             const bodyBgMode = ov.body_bg_mode || 'block';
-            if (indep && ov.body_bg_enabled && (bodyBgMode === 'inline' || bodyBgMode === 'inline-joined')) {
+            if (indep && ov.body_bg_enabled && (bodyBgMode === 'inline' || bodyBgMode === 'inline-joined' || bodyBgMode === 'inline-full')) {
                 const boxes = [];
+                const secX = _sectionX(bW, customX);
                 let bY2 = by;
                 for (const line of drawBodyLines) {
-                    const lx = _alignX(ctx, line, _sectionX(bW, customX), bW, ov.body_align || 'center');
+                    const lx = _alignX(ctx, line, secX, bW, ov.body_align || 'center');
                     const lw = ctx.measureText(line).width;
-                    boxes.push({ lx, y: bY2, lw });
+                    boxes.push({ lx, y: bY2, lw, fullX: secX, fullW: bW });
                     bY2 += bodyLineH;
                 }
                 _drawInlineBgGroup(ctx, 'body', boxes, bodyFM.ascent, bodyFM.descent, bodyFontSize, fx);
@@ -3768,13 +4071,14 @@ function _drawTextCardOverlay(ctx, ov, x, y, w, h, canvasW, canvasH, currentTime
             }
             let fy = footerTextTopY + footerFM.ascent;
             const footerBgMode = ov.footer_bg_mode || 'block';
-            if (indep && ov.footer_bg_enabled && (footerBgMode === 'inline' || footerBgMode === 'inline-joined')) {
+            if (indep && ov.footer_bg_enabled && (footerBgMode === 'inline' || footerBgMode === 'inline-joined' || footerBgMode === 'inline-full')) {
                 const boxes = [];
+                const secX = _sectionX(fW, customX);
                 let bY3 = fy;
                 for (const line of drawFooterLines) {
-                    const lx = _alignX(ctx, line, _sectionX(fW, customX), fW, ov.footer_align || 'center');
+                    const lx = _alignX(ctx, line, secX, fW, ov.footer_align || 'center');
                     const lw = ctx.measureText(line).width;
-                    boxes.push({ lx, y: bY3, lw });
+                    boxes.push({ lx, y: bY3, lw, fullX: secX, fullW: fW });
                     bY3 += footerLineH;
                 }
                 _drawInlineBgGroup(ctx, 'footer', boxes, footerFM.ascent, footerFM.descent, footerFontSize, fx);
@@ -4084,6 +4388,7 @@ function _drawTextCardSideBySideOverlay(ctx, ov, x, y, w, h, canvasW, canvasH) {
             return cached;
         }
         ctx.save();
+        ctx.textBaseline = 'alphabetic';
         ctx.font = fontStr;
         let firstAscent = 0;
         let lastDescent = 0;
@@ -15175,6 +15480,339 @@ if (typeof ReelsBrushEngine !== 'undefined' && ReelsBrushEngine.init) {
     ReelsBrushEngine.init();
 }
 
+function _parseHexRgb(hexColor, fallback = [253, 224, 71]) {
+    if (typeof hexColor !== 'string') return fallback;
+    const m = hexColor.trim().match(/^#([0-9a-f]{3}|[0-9a-f]{6})$/i);
+    if (!m) return fallback;
+    let h = m[1];
+    if (h.length === 3) h = h[0] + h[0] + h[1] + h[1] + h[2] + h[2];
+    return [parseInt(h.slice(0, 2), 16), parseInt(h.slice(2, 4), 16), parseInt(h.slice(4, 6), 16)];
+}
+
+function _lerpColorStops(stops, t, alpha = 1) {
+    const clamped = Math.max(0, Math.min(1, t));
+    const list = (Array.isArray(stops) && stops.length > 0) ? stops : ['#FDE047', '#F97316', '#DC2626', '#16A34A'];
+    if (list.length === 1) {
+        const [r, g, b] = _parseHexRgb(list[0]);
+        return `rgba(${r},${g},${b},${alpha.toFixed(3)})`;
+    }
+    const scaled = clamped * (list.length - 1);
+    const i0 = Math.min(list.length - 2, Math.floor(scaled));
+    const frac = scaled - i0;
+    const c0 = _parseHexRgb(list[i0]);
+    const c1 = _parseHexRgb(list[i0 + 1]);
+    const r = Math.round(c0[0] + (c1[0] - c0[0]) * frac);
+    const g = Math.round(c0[1] + (c1[1] - c0[1]) * frac);
+    const b = Math.round(c0[2] + (c1[2] - c0[2]) * frac);
+    return `rgba(${r},${g},${b},${alpha.toFixed(3)})`;
+}
+
+function _drawIntroFourPointSpark(ctx, x, y, rOuter, rInner, angleRad, color, alpha) {
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(angleRad);
+    ctx.globalAlpha = Math.max(0, Math.min(1, alpha));
+    ctx.fillStyle = color || '#FEF08A';
+    ctx.beginPath();
+    for (let i = 0; i < 8; i++) {
+        const a = (i * Math.PI) / 4;
+        const rad = (i % 2 === 0) ? rOuter : rInner;
+        const px = Math.cos(a) * rad;
+        const py = Math.sin(a) * rad;
+        if (i === 0) ctx.moveTo(px, py);
+        else ctx.lineTo(px, py);
+    }
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = '#FFFFFF';
+    ctx.beginPath();
+    ctx.arc(0, 0, Math.max(1.5, rInner * 0.72), 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+}
+
+function _drawIntroSnowFlakes(ctx, bx, by, bw, bh, timeSec, density, unitScale, alpha) {
+    const count = Math.max(4, Math.min(90, Math.round(Number(density) || 30)));
+    ctx.save();
+    for (let i = 0; i < count; i++) {
+        const s1 = Math.sin((i + 1) * 127.1 + 31.7) * 43758.5453;
+        const r1 = s1 - Math.floor(s1);
+        const s2 = Math.sin((i + 1) * 269.5 + 183.3) * 43758.5453;
+        const r2 = s2 - Math.floor(s2);
+        const s3 = Math.sin((i + 1) * 419.2 + 97.1) * 43758.5453;
+        const r3 = s3 - Math.floor(s3);
+
+        const speed = 42 + r3 * 68;
+        const px = bx + ((r1 * bw + Math.sin(timeSec * (1.2 + r2) + i) * 18 * unitScale + bw * 2) % bw);
+        const py = by + ((r2 * bh + timeSec * speed * unitScale) % bh);
+        const rad = (2.6 + r3 * 4.4) * unitScale;
+        const twinkle = 0.45 + 0.55 * (0.5 + 0.5 * Math.sin(timeSec * 3.4 + i * 1.9));
+        ctx.globalAlpha = Math.max(0, Math.min(1, alpha * twinkle * 0.85));
+
+        if (i % 3 === 0) {
+            ctx.strokeStyle = '#FFFFFF';
+            ctx.lineWidth = Math.max(1, 1.5 * unitScale);
+            for (let arm = 0; arm < 3; arm++) {
+                const a = (arm * Math.PI) / 3 + timeSec * 0.4;
+                const dx = Math.cos(a) * rad * 1.45;
+                const dy = Math.sin(a) * rad * 1.45;
+                ctx.beginPath();
+                ctx.moveTo(px - dx, py - dy);
+                ctx.lineTo(px + dx, py + dy);
+                ctx.stroke();
+            }
+        } else {
+            ctx.fillStyle = '#FFFDF8';
+            ctx.beginPath();
+            ctx.arc(px, py, rad * 0.62, 0, Math.PI * 2);
+            ctx.fill();
+        }
+    }
+    ctx.restore();
+}
+
+/**
+ * 渲染节日倒计时光环开场动效 (_drawIntroCountdownOverlay)
+ * 支持：顶部跟踪大写副标题 + 顺时针四色渐变进度圆环 + 旋转四角星芒 + 居中黑边金字 + 花体底部节日标题 + 下雪微光粒子
+ */
+function _drawIntroCountdownOverlay(ctx, ov, x, y, w, h, currentTime, canvasW, canvasH) {
+    const start = Math.max(0, parseFloat(ov.start || 0) || 0);
+    const end = Math.max(start + 0.1, parseFloat(ov.end || 3.0) || 3.0);
+    const dur = Math.max(0.1, end - start);
+    const rawElapsed = Math.max(0, (Number(currentTime) || 0) - start);
+
+    const isSnapshotPausedAtZero = !ov._exporting && !ov._previewPlaying && rawElapsed <= 0.001;
+    const fadeInDur = Math.max(0, Math.min(dur * 0.45, parseFloat(ov.intro_fade_in ?? 0.30) || 0));
+    const fadeOutDur = Math.max(0, Math.min(dur * 0.45, parseFloat(ov.intro_fade_out ?? 0.20) || 0));
+
+    let envAlpha = 1;
+    if (!isSnapshotPausedAtZero) {
+        if (fadeInDur > 0 && rawElapsed < fadeInDur) {
+            envAlpha = 0.25 + 0.75 * (rawElapsed / fadeInDur);
+        }
+        const rem = dur - rawElapsed;
+        if (fadeOutDur > 0 && rem < fadeOutDur) {
+            envAlpha *= Math.max(0, rem / fadeOutDur);
+        }
+    }
+    const baseOpacity = Math.max(0, Math.min(1, envAlpha * (ctx.globalAlpha || 1)));
+    if (baseOpacity <= 0.002) return;
+
+    const unitScale = (Math.min(canvasW || 1080, canvasH || 1920) / 1080) * ((Number(ov.intro_scale) || 100) / 100);
+    const cx = (canvasW || 1080) * 0.5 + (Number(ov.intro_offset_x) || 0) * ((canvasW || 1080) / 1080);
+    const cy = (canvasH || 1920) * 0.48 + (Number(ov.intro_offset_y ?? -20) || 0) * ((canvasH || 1920) / 1920);
+    const R = Math.max(60 * unitScale, (Number(ov.intro_ring_radius) || 268) * unitScale);
+    const ringThick = Math.max(2 * unitScale, (Number(ov.intro_ring_thickness) || 12) * unitScale);
+
+    // 1. 可选柔和暗角衬底，确保亮背景上白/金文字对比清晰
+    const scrimPct = Math.max(0, Math.min(80, Number(ov.intro_backdrop_scrim ?? 16) || 0));
+    if (scrimPct > 0 && typeof ctx.createRadialGradient === 'function') {
+        ctx.save();
+        const scrimGrad = ctx.createRadialGradient(cx, cy, R * 0.25, cx, cy, Math.hypot(canvasW || 1080, canvasH || 1920) * 0.65);
+        const scrimA = (scrimPct / 100) * baseOpacity;
+        scrimGrad.addColorStop(0, `rgba(6, 8, 14, ${(scrimA * 0.85).toFixed(3)})`);
+        scrimGrad.addColorStop(0.55, `rgba(6, 8, 14, ${(scrimA * 0.45).toFixed(3)})`);
+        scrimGrad.addColorStop(1, `rgba(6, 8, 14, ${(scrimA * 0.95).toFixed(3)})`);
+        ctx.fillStyle = scrimGrad;
+        ctx.fillRect(0, 0, canvasW || 1080, canvasH || 1920);
+        ctx.restore();
+    }
+
+    // 2. 开场飘雪与星芒气氛粒子
+    if (ov.intro_snow_enabled !== false) {
+        const snowTime = isSnapshotPausedAtZero ? 1.4 : rawElapsed;
+        _drawIntroSnowFlakes(ctx, 0, 0, canvasW || 1080, canvasH || 1920, snowTime, ov.intro_snow_density ?? 32, unitScale, baseOpacity);
+    }
+
+    // 3. 顶部宽字距副标题 ("DAYS BEFORE")
+    const topText = String(ov.intro_top_text ?? '').trim();
+    let topFs = Math.max(12, (Number(ov.intro_top_fontsize) || 44) * unitScale);
+    const topY = cy - R - 58 * unitScale;
+    if (topText) {
+        const upper = topText.toUpperCase();
+        let tracking = Math.max(0, (Number(ov.intro_top_letter_spacing ?? 12) || 0) * unitScale);
+        ctx.save();
+        ctx.globalAlpha = baseOpacity;
+        ctx.font = `800 ${topFs.toFixed(1)}px "${ov.intro_top_font_family || 'Montserrat'}", sans-serif`;
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'middle';
+        const chars = Array.from(upper);
+        let widths = chars.map(ch => Math.max(topFs * 0.28, ctx.measureText(ch).width || topFs * 0.55));
+        let totalTopW = widths.reduce((a, b) => a + b, 0) + tracking * Math.max(0, chars.length - 1);
+        const maxTopW = (canvasW || 1080) * 0.86;
+        if (totalTopW > maxTopW && totalTopW > 0) {
+            const fit = Math.max(0.45, maxTopW / totalTopW);
+            topFs *= fit;
+            tracking *= fit;
+            ctx.font = `800 ${topFs.toFixed(1)}px "${ov.intro_top_font_family || 'Montserrat'}", sans-serif`;
+            widths = chars.map(ch => Math.max(topFs * 0.28, ctx.measureText(ch).width || topFs * 0.55));
+            totalTopW = widths.reduce((a, b) => a + b, 0) + tracking * Math.max(0, chars.length - 1);
+        }
+        let drawX = cx - totalTopW / 2;
+        ctx.lineJoin = 'round';
+        ctx.lineWidth = Math.max(2, topFs * 0.14);
+        ctx.strokeStyle = 'rgba(0, 0, 0, 0.72)';
+        ctx.shadowColor = 'rgba(0, 0, 0, 0.55)';
+        ctx.shadowBlur = 8 * unitScale;
+        ctx.fillStyle = ov.intro_top_color || '#FFFFFF';
+        for (let i = 0; i < chars.length; i++) {
+            ctx.strokeText(chars[i], drawX, topY);
+            ctx.fillText(chars[i], drawX, topY);
+            drawX += widths[i] + tracking;
+        }
+        ctx.restore();
+    }
+
+    // 4. 底轨圆环 + 顺时针渐变扫圈弧线 + 前导四角星芒
+    const trackColor = ov.intro_ring_track_color || '#FFFFFF';
+    const trackOp = Math.max(0, Math.min(1, (Number(ov.intro_ring_track_opacity ?? 72) || 0) / 100)) * baseOpacity;
+    if (trackOp > 0.01) {
+        ctx.save();
+        ctx.strokeStyle = _withAlpha(trackColor, trackOp);
+        ctx.lineWidth = Math.max(2, ringThick * 0.72);
+        ctx.beginPath();
+        ctx.arc(cx, cy, R, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.restore();
+    }
+
+    const sweepDur = Math.max(0.1, dur - fadeOutDur * 0.35);
+    const sweepRatio = isSnapshotPausedAtZero
+        ? 0.76
+        : Math.max(0.015, Math.min(1, rawElapsed / sweepDur));
+    const startAngle = -Math.PI / 2;
+    const totalArc = Math.PI * 2 * sweepRatio;
+    const ringColors = Array.isArray(ov.intro_ring_colors) && ov.intro_ring_colors.length
+        ? ov.intro_ring_colors
+        : (INTRO_RING_THEMES[ov.intro_ring_theme]?.colors || INTRO_RING_THEMES.xmas_rainbow.colors);
+    const segCount = Math.max(20, Math.round(120 * sweepRatio));
+    const angleStep = totalArc / segCount;
+
+    ctx.save();
+    ctx.lineWidth = ringThick;
+    ctx.lineCap = 'round';
+    for (let s = 0; s < segCount; s++) {
+        const a0 = startAngle + s * angleStep;
+        const a1 = startAngle + (s + 1.18) * angleStep;
+        const frac = s / Math.max(1, segCount - 1);
+        ctx.strokeStyle = _lerpColorStops(ringColors, frac * sweepRatio, baseOpacity);
+        ctx.beginPath();
+        ctx.arc(cx, cy, R, a0, Math.min(startAngle + totalArc, a1));
+        ctx.stroke();
+    }
+    ctx.restore();
+
+    if (ov.intro_ring_spark_enabled !== false && sweepRatio > 0.01) {
+        const headAngle = startAngle + totalArc;
+        const sx = cx + Math.cos(headAngle) * R;
+        const sy = cy + Math.sin(headAngle) * R;
+        const sparkTime = isSnapshotPausedAtZero ? 1.4 : rawElapsed;
+        const pulse = 1 + 0.16 * Math.sin(sparkTime * 8.0);
+        const rOuter = (ringThick * 2.2) * pulse;
+        const rInner = rOuter * 0.28;
+        _drawIntroFourPointSpark(ctx, sx, sy, rOuter, rInner, sparkTime * 2.1, ov.intro_ring_spark_color || '#FEF08A', baseOpacity);
+    }
+
+    // 5. 居中超大倒计时数字/文案 ("37" / 自动算距节日天数 / 3-2-1 读秒)
+    let centerDisplay = String(ov.intro_center_text ?? '37');
+    if (ov.intro_center_mode === 'days_to_date') {
+        centerDisplay = String(computeIntroDaysRemaining(ov.intro_target_date || '12-25', ov.intro_day_offset || 0));
+    } else if (ov.intro_center_mode === 'countdown_sec') {
+        const secLeft = isSnapshotPausedAtZero ? Math.ceil(dur) : Math.max(1, Math.ceil(Math.max(0.01, dur - rawElapsed)));
+        centerDisplay = String(secLeft);
+    }
+
+    const baseCenterFs = Math.max(40, (Number(ov.intro_center_fontsize) || 256) * unitScale);
+    const charShrink = centerDisplay.length > 2 ? Math.max(0.32, 2.2 / centerDisplay.length) : 1;
+    let centerFs = baseCenterFs * charShrink;
+    const popProgress = isSnapshotPausedAtZero ? 1 : Math.min(1, rawElapsed / Math.max(0.08, Math.min(0.42, dur * 0.25)));
+    const popScale = 0.86 + 0.14 * (1 - Math.pow(1 - popProgress, 3));
+
+    if (centerDisplay.trim()) {
+        ctx.save();
+        ctx.globalAlpha = baseOpacity;
+        ctx.font = `900 ${centerFs.toFixed(1)}px "${ov.intro_center_font_family || 'Anton'}", Impact, sans-serif`;
+        const measuredCenterW = ctx.measureText?.(centerDisplay)?.width || 0;
+        const maxInnerRingW = Math.max(120, R * 1.46);
+        if (measuredCenterW > maxInnerRingW && measuredCenterW > 0) {
+            centerFs = Math.max(28, centerFs * (maxInnerRingW / measuredCenterW));
+            ctx.font = `900 ${centerFs.toFixed(1)}px "${ov.intro_center_font_family || 'Anton'}", Impact, sans-serif`;
+        }
+        ctx.translate(cx, cy + centerFs * 0.04);
+        ctx.scale(popScale, popScale);
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.lineJoin = 'round';
+        ctx.miterLimit = 2;
+        const strokeW = Math.max(0, (Number(ov.intro_center_stroke_width ?? 14) || 0) * unitScale);
+        if (strokeW > 0.2) {
+            ctx.lineWidth = strokeW * 2;
+            ctx.strokeStyle = ov.intro_center_stroke_color || '#0A0A0C';
+            ctx.shadowColor = 'rgba(0, 0, 0, 0.52)';
+            ctx.shadowBlur = 14 * unitScale;
+            ctx.shadowOffsetY = 6 * unitScale;
+            ctx.strokeText(centerDisplay, 0, 0);
+        }
+        ctx.shadowColor = 'transparent';
+        ctx.shadowBlur = 0;
+        ctx.shadowOffsetY = 0;
+        ctx.fillStyle = ov.intro_center_color || '#FACC15';
+        ctx.fillText(centerDisplay, 0, 0);
+        ctx.restore();
+    }
+
+    // 6. 底部花体节日名称 ("Christmas") + 金色下划线
+    const botText = String(ov.intro_bottom_text ?? '').trim();
+    let botFs = Math.max(20, (Number(ov.intro_bottom_fontsize) || 108) * unitScale);
+    const botY = cy + R + 86 * unitScale;
+    if (botText) {
+        ctx.save();
+        ctx.globalAlpha = baseOpacity;
+        ctx.font = `400 ${botFs.toFixed(1)}px "${ov.intro_bottom_font_family || 'Pacifico'}", "Dancing Script", cursive`;
+        const maxBotW = (canvasW || 1080) * 0.84;
+        const rawBotW = ctx.measureText?.(botText)?.width || 0;
+        if (rawBotW > maxBotW && rawBotW > 0) {
+            botFs = Math.max(20, botFs * (maxBotW / rawBotW));
+            ctx.font = `400 ${botFs.toFixed(1)}px "${ov.intro_bottom_font_family || 'Pacifico'}", "Dancing Script", cursive`;
+        }
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.lineJoin = 'round';
+        ctx.lineWidth = Math.max(2, botFs * 0.09);
+        ctx.strokeStyle = 'rgba(0, 0, 0, 0.78)';
+        ctx.shadowColor = 'rgba(0, 0, 0, 0.5)';
+        ctx.shadowBlur = 10 * unitScale;
+        ctx.fillStyle = ov.intro_bottom_color || '#FFFFFF';
+        ctx.strokeText(botText, cx, botY);
+        ctx.fillText(botText, cx, botY);
+
+        if (ov.intro_bottom_underline_enabled !== false) {
+            const measuredW = ctx.measureText(botText).width || botFs * botText.length * 0.48;
+            const lineW = Math.max(200 * unitScale, measuredW * 0.72);
+            const lineY = botY + botFs * 0.58;
+            ctx.shadowBlur = 6 * unitScale;
+            ctx.shadowColor = _withAlpha(ov.intro_bottom_underline_color || '#FACC15', 0.45);
+            ctx.strokeStyle = ov.intro_bottom_underline_color || '#FACC15';
+            ctx.lineWidth = Math.max(2.5, 5.5 * unitScale);
+            ctx.lineCap = 'round';
+            ctx.beginPath();
+            ctx.moveTo(cx - lineW / 2, lineY);
+            ctx.lineTo(cx + lineW / 2, lineY);
+            ctx.stroke();
+        }
+        ctx.restore();
+    }
+
+    const boxLeft = cx - R * 1.18;
+    const boxTop = topY - topFs * 0.75;
+    const boxRight = cx + R * 1.18;
+    const boxBottom = botY + botFs * 0.85;
+    ov._renderedX = boxLeft;
+    ov._renderedY = boxTop;
+    ov._renderedW = Math.max(120, boxRight - boxLeft);
+    ov._renderedH = Math.max(120, boxBottom - boxTop);
+}
+
 function _withAlpha(hexColor, alpha) {
     const safe = (typeof hexColor === 'string' && hexColor.startsWith('#') && hexColor.length >= 7) ? hexColor : '#05070B';
     const r = parseInt(safe.slice(1, 3), 16) || 0;
@@ -15242,6 +15880,13 @@ const ReelsOverlay = {
     applyDecorStylePreset,
     DECOR_OVERLAY_CATEGORIES,
     DECOR_OVERLAY_STYLES,
+    createIntroCountdownOverlay,
+    applyIntroCountdownPreset,
+    computeIntroDaysRemaining,
+    getActiveIntroCountdownOverlay,
+    getIntroDelaySec,
+    INTRO_RING_THEMES,
+    INTRO_COUNTDOWN_PRESETS,
     measureScrollMotion,
     drawOverlay,
     primeImageCache,

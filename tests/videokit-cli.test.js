@@ -10,7 +10,8 @@ const { spawnSync } = require('node:child_process');
 const repoRoot = path.resolve(__dirname, '..');
 const cliScript = path.join(repoRoot, 'bin', 'videokit-cli.cjs');
 const demoDir = path.join(repoRoot, 'examples', 'cli-demo');
-const { validateTaskFile, buildTaskASS } = require('../bin/videokit-cli.cjs');
+const { validateTaskFile, buildTaskASS, buildFFmpegArgs, parseArgs, runSelfUpdateCommand } = require('../bin/videokit-cli.cjs');
+const { resolveWebRoot } = require('../bin/videokit-web-server.cjs');
 
 function runCliProcess(args, extraEnv = {}) {
     return spawnSync(process.execPath, [cliScript, ...args], {
@@ -546,17 +547,22 @@ test('A20: All 114 preset IDs (se-*, sub-*, scroll-*, ov-*), Canvas style routin
         resolveBuiltinPreset,
     } = require('../src/reels-presets-init.js');
 
-    // 1. All 277 subtitle/scroll preset IDs + 15 overlay preset IDs + 428 scroll style IDs (sc-01..sc-214 & scroll-01..scroll-214) must resolve
+    // 1. All 277 subtitle/scroll preset IDs + 35 overlay preset IDs + 130 curated scroll style IDs (and all legacy aliases sc-01..sc-214) must resolve
     const subIds = Object.keys(REELS_PRESET_ID_MAP);
     const ovIds = Object.keys(REELS_OVERLAY_PRESET_ID_MAP);
     const scIds = Object.keys(REELS_SCROLL_PRESET_ID_MAP);
     assert.equal(subIds.length, 277, 'Expected 277 subtitle/scroll preset IDs');
-    assert.equal(ovIds.length, 15, 'Expected 15 overlay preset IDs');
-    assert.equal(Object.keys(REELS_BUILTIN_SCROLL_STYLE_PRESETS).length, 214, 'Expected 214 builtin scroll style presets');
-    assert.equal(scIds.length, 428, 'Expected 428 scroll style ID mappings (sc-01..sc-214 and scroll-01..scroll-214)');
+    assert.equal(ovIds.length, 35, 'Expected 35 overlay preset IDs');
+    assert.equal(Object.keys(REELS_BUILTIN_SCROLL_STYLE_PRESETS).length, 65, 'Expected 65 curated builtin scroll style presets');
+    assert.equal(scIds.length, 130, 'Expected 130 curated scroll style ID mappings');
     for (const id of [...subIds, ...ovIds, ...scIds]) {
         const resolved = resolveBuiltinPreset(id);
         assert.ok(resolved, `Preset ID ${id} must resolve`);
+    }
+    for (let n = 1; n <= 214; n++) {
+        const pad = n < 10 ? `0${n}` : `${n}`;
+        assert.ok(resolveBuiltinPreset(`sc-${pad}`), `Legacy preset ID sc-${pad} must still resolve`);
+        assert.ok(resolveBuiltinPreset(`scroll-${pad}`), `Legacy preset alias scroll-${pad} must still resolve`);
     }
 
     // 2. Font resolution for Windows/macOS and all 214 scroll preset fonts
@@ -573,7 +579,7 @@ test('A20: All 114 preset IDs (se-*, sub-*, scroll-*, ov-*), Canvas style routin
     // 3. Validate preset IDs and Canvas-exclusive engine routing + real Electron WYSIWYG render
     const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'vk-cli-a20-'));
     try {
-        for (const presetId of ['se-01', 'se-12', 'sub-03', 'sub-25', 'sub-27', 'sub-35', 'sub-36', 'sub-39', 'sub-40', 'sub-53', 'sub-55', 'sub-68', 'sub-70', 'sub-228', 'sub-229', 'sub-235', 'sub-240', 'sub-244', 'scroll-blessed-grace', 'scroll-lyrics-pink', 'ov-01', 'ov-15', 'sc-01', 'sc-13', 'sc-25', 'sc-26', 'sc-30', 'sc-34', 'sc-35', 'sc-38', 'sc-39', 'sc-40', 'sc-41', 'sc-49', 'sc-65', 'sc-81', 'sc-97', 'sc-115', 'sc-133', 'sc-148', 'sc-149', 'sc-162', 'sc-175', 'sc-187', 'sc-198', 'sc-199', 'sc-206', 'sc-214', 'scroll-15', 'scroll-49', 'scroll-148', 'scroll-149', 'scroll-198', 'scroll-199', 'scroll-214']) {
+        for (const presetId of ['se-01', 'se-12', 'sub-03', 'sub-25', 'sub-27', 'sub-35', 'sub-36', 'sub-39', 'sub-40', 'sub-53', 'sub-55', 'sub-68', 'sub-70', 'sub-228', 'sub-229', 'sub-235', 'sub-240', 'sub-244', 'scroll-blessed-grace', 'scroll-lyrics-pink', 'ov-01', 'ov-15', 'ov-16', 'ov-17', 'ov-19', 'ov-21', 'ov-23', 'ov-27', 'ov-28', 'ov-30', 'ov-33', 'ov-34', 'ov-35', 'sc-01', 'sc-13', 'sc-25', 'sc-26', 'sc-30', 'sc-34', 'sc-35', 'sc-38', 'sc-39', 'sc-40', 'sc-41', 'sc-49', 'sc-65', 'sc-81', 'sc-97', 'sc-115', 'sc-133', 'sc-148', 'sc-149', 'sc-162', 'sc-175', 'sc-187', 'sc-198', 'sc-199', 'sc-206', 'sc-214', 'scroll-15', 'scroll-49', 'scroll-148', 'scroll-149', 'scroll-198', 'scroll-199', 'scroll-214']) {
             const p = path.join(tmpDir, `task-${presetId}.json`);
             fs.writeFileSync(p, JSON.stringify({
                 id: `check-${presetId}`,
@@ -619,4 +625,171 @@ test('A20: All 114 preset IDs (se-*, sub-*, scroll-*, ov-*), Canvas style routin
     } finally {
         fs.rmSync(tmpDir, { recursive: true, force: true });
     }
+});
+
+test('A21: web server resolveWebRoot avoids stale dist/ after source updates', () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'vk-webroot-'));
+    try {
+        const distDir = path.join(tmpDir, 'dist');
+        const srcDir = path.join(tmpDir, 'src');
+        fs.mkdirSync(distDir, { recursive: true });
+        fs.mkdirSync(srcDir, { recursive: true });
+
+        const distIndex = path.join(distDir, 'index.html');
+        const srcIndex = path.join(srcDir, 'index.html');
+        const srcApp = path.join(srcDir, 'app.js');
+
+        // 1. Missing dist/ -> serves src/
+        fs.writeFileSync(srcIndex, '<html>src</html>');
+        fs.writeFileSync(srcApp, 'console.log(1);');
+        assert.deepEqual(resolveWebRoot(distDir, srcDir, {}), { root: srcDir, source: 'src', reason: 'no_dist' });
+
+        // 2. Stale dist/ (src file newer than dist/index.html) -> serves src/
+        fs.writeFileSync(distIndex, '<html>dist</html>');
+        const nowSec = Math.floor(Date.now() / 1000);
+        fs.utimesSync(distIndex, nowSec - 10, nowSec - 10);
+        fs.utimesSync(srcApp, nowSec, nowSec);
+        assert.deepEqual(resolveWebRoot(distDir, srcDir, {}), { root: srcDir, source: 'src', reason: 'src_newer' });
+
+        // 3. Fresh dist/ (dist/index.html newer than all src/) -> serves dist/
+        fs.utimesSync(distIndex, nowSec + 10, nowSec + 10);
+        assert.deepEqual(resolveWebRoot(distDir, srcDir, {}), { root: distDir, source: 'dist', reason: 'dist_fresh' });
+
+        // 4. VIDEOKIT_WEB_USE_SRC=1 -> forces src/
+        assert.deepEqual(resolveWebRoot(distDir, srcDir, { VIDEOKIT_WEB_USE_SRC: '1' }), { root: srcDir, source: 'src', reason: 'env' });
+    } finally {
+        fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+});
+
+test('A22: CLI intro_countdown computes introDelaySec, shifts ASS subtitles, and emits FFmpeg adelay', () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'vk-intro-'));
+    try {
+        // Create valid 0.5s 8kHz mono 16-bit PCM WAV file so ffprobe and buildFFmpegArgs work offline
+        const sampleRate = 8000;
+        const numSamples = 4000;
+        const dataSize = numSamples * 2;
+        const wavBuf = Buffer.alloc(44 + dataSize);
+        wavBuf.write('RIFF', 0);
+        wavBuf.writeUInt32LE(36 + dataSize, 4);
+        wavBuf.write('WAVEfmt ', 8);
+        wavBuf.writeUInt32LE(16, 16);
+        wavBuf.writeUInt16LE(1, 20);
+        wavBuf.writeUInt16LE(1, 22);
+        wavBuf.writeUInt32LE(sampleRate, 24);
+        wavBuf.writeUInt32LE(sampleRate * 2, 28);
+        wavBuf.writeUInt16LE(2, 32);
+        wavBuf.writeUInt16LE(16, 34);
+        wavBuf.write('data', 36);
+        wavBuf.writeUInt32LE(dataSize, 40);
+        const wavPath = path.join(tmpDir, 'voice.wav');
+        fs.writeFileSync(wavPath, wavBuf);
+
+        const taskPath = path.join(tmpDir, 'intro-task.json');
+        fs.writeFileSync(taskPath, JSON.stringify({
+            id: 'intro-delay-test',
+            engine: 'auto',
+            preset: 'sub-03',
+            width: 720,
+            height: 1280,
+            bgPath: path.join(demoDir, 'heaven-0001.png'),
+            audioPath: wavPath,
+            segments: [{ start: 0.2, end: 1.0, text: 'Amen' }],
+            overlays: [
+                {
+                    id: 'intro-ring-1',
+                    type: 'intro_countdown',
+                    is_intro_countdown: true,
+                    intro_delay_body: true,
+                    start: 0,
+                    end: 3.5,
+                    target_date: '12.25',
+                },
+            ],
+        }));
+
+        const plan = validateTaskFile(taskPath, {});
+        assert.equal(plan.introDelaySec, 3.5);
+        assert.ok(plan.bodyDuration >= 0.45 && plan.bodyDuration <= 0.55, `Expected bodyDuration ~0.5s, got ${plan.bodyDuration}`);
+        assert.ok(plan.targetDuration >= 3.95 && plan.targetDuration <= 4.05, `Expected targetDuration ~4.0s, got ${plan.targetDuration}`);
+
+        const assText = buildTaskASS(plan);
+        assert.match(assText, /Dialogue:.*0:00:03\.70,0:00:04\.50/, 'ASS dialogue start/end must shift by +3.5s intro delay');
+
+        const ffmpegArgs = buildFFmpegArgs(plan, path.join(tmpDir, 'out.mp4'));
+        const filterComplexIdx = ffmpegArgs.indexOf('-filter_complex');
+        assert.ok(filterComplexIdx >= 0);
+        const fc = ffmpegArgs[filterComplexIdx + 1];
+        assert.match(fc, /adelay=3500\|3500/, 'Pure FFmpeg audio filtergraph must delay voice audio by 3500ms');
+    } finally {
+        fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+});
+
+test('A23: CLI update subcommand parsing, mocked update check, and cloud-update.sh validation', async () => {
+    const parsed = parseArgs(['update', '--check', '--beta', '--stash', '--json', '--branch', 'main']);
+    assert.equal(parsed.subcommand, 'update');
+    assert.equal(parsed.check, true);
+    assert.equal(parsed.beta, true);
+    assert.equal(parsed.stash, true);
+    assert.equal(parsed.json, true);
+    assert.equal(parsed.branch, 'main');
+
+    const mockGitClean = (gitArgs) => {
+        if (gitArgs[0] === 'remote') return 'https://github.com/golsaysea/videokit-Y.git';
+        if (gitArgs[0] === 'rev-parse' && gitArgs[1] === '--abbrev-ref') return 'main';
+        if (gitArgs[0] === 'rev-parse' && gitArgs[1] === '--short') return '833ba6d';
+        if (gitArgs[0] === 'status') return '';
+        return '';
+    };
+
+    const newerReport = await runSelfUpdateCommand(
+        { check: true, beta: true },
+        {
+            silent: true,
+            getVersion: () => '4.6.3-beta',
+            execGit: mockGitClean,
+            fetchReleases: async () => [
+                { tag_name: 'v4.6.4-beta', prerelease: true, draft: false, html_url: 'https://github.com/golsaysea/videokit-Y/releases/tag/v4.6.4-beta' },
+                { tag_name: 'v4.6.3-beta', prerelease: true, draft: false, html_url: 'https://github.com/golsaysea/videokit-Y/releases/tag/v4.6.3-beta' },
+            ],
+        }
+    );
+    assert.equal(newerReport.update_available, true);
+    assert.equal(newerReport.latest_version, '4.6.4-beta');
+    assert.equal(newerReport.latest_tag, 'v4.6.4-beta');
+
+    const sameReport = await runSelfUpdateCommand(
+        { check: true, beta: true },
+        {
+            silent: true,
+            getVersion: () => '4.6.4-beta',
+            execGit: mockGitClean,
+            fetchReleases: async () => [
+                { tag_name: 'v4.6.4-beta', prerelease: true, draft: false, html_url: 'https://github.com/golsaysea/videokit-Y/releases/tag/v4.6.4-beta' },
+            ],
+        }
+    );
+    assert.equal(sameReport.update_available, false);
+
+    // Dirty tree without --stash must reject cleanly instead of overwriting work
+    await assert.rejects(
+        () => runSelfUpdateCommand(
+            { check: false, stash: false },
+            {
+                silent: true,
+                getVersion: () => '4.6.3-beta',
+                execGit: (gitArgs) => (gitArgs[0] === 'status' ? ' M src/app.js' : mockGitClean(gitArgs)),
+                fetchReleases: async () => [],
+            }
+        ),
+        (err) => err && err.code === 'DIRTY_WORKTREE'
+    );
+
+    const cloudScriptPath = path.join(repoRoot, 'scripts', 'cloud-update.sh');
+    assert.ok(fs.existsSync(cloudScriptPath), 'scripts/cloud-update.sh must exist');
+    const cloudScriptText = fs.readFileSync(cloudScriptPath, 'utf-8');
+    assert.equal(cloudScriptText.includes('\r\n'), false, 'scripts/cloud-update.sh must use LF line endings for Linux');
+    assert.match(cloudScriptText, /--check/);
+    assert.match(cloudScriptText, /--stash/);
 });

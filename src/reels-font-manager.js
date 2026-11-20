@@ -846,6 +846,9 @@ class ReelsFontManager {
                 if (ov.title_font_family) fonts.add(ov.title_font_family);
                 if (ov.body_font_family) fonts.add(ov.body_font_family);
                 if (ov.footer_font_family) fonts.add(ov.footer_font_family);
+                if (ov.intro_top_font_family) fonts.add(ov.intro_top_font_family);
+                if (ov.intro_center_font_family) fonts.add(ov.intro_center_font_family);
+                if (ov.intro_bottom_font_family) fonts.add(ov.intro_bottom_font_family);
             }
         };
         scanOverlays(overlays);

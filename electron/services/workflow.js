@@ -198,10 +198,13 @@ async function ttsWorkflow(data) {
     }
     fs.mkdirSync(outputDir, { recursive: true });
 
-    // 提取文本前缀作为文件名
-    const cleanText = text.replace(/[<>]/g, '').replace(/\[[^\]]+\]/g, '').replace(/[\[\]()]/g, '');
+    // 提取文案第一句话作为文件名前缀（自动剥离情绪标签并在第一句句尾截断）
+    const firstSentence = typeof elevenlabs.extractFirstSentenceForFilename === 'function'
+        ? elevenlabs.extractFirstSentenceForFilename(text, { maxWords: 15, maxChars: 60 })
+        : '';
+    const cleanText = firstSentence || text.replace(/[<>]/g, '').replace(/\[[^\]]+\]/g, '').replace(/[\[\]()]/g, '');
     let textPrefix = cleanText.split(/\s+/).slice(0, 15).join('_').slice(0, 60);
-    textPrefix = textPrefix.replace(/[^a-zA-Z0-9\u4e00-\u9fff _-]/g, '').replace(/\s+/g, '_').trim();
+    textPrefix = textPrefix.replace(/[^a-zA-Z0-9\u4e00-\u9fff _-]/g, '').replace(/\s+/g, '_').replace(/^_+|_+$/g, '').trim();
     if (!textPrefix) textPrefix = 'audio';
 
     const dateSuffix = `${String(today.getMonth() + 1).padStart(2, '0')}${String(today.getDate()).padStart(2, '0')}`;

@@ -4385,12 +4385,17 @@ class ReelsCanvasRenderer {
             ...(style || {}),
             ...(segment.style_override || segment.subtitle_style || {})
         };
-        const text = segment.edited_text || segment.text || '';
+        const rawText = segment.edited_text || segment.text || '';
+        const text = this._applyTextTransform(rawText, s);
         const textDirection = (typeof ReelsTextDirection !== 'undefined')
             ? ReelsTextDirection.resolve(s.text_direction, text)
             : 'ltr';
         ctx.direction = textDirection;
         ctx.textAlign = 'left';
+        // 关键修复：测量与绘制必须统一使用 alphabetic 基线。
+        // 若沿用外部遗留的 textBaseline = 'top'，measureText().actualBoundingBoxAscent 会变成负数，
+        // 导致折行后的第 2 行（如关键词着色行）maxAscent 为负值，在绘制时与第 1 行基线严重叠压！
+        ctx.textBaseline = 'alphabetic';
         
         // 1. 基础配置提取
         const fontFamily = s.font_family || 'Arial';
@@ -4446,51 +4451,109 @@ class ReelsCanvasRenderer {
             return `${st.italic ? 'italic ' : ''}${b} ${sz}px "${fontFamily}", ${fallbackFamily}`;
         };
 
-        // 3. 换行计算 & 尺寸测量
-        const lines = []; // 当前由 { tokens, metrics } 组成
-        let currentLine = { tokens: [], w: 0, maxAscent: 0, maxDescent: 0, maxFs: 0 };
-        let measureWordIdx = 0;
-        
+        // 将同一单词内跨样式边界的连续非空 token（如黄色的 "Jesús" + 白色的 "."）合并为原子词组进行折行判断，
+        // 防止标点或词尾被单独折到下一行，同时保证每个自然词只增加一次词索引。
+        const units = [];
+        let pendingWordTokens = [];
+        const flushPendingWord = () => {
+            if (pendingWordTokens.length > 0) {
+                units.push({ type: 'word', tokens: pendingWordTokens });
+                pendingWordTokens = [];
+            }
+        };
         for (const tok of tokens) {
             if (tok.isNewline) {
+                flushPendingWord();
+                units.push({ type: 'newline', tokens: [tok] });
+            } else if (tok.text === ' ') {
+                flushPendingWord();
+                units.push({ type: 'space', tokens: [tok] });
+            } else {
+                pendingWordTokens.push(tok);
+            }
+        }
+        flushPendingWord();
+
+        // 3. 换行计算 & 尺寸测量
+        const maxWordsPerLine = Math.max(0, parseInt(s.max_words_per_line, 10) || 0);
+        const lines = []; // 当前由 { tokens, metrics } 组成
+        let currentLine = { tokens: [], w: 0, maxAscent: 0, maxDescent: 0, maxFs: 0, wordCount: 0 };
+        let measureWordIdx = 0;
+        
+        for (const unit of units) {
+            if (unit.type === 'newline') {
                 lines.push(currentLine);
-                currentLine = { tokens: [], w: 0, maxAscent: 0, maxDescent: 0, maxFs: 0 };
+                currentLine = { tokens: [], w: 0, maxAscent: 0, maxDescent: 0, maxFs: 0, wordCount: 0 };
                 continue;
             }
 
-            ctx.font = _getFontStr(tok.style);
-            const isSpace = tok.text === ' ';
-            const mw = isSpace
-                ? ctx.measureText(' ').width + wordSpacing + this._computeRandomWordSpacing(s, Math.max(0, measureWordIdx - 1), segment.start || 0, segment.start || 0)
-                : this._measureTextWithSpacing(ctx, tok.text, letterSpacing);
-            // 近似高度获取，canvas 原生 TextMetrics 可给准确高度， fallback用fontSize
-            let asc = tok.style.fontsize * 0.8; 
-            let desc = tok.style.fontsize * 0.2;
-            const metrics = ctx.measureText(tok.text);
-            if (metrics.actualBoundingBoxAscent !== undefined) {
-                asc = metrics.actualBoundingBoxAscent;
-                desc = metrics.actualBoundingBoxDescent;
+            if (unit.type === 'space') {
+                const tok = unit.tokens[0];
+                ctx.font = _getFontStr(tok.style);
+                const tokFs = tok.style.fontsize || baseStyleConfig.fontsize;
+                const mw = ctx.measureText(' ').width + wordSpacing + this._computeRandomWordSpacing(s, Math.max(0, measureWordIdx - 1), segment.start || 0, segment.start || 0);
+                currentLine.tokens.push(tok);
+                currentLine.w += mw;
+                currentLine.maxAscent = Math.max(currentLine.maxAscent, tokFs * 0.82);
+                currentLine.maxDescent = Math.max(currentLine.maxDescent, tokFs * 0.22);
+                currentLine.maxFs = Math.max(currentLine.maxFs, tokFs);
+                continue;
             }
 
-            // 检查宽度是否超过 maxWidth
-            if (autoWrap && currentLine.w + mw > maxWidth && currentLine.tokens.length > 0 && tok.text !== ' ') {
+            // unit.type === 'word'
+            let unitW = 0;
+            let unitAsc = 0;
+            let unitDesc = 0;
+            let unitFs = 0;
+            for (const tok of unit.tokens) {
+                ctx.font = _getFontStr(tok.style);
+                const tokFs = tok.style.fontsize || baseStyleConfig.fontsize;
+                const mw = this._measureTextWithSpacing(ctx, tok.text, letterSpacing);
+                let asc = tokFs * 0.85;
+                let desc = tokFs * 0.25;
+                const metrics = ctx.measureText(tok.text);
+                if (Number.isFinite(metrics.actualBoundingBoxAscent) && metrics.actualBoundingBoxAscent > 0) {
+                    asc = Math.max(tokFs * 0.82, metrics.actualBoundingBoxAscent);
+                }
+                if (Number.isFinite(metrics.actualBoundingBoxDescent) && metrics.actualBoundingBoxDescent >= 0) {
+                    desc = Math.max(tokFs * 0.22, metrics.actualBoundingBoxDescent);
+                }
+                tok._wordContinuation = (tok !== unit.tokens[0]);
+                const boundaryGap = (tok._wordContinuation && letterSpacing) ? letterSpacing : 0;
+                unitW += mw + boundaryGap;
+                unitAsc = Math.max(unitAsc, asc);
+                unitDesc = Math.max(unitDesc, desc);
+                unitFs = Math.max(unitFs, tokFs);
+            }
+
+            const exceedsWidth = autoWrap && (currentLine.w + unitW > maxWidth);
+            const exceedsWordLimit = maxWordsPerLine > 0 && currentLine.wordCount >= maxWordsPerLine;
+            if ((exceedsWidth || exceedsWordLimit) && currentLine.tokens.length > 0) {
                 // 折行前，剔除行尾空格
-                if (currentLine.tokens.length > 0 && currentLine.tokens[currentLine.tokens.length-1].text === ' ') {
-                   const popSpace = currentLine.tokens.pop();
-                   ctx.font = _getFontStr(popSpace.style);
-                   currentLine.w -= ctx.measureText(' ').width + wordSpacing;
+                while (currentLine.tokens.length > 0 && currentLine.tokens[currentLine.tokens.length - 1].text === ' ') {
+                    const popSpace = currentLine.tokens.pop();
+                    ctx.font = _getFontStr(popSpace.style);
+                    currentLine.w = Math.max(0, currentLine.w - (ctx.measureText(' ').width + wordSpacing));
                 }
 
                 lines.push(currentLine);
-                currentLine = { tokens: [tok], w: mw, maxAscent: asc, maxDescent: desc, maxFs: tok.style.fontsize };
-                if (!isSpace) measureWordIdx++;
+                currentLine = {
+                    tokens: [...unit.tokens],
+                    w: unitW,
+                    maxAscent: unitAsc,
+                    maxDescent: unitDesc,
+                    maxFs: unitFs,
+                    wordCount: 1,
+                };
+                measureWordIdx++;
             } else {
-                currentLine.tokens.push(tok);
-                currentLine.w += mw;
-                currentLine.maxAscent = Math.max(currentLine.maxAscent, asc);
-                currentLine.maxDescent = Math.max(currentLine.maxDescent, desc);
-                currentLine.maxFs = Math.max(currentLine.maxFs, tok.style.fontsize);
-                if (!isSpace) measureWordIdx++;
+                currentLine.tokens.push(...unit.tokens);
+                currentLine.w += unitW;
+                currentLine.maxAscent = Math.max(currentLine.maxAscent, unitAsc);
+                currentLine.maxDescent = Math.max(currentLine.maxDescent, unitDesc);
+                currentLine.maxFs = Math.max(currentLine.maxFs, unitFs);
+                currentLine.wordCount++;
+                measureWordIdx++;
             }
         }
         if (currentLine.tokens.length > 0 || tokens.length === 0) {
@@ -4504,9 +4567,12 @@ class ReelsCanvasRenderer {
         const richLineSpacings = lines.map((_, i) => i < lines.length - 1 ? lineSpacing + this._computeRandomLineSpacing(s, i, segment.start || 0) : 0);
         let totalH = 0;
         lines.forEach((l, i) => {
-            // fallback 高度
-            if (l.maxAscent === 0) { l.maxFs = baseStyleConfig.fontsize; l.maxAscent = l.maxFs * 0.8; l.maxDescent = l.maxFs * 0.2; }
-            l.lineH = l.maxAscent + l.maxDescent;
+            // 确保每行都有稳定的排版基线与不低于 1.2 倍字号的行高，彻底杜绝多行上下叠压
+            const fs = l.maxFs || baseStyleConfig.fontsize;
+            l.maxFs = fs;
+            l.maxAscent = (Number.isFinite(l.maxAscent) && l.maxAscent > 0) ? Math.max(fs * 0.82, l.maxAscent) : (fs * 0.85);
+            l.maxDescent = (Number.isFinite(l.maxDescent) && l.maxDescent >= 0) ? Math.max(fs * 0.22, l.maxDescent) : (fs * 0.25);
+            l.lineH = Math.max(fs * 1.2, l.maxAscent + l.maxDescent);
             totalH += l.lineH;
             if (i < lines.length - 1) totalH += richLineSpacings[i];
         });
@@ -4716,6 +4782,9 @@ class ReelsCanvasRenderer {
                     continue;
                 }
 
+                if (tok._wordContinuation && letterSpacing) {
+                    renderX += textDirection === 'rtl' ? -letterSpacing : letterSpacing;
+                }
                 ctx.font = _getFontStr(tok.style);
                 const tokenWidth = this._measureTextWithSpacing(ctx, tok.text, letterSpacing);
                 const tokenX = textDirection === 'rtl' ? renderX - tokenWidth : renderX;
@@ -4782,7 +4851,7 @@ class ReelsCanvasRenderer {
                 }
                 
                 renderX += textDirection === 'rtl' ? -tokenWidth : tokenWidth;
-                renderWordIdx++;
+                if (!tok._wordContinuation) renderWordIdx++;
                 ctx.restore();
             }
 

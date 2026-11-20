@@ -431,7 +431,25 @@
         return task;
     }
 
+    function getIntroDelaySecForTask(task) {
+        const isCurrentTask = typeof window !== 'undefined'
+            && window._reelsState?.tasks
+            && window._reelsState.tasks[window._reelsState.selectedIdx] === task;
+        const overlays = (isCurrentTask && window._reelsState?.overlayProxy?.overlayMgr?.overlays) || task?.overlays || [];
+        if (typeof root.ReelsOverlay?.getIntroDelaySec === 'function') {
+            return root.ReelsOverlay.getIntroDelaySec(overlays);
+        }
+        for (let i = overlays.length - 1; i >= 0; i--) {
+            const ov = overlays[i];
+            if (ov && !ov.disabled && (ov.type === 'intro_countdown' || ov.is_intro_countdown) && ov.intro_delay_body !== false) {
+                return Math.max(0, finite(ov.end, 0));
+            }
+        }
+        return 0;
+    }
+
     function getEditorTracks(task, options = {}) {
+        const introDelay = getIntroDelaySecForTask(task);
         const timeline = ensureTimeline(task, options);
         if (!timeline) return [];
         // 只保留真正有片段的轨道以及单个标准字幕轨
@@ -456,7 +474,7 @@
             ...eligibleTracks.filter(track => track.domain === 'visual').reverse(),
             ...eligibleTracks.filter(track => track.domain !== 'visual'),
         ].map((track) => {
-            const role = track._extra?.role || (track._extra?.label === '插入素材' ? 'insert_video' : '');
+            const role = track._extra?.trackRole || track._extra?.role || (track._extra?.label === '插入素材' ? 'insert_video' : '');
             let visible = track.visible !== false;
             if (role === 'insert_video') {
                 if (task.insertClipsDisabled) visible = false;
@@ -476,9 +494,13 @@
                 clips: track.clips.filter((clip) => {
                     const sourcePath = timeline.sources[clip?.sourceId]?.path || '';
                     return !!sourcePath && finite(clip.effectiveDuration) > .05;
-                }).map((clip) => ({
-                    start: clip.startT,
-                    end: clip.startT + clip.effectiveDuration,
+                }).map((clip) => {
+                    const clipRole = clip._extra?.role || role || '';
+                    const clipShift = (clipRole === 'voice' || clipRole === 'content') ? introDelay : 0;
+                    const rawEnd = clip.startT + clip.effectiveDuration + clipShift;
+                    return {
+                    start: clip.startT + clipShift,
+                    end: rawEnd,
                     name: `${timeline.sources[clip.sourceId]?.path?.split(/[\\/]/).pop() || track._extra.label || track.type}${clip._extra?.loopIndex != null ? ` #${clip._extra.loopIndex + 1}` : ''}${role === 'insert_video' ? ` · 显示${clip.effectiveDuration.toFixed(1)}s/原始${(timeline.sources[clip.sourceId]?.duration || clip.outT).toFixed(1)}s` : ''}`,
                     color: undefined,
                     _timelineClipId: clip.id,
@@ -490,7 +512,8 @@
                     sourceDuration: timeline.sources[clip.sourceId]?.duration || clip.outT,
                     _loopIndex: clip._extra?.loopIndex,
                     _isLoopInstance: clip._extra?.loopIndex != null,
-                })),
+                };
+                }),
             };
         });
         const subtitles = Array.isArray(task.segments) ? task.segments : [];
@@ -499,7 +522,7 @@
             subtitleTrack.clips = subtitles.map((segment, index) => {
                 const text = segment.edited_text || segment.text || segment.content || '';
                 return {
-                    start: finite(segment.start), end: finite(segment.end),
+                    start: finite(segment.start) + introDelay, end: finite(segment.end) + introDelay,
                     name: text.slice(0, 20) + (text.length > 20 ? '…' : ''),
                     _fullText: text, _segIdx: index,
                     styled_ranges: segment.styled_ranges || null,
@@ -527,7 +550,9 @@
                 }
                 let label = ov.name;
                 if (!label) {
-                    if (ov.type === 'textcard') {
+                    if (ov.type === 'intro_countdown' || ov.is_intro_countdown) {
+                        label = `🎬 开场: ${(ov.intro_bottom_text || ov.intro_top_text || 'Countdown').slice(0, 12)}`;
+                    } else if (ov.type === 'textcard') {
                         const txt = ov.title_text || ov.body_text || '';
                         label = txt ? `卡片: ${txt.slice(0, 10)}` : '文字卡片';
                     } else if (ov.type === 'scroll') {
@@ -546,6 +571,7 @@
                     }
                 }
                 const trackName = `${label} (#${index + 1})`;
+                const ovShift = (!ov.is_intro_countdown && ov.type !== 'intro_countdown' && ov.type !== 'decor' && !ov.intro_keep_visible) ? introDelay : 0;
                 return {
                     type: 'overlay',
                     name: trackName,
@@ -559,13 +585,14 @@
                     clips: (Array.isArray(ov.display_ranges) && ov.display_ranges.length
                         ? ov.display_ranges
                         : [{ start, end }]).map((range, rangeIndex) => {
-                        const rangeStart = Math.max(0, finite(range?.start, start));
-                        const rangeEnd = Math.max(rangeStart + 0.1, finite(range?.end, end));
+                        const rangeStart = Math.max(0, finite(range?.start, start)) + ovShift;
+                        const rawRangeEnd = finite(range?.end, end);
+                        const rangeEnd = Math.max(rangeStart + 0.1, rawRangeEnd >= totalDuration ? totalDuration : rawRangeEnd + ovShift);
                         return {
                             start: rangeStart,
                             end: rangeEnd,
                             name: label.slice(0, 24) + (label.length > 24 ? '…' : ''),
-                            color: ov.disabled ? '#4b5563' : '#9333ea',
+                            color: ov.disabled ? '#4b5563' : ((ov.type === 'intro_countdown' || ov.is_intro_countdown) ? '#d97706' : '#9333ea'),
                             _timelineClipId: ov.id || `ov_${index}`,
                             _timelineRole: 'overlay',
                             _overlayId: ov.id,
@@ -1026,7 +1053,7 @@
         return addedCount > 0;
     }
 
-    const api = { ensureTimeline, resetBackground, resetVoice, setVoice, syncLegacyFields, getEditorTracks, applyEditorClip, fillBackgroundLoops, syncInsertClipsFromTimeline, addInsertClip, getInsertOverlays, getCompositedOverlays, moveCompositedOverlay };
+    const api = { ensureTimeline, resetBackground, resetVoice, setVoice, syncLegacyFields, getEditorTracks, getIntroDelaySecForTask, applyEditorClip, fillBackgroundLoops, syncInsertClipsFromTimeline, addInsertClip, getInsertOverlays, getCompositedOverlays, moveCompositedOverlay };
     if (typeof module !== 'undefined' && module.exports) module.exports = api;
     if (root) root.ReelsRenderPlan = api;
 })(typeof window !== 'undefined' ? window : globalThis);

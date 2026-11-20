@@ -935,9 +935,62 @@ async function generateSFX(apiKey, text, duration = null) {
 
 // ==================== 构建保存路径 ====================
 
+/**
+ * 提取文案的第一句话用于音频文件命名与排序
+ * - 自动剥离 ElevenLabs v3 情感/音效标签 [whispers]、SSML 标签 <break .../>
+ * - 自动去除开头的序号/引号/空白
+ * - 按中英文句末标点（. ! ? 。 ！ ？ ； ; …）或换行符提取第一句
+ */
+function extractFirstSentenceForFilename(text, options = {}) {
+    const maxWords = Number.isFinite(options.maxWords) && options.maxWords > 0 ? options.maxWords : 15;
+    const maxChars = Number.isFinite(options.maxChars) && options.maxChars > 0 ? options.maxChars : 60;
+
+    let cleaned = String(text || '')
+        .replace(/<[^>]*>/g, ' ')
+        .replace(/\[[^\]]*\]/g, ' ')
+        .replace(/^\s*(?:\(?\s*(?:part|pt\.?|section|episode|ep\.?)\s*\d+(?:\s*of\s*\d+)?\s*\)?|\[?\d+\s*\/\s*\d+\]?|[（(]?[上下中]篇?[)）]?)\s*[:：.\-—]*\s*/i, '')
+        .replace(/^\s*\d+\s*[.、)\-]\s*/, '')
+        .replace(/^["'“”‘’«»「」『』\s]+/, '')
+        .trim();
+
+    if (!cleaned) return '';
+
+    // 先取第一非空行
+    const firstLine = cleaned.split(/[\r\n]+/).map(l => l.trim()).find(Boolean) || '';
+    if (!firstLine) return '';
+
+    // 按第一句句末标点截断（避免把小数点如 3.5 误判为句尾）
+    const sentenceMatch = firstLine.match(/^(.{2,160}?)(?:[.!?。！？；;…]+(?=\s|$|["'”’»」』]|[\u4e00-\u9fff])|$)/);
+    let firstSentence = (sentenceMatch ? sentenceMatch[1] : firstLine).trim();
+
+    // 若第一句内部含中英文逗号/破折号且整体过长，优先取逗号前的首分句
+    if (firstSentence.length > maxChars || firstSentence.split(/\s+/).length > maxWords) {
+        const clauseMatch = firstSentence.match(/^(.{4,80}?)[,，:：—]+(?:\s|$|[\u4e00-\u9fff])/);
+        if (clauseMatch && clauseMatch[1].trim().length >= 4) {
+            firstSentence = clauseMatch[1].trim();
+        }
+    }
+
+    const words = firstSentence.split(/\s+/).filter(Boolean);
+    if (words.length > maxWords) {
+        firstSentence = words.slice(0, maxWords).join(' ');
+    }
+
+    firstSentence = firstSentence
+        .replace(/[\\/:*?"<>|\x00-\x1f]/g, '_')
+        .replace(/["'“”‘’«»「」『』.,!?。！？；;，、:：…]+$/g, '')
+        .replace(/\s+/g, ' ')
+        .trim()
+        .slice(0, maxChars)
+        .trim();
+
+    return firstSentence;
+}
+
 function buildTTSSavePath(text, outputFormat, tag, seqPrefix = '') {
     const ext = outputFormat.startsWith('mp3') ? '.mp3' : outputFormat.startsWith('pcm') ? '.wav' : '.mp3';
-    const sanitized = String(text || '').replace(/[\\/:*?"<>|\x00-\x1f]/g, '_').slice(0, 60).trim() || 'audio';
+    const firstSentence = extractFirstSentenceForFilename(text, { maxWords: 15, maxChars: 60 });
+    const sanitized = firstSentence || String(text || '').replace(/[\\/:*?"<>|\x00-\x1f\r\n]/g, '_').slice(0, 60).trim() || 'audio';
     const filename = seqPrefix ? `${seqPrefix}-${sanitized}-${tag}${ext}` : `${sanitized}-${tag}${ext}`;
     const downloadsDir = path.join(require('os').homedir(), 'Downloads');
     return path.join(downloadsDir, filename);
@@ -961,6 +1014,7 @@ module.exports = {
     getQuota,
     getAllQuotas,
     generateSFX,
+    extractFirstSentenceForFilename,
     buildTTSSavePath,
     setKeyEnabled,
     parseElevenLabsError,

@@ -14,6 +14,7 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const crypto = require('crypto');
+const { execFileSync } = require('child_process');
 const { URL } = require('url');
 
 const repoRoot = path.resolve(__dirname, '..');
@@ -677,10 +678,19 @@ async function handleWebBridgeRpc(method, params = {}) {
                 contentVideoPath: p.contentVideoPath || undefined,
                 audioPath: p.voicePath || undefined,
                 bgmPath: p.bgmPath || undefined,
+                voiceDelay: Number.isFinite(Number(p.voiceDelay)) ? Number(p.voiceDelay) : undefined,
+                voiceVolume: Number.isFinite(Number(p.voiceVolume)) ? Number(p.voiceVolume) : undefined,
+                bgVolume: Number.isFinite(Number(p.bgVolume)) ? Number(p.bgVolume) : undefined,
+                bgmVolume: Number.isFinite(Number(p.bgmVolume)) ? Number(p.bgmVolume) : undefined,
                 segments: Array.isArray(p.segments) ? p.segments : [],
                 preset: p.preset || undefined,
                 scroll_preset: p.scroll_preset || undefined,
                 overlay_group_preset: p.overlay_group_preset || undefined,
+                title_text: p.title_text !== undefined ? String(p.title_text) : undefined,
+                body_text: p.body_text !== undefined ? String(p.body_text) : undefined,
+                footer_text: p.footer_text !== undefined ? String(p.footer_text) : undefined,
+                scroll_title: p.scroll_title !== undefined ? String(p.scroll_title) : undefined,
+                scroll_text: p.scroll_text !== undefined ? String(p.scroll_text) : undefined,
                 show_subtitle: p.showSubtitle !== undefined ? Boolean(p.showSubtitle) : undefined,
                 subtitle: p.style || {},
                 overlays: Array.isArray(p.overlays) ? p.overlays : [],
@@ -706,6 +716,79 @@ async function handleWebBridgeRpc(method, params = {}) {
     }
 }
 
+let _cachedGitCommit = '';
+let _cachedGitCommitAt = 0;
+
+function getGitCommitShort() {
+    const now = Date.now();
+    if (_cachedGitCommitAt > 0 && now - _cachedGitCommitAt < 5000) {
+        return _cachedGitCommit;
+    }
+    try {
+        const out = execFileSync('git', ['rev-parse', '--short', 'HEAD'], {
+            cwd: repoRoot,
+            encoding: 'utf-8',
+            stdio: ['ignore', 'pipe', 'ignore'],
+            timeout: 2000,
+        });
+        _cachedGitCommit = String(out || '').trim();
+    } catch (_) {
+        _cachedGitCommit = '';
+    }
+    _cachedGitCommitAt = now;
+    return _cachedGitCommit;
+}
+
+function getNewestSourceMtimeMs(dirPath, depth = 0) {
+    if (depth > 3 || !dirPath || !fs.existsSync(dirPath)) return 0;
+    let newest = 0;
+    let entries;
+    try {
+        entries = fs.readdirSync(dirPath, { withFileTypes: true });
+    } catch (_) {
+        return 0;
+    }
+    for (const entry of entries) {
+        if (!entry || entry.name === 'node_modules' || entry.name.startsWith('.')) continue;
+        const full = path.join(dirPath, entry.name);
+        if (entry.isDirectory()) {
+            const sub = getNewestSourceMtimeMs(full, depth + 1);
+            if (sub > newest) newest = sub;
+        } else if (entry.isFile() && /\.(html|js|mjs|css|json)$/i.test(entry.name)) {
+            try {
+                const st = fs.statSync(full);
+                if (st.mtimeMs > newest) newest = st.mtimeMs;
+            } catch (_) {}
+        }
+    }
+    return newest;
+}
+
+function resolveWebRoot(distDir, srcDir, env = process.env) {
+    const srcIndex = path.join(srcDir, 'index.html');
+    const distIndex = path.join(distDir, 'index.html');
+    const useSrcEnv = String((env && env.VIDEOKIT_WEB_USE_SRC) || '').trim() === '1';
+    const forceDistEnv = String((env && env.VIDEOKIT_WEB_FORCE_DIST) || '').trim() === '1';
+
+    if (useSrcEnv && fs.existsSync(srcIndex)) {
+        return { root: srcDir, source: 'src', reason: 'env' };
+    }
+    if (!fs.existsSync(distIndex)) {
+        return { root: srcDir, source: 'src', reason: 'no_dist' };
+    }
+    if (forceDistEnv) {
+        return { root: distDir, source: 'dist', reason: 'env_dist' };
+    }
+    try {
+        const distMtime = fs.statSync(distIndex).mtimeMs;
+        const newestSrcMtime = getNewestSourceMtimeMs(srcDir, 0);
+        if (newestSrcMtime > distMtime + 500 && fs.existsSync(srcIndex)) {
+            return { root: srcDir, source: 'src', reason: 'src_newer' };
+        }
+    } catch (_) {}
+    return { root: distDir, source: 'dist', reason: 'dist_fresh' };
+}
+
 function createWebServer(options = {}) {
     const distDir = path.join(repoRoot, 'dist');
     const srcDir = path.join(repoRoot, 'src');
@@ -729,10 +812,17 @@ function createWebServer(options = {}) {
         const activeToken = customToken || getConfiguredToken();
 
         if (pathname === '/api/health') {
+            const uiInfo = resolveWebRoot(distDir, srcDir);
+            const commit = getGitCommitShort();
             sendJson(res, 200, {
                 status: 'ok',
                 mode: 'web-bridge',
                 version: typeof getPackageVersion === 'function' ? getPackageVersion() : '4.5.9',
+                commit: commit || undefined,
+                ui_source: uiInfo.source,
+                ui_reason: uiInfo.reason,
+                platform: process.platform,
+                arch: process.arch,
                 auth_required: Boolean(activeToken),
             });
             return;
@@ -840,8 +930,8 @@ function createWebServer(options = {}) {
             }
         }
 
-        // Serve frontend static files from dist/ (or src/)
-        const webRoot = fs.existsSync(path.join(distDir, 'index.html')) ? distDir : srcDir;
+        // Serve frontend static files from dist/ (or live src/ if dist is absent or stale)
+        const webRoot = resolveWebRoot(distDir, srcDir).root;
         const relPath = pathname === '/' ? 'index.html' : pathname.replace(/^\/+/, '');
         if (relPath.split(/[\\/]+/).includes('..')) {
             sendJson(res, 400, { ok: false, error: 'Invalid path' });
@@ -874,4 +964,5 @@ if (require.main === module) {
 module.exports = {
     createWebServer,
     handleWebBridgeRpc,
+    resolveWebRoot,
 };
