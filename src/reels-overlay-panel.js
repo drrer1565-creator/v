@@ -796,12 +796,13 @@ class ReelsOverlayPanel {
                 <!-- 🎄 圣诞/节日小图标贴纸属性 (sticker覆层独有) -->
                 <div id="rop-sticker-props" class="rop-group" style="display:none; background:linear-gradient(180deg, rgba(22,163,74,0.10), rgba(15,23,42,0.55)); border:1px solid rgba(250,204,21,0.38); border-radius:8px; padding:10px;">
                     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;gap:6px;flex-wrap:wrap;">
-                        <div class="rop-group-title" style="margin:0;color:#fde68a;">🎄 圣诞小图标贴纸库 (32款 · 可直接画布拖拽缩放)</div>
+                        <div class="rop-group-title" style="margin:0;color:#fde68a;">🎄 圣诞与红雀飞羽贴纸库 (40款 · 可直接画布拖拽缩放)</div>
                         <button type="button" class="btn btn-secondary rop-btn" id="rop-sticker-add-more" style="padding:2px 8px;font-size:11px;background:rgba(22,163,74,0.28);color:#dcfce7;border:1px solid #4ade80;" title="保留当前小图标，再多放一个">+ 再放一个</button>
                     </div>
 
                     <div id="rop-sticker-category-tabs" style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:6px;">
-                        <button type="button" class="rop-btn rop-sticker-cat-tab active" data-cat="all" style="padding:2px 8px;font-size:10.5px;border-radius:999px;">全部 (32)</button>
+                        <button type="button" class="rop-btn rop-sticker-cat-tab active" data-cat="all" style="padding:2px 8px;font-size:10.5px;border-radius:999px;">全部 (40)</button>
+                        <button type="button" class="rop-btn rop-sticker-cat-tab" data-cat="飞羽红雀" style="padding:2px 8px;font-size:10.5px;border-radius:999px;">🪶 红雀羽毛</button>
                         <button type="button" class="rop-btn rop-sticker-cat-tab" data-cat="圣诞经典" style="padding:2px 8px;font-size:10.5px;border-radius:999px;">🔔 圣诞经典</button>
                         <button type="button" class="rop-btn rop-sticker-cat-tab" data-cat="萌物人物" style="padding:2px 8px;font-size:10.5px;border-radius:999px;">⛄ 萌物人物</button>
                         <button type="button" class="rop-btn rop-sticker-cat-tab" data-cat="圣夜信仰" style="padding:2px 8px;font-size:10.5px;border-radius:999px;">🌟 圣夜信仰</button>
@@ -1620,17 +1621,33 @@ class ReelsOverlayPanel {
                                         <option value="minimal_pumpkin">🎃 奶油赤陶线条南瓜</option>
                                         <option value="warm_mug">☕ 暖秋手冲热饮杯</option>
                                         <option value="olive_branch">🌿 静谧感恩橄榄枝</option>
+                                        <option value="cardinal_feather">🪶 红雀红褐色羽毛</option>
+                                        <option value="northern_cardinal">🐦 红雀鸟松枝冬青</option>
+                                        <option value="cardinal_quill_gold">✒️ 红雀棕羽金钢笔</option>
+                                        <option value="amber_autumn_feather">🍂 焦糖琥珀金棕羽</option>
+                                        <option value="crimson_rose_feather">🥀 绯红玫瑰金丝羽</option>
+                                        <option value="frost_crystal_feather">❄️ 冰晶银蓝雪羽</option>
+                                        <option value="peacock_plumage">🦚 翡翠孔雀翎羽</option>
+                                        <option value="dove_white_feather">🕊️ 圣洁鎏金白鸽羽</option>
                                         <option value="image">🖼 自定义图片 (PNG/WebP/GIF)</option>
                                         <option value="char">| 文本光标</option>
                                     </select>
 
                                     <details class="rop-scroll-subacc" id="rop-scroll-acc-tw-icons">
                                         <summary>
-                                            <span>✒️ 内置笔尖小图标库 (33款 · 含自定义传图)</span>
+                                            <span>✒️ 内置笔尖小图标库 (41款 · 含红雀羽毛与自定义传图)</span>
                                             <span class="rop-acc-badge">点击展开</span>
                                         </summary>
                                         <div class="rop-scroll-subacc-body">
                                             <div id="rop-scroll-tw-icon-grid" class="rop-chip-grid cols-4" style="margin-bottom:0;">
+                                                <button type="button" class="rop-scroll-tw-icon-chip" data-kind="cardinal_feather" data-angle="-8" style="display:flex;align-items:center;gap:4px;padding:3px 5px;font-size:10px;border-radius:4px;border:1px solid rgba(185,56,39,0.65);background:rgba(139,46,32,0.28);color:#fef2f2;cursor:pointer;"><canvas class="rop-tw-icon-canvas" data-kind="cardinal_feather" width="20" height="20" style="width:18px;height:18px;flex-shrink:0;"></canvas><span>红雀褐羽</span></button>
+                                                <button type="button" class="rop-scroll-tw-icon-chip" data-kind="northern_cardinal" data-angle="0" style="display:flex;align-items:center;gap:4px;padding:3px 5px;font-size:10px;border-radius:4px;border:1px solid rgba(220,38,38,0.65);background:rgba(185,28,28,0.25);color:#fef2f2;cursor:pointer;"><canvas class="rop-tw-icon-canvas" data-kind="northern_cardinal" width="20" height="20" style="width:18px;height:18px;flex-shrink:0;"></canvas><span>红雀鸟</span></button>
+                                                <button type="button" class="rop-scroll-tw-icon-chip" data-kind="cardinal_quill_gold" data-angle="-8" style="display:flex;align-items:center;gap:4px;padding:3px 5px;font-size:10px;border-radius:4px;border:1px solid rgba(251,146,60,0.55);background:rgba(124,45,18,0.25);color:#fef3c7;cursor:pointer;"><canvas class="rop-tw-icon-canvas" data-kind="cardinal_quill_gold" width="20" height="20" style="width:18px;height:18px;flex-shrink:0;"></canvas><span>棕羽金笔</span></button>
+                                                <button type="button" class="rop-scroll-tw-icon-chip" data-kind="amber_autumn_feather" data-angle="-8" style="display:flex;align-items:center;gap:4px;padding:3px 5px;font-size:10px;border-radius:4px;border:1px solid rgba(217,119,6,0.55);background:rgba(146,64,14,0.22);color:#fef3c7;cursor:pointer;"><canvas class="rop-tw-icon-canvas" data-kind="amber_autumn_feather" width="20" height="20" style="width:18px;height:18px;flex-shrink:0;"></canvas><span>琥珀金羽</span></button>
+                                                <button type="button" class="rop-scroll-tw-icon-chip" data-kind="crimson_rose_feather" data-angle="-8" style="display:flex;align-items:center;gap:4px;padding:3px 5px;font-size:10px;border-radius:4px;border:1px solid rgba(225,29,72,0.55);background:rgba(136,19,55,0.25);color:#ffe4e6;cursor:pointer;"><canvas class="rop-tw-icon-canvas" data-kind="crimson_rose_feather" width="20" height="20" style="width:18px;height:18px;flex-shrink:0;"></canvas><span>绯红金羽</span></button>
+                                                <button type="button" class="rop-scroll-tw-icon-chip" data-kind="frost_crystal_feather" data-angle="-8" style="display:flex;align-items:center;gap:4px;padding:3px 5px;font-size:10px;border-radius:4px;border:1px solid rgba(56,189,248,0.55);background:rgba(3,105,161,0.25);color:#e0f2fe;cursor:pointer;"><canvas class="rop-tw-icon-canvas" data-kind="frost_crystal_feather" width="20" height="20" style="width:18px;height:18px;flex-shrink:0;"></canvas><span>冰晶雪羽</span></button>
+                                                <button type="button" class="rop-scroll-tw-icon-chip" data-kind="peacock_plumage" data-angle="-8" style="display:flex;align-items:center;gap:4px;padding:3px 5px;font-size:10px;border-radius:4px;border:1px solid rgba(20,184,166,0.55);background:rgba(15,118,110,0.25);color:#ccfbf1;cursor:pointer;"><canvas class="rop-tw-icon-canvas" data-kind="peacock_plumage" width="20" height="20" style="width:18px;height:18px;flex-shrink:0;"></canvas><span>孔雀翎羽</span></button>
+                                                <button type="button" class="rop-scroll-tw-icon-chip" data-kind="dove_white_feather" data-angle="-8" style="display:flex;align-items:center;gap:4px;padding:3px 5px;font-size:10px;border-radius:4px;border:1px solid rgba(226,232,240,0.45);background:rgba(51,65,85,0.28);color:#f8fafc;cursor:pointer;"><canvas class="rop-tw-icon-canvas" data-kind="dove_white_feather" width="20" height="20" style="width:18px;height:18px;flex-shrink:0;"></canvas><span>鎏金白羽</span></button>
                                                 <button type="button" class="rop-scroll-tw-icon-chip" data-kind="quill" data-angle="-8" style="display:flex;align-items:center;gap:4px;padding:3px 5px;font-size:10px;border-radius:4px;border:1px solid rgba(255,255,255,0.12);background:rgba(255,255,255,0.04);color:#eee;cursor:pointer;"><canvas class="rop-tw-icon-canvas" data-kind="quill" width="20" height="20" style="width:18px;height:18px;flex-shrink:0;"></canvas><span>羽毛笔</span></button>
                                                 <button type="button" class="rop-scroll-tw-icon-chip" data-kind="rose" data-angle="-12" style="display:flex;align-items:center;gap:4px;padding:3px 5px;font-size:10px;border-radius:4px;border:1px solid rgba(255,255,255,0.12);background:rgba(255,255,255,0.04);color:#eee;cursor:pointer;"><canvas class="rop-tw-icon-canvas" data-kind="rose" width="20" height="20" style="width:18px;height:18px;flex-shrink:0;"></canvas><span>玫瑰花</span></button>
                                                 <button type="button" class="rop-scroll-tw-icon-chip" data-kind="fountain_pen" data-angle="-8" style="display:flex;align-items:center;gap:4px;padding:3px 5px;font-size:10px;border-radius:4px;border:1px solid rgba(255,255,255,0.12);background:rgba(255,255,255,0.04);color:#eee;cursor:pointer;"><canvas class="rop-tw-icon-canvas" data-kind="fountain_pen" width="20" height="20" style="width:18px;height:18px;flex-shrink:0;"></canvas><span>钢笔尖</span></button>

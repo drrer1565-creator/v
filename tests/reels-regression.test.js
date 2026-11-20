@@ -4938,7 +4938,7 @@ test('Scroll subtitle inspector organizes controls into clean collapsibles while
     assert.strictEqual((scrollBlock.match(/class="[^"]*rop-scroll-corner-badge-quick/g) || []).length, 13);
     assert.strictEqual((scrollBlock.match(/class="[^"]*rop-scroll-body-bg-preset/g) || []).length, 13);
     assert.strictEqual((scrollBlock.match(/class="[^"]*rop-scroll-tw-style-preset/g) || []).length, 10);
-    assert.strictEqual((scrollBlock.match(/class="[^"]*rop-scroll-tw-icon-chip/g) || []).length, 33);
+    assert.strictEqual((scrollBlock.match(/class="[^"]*rop-scroll-tw-icon-chip/g) || []).length, 41);
     assert.strictEqual((scrollBlock.match(/class="[^"]*rop-scroll-feather-preset/g) || []).length, 5);
 
     // Critical DOM element IDs remain identically addressable
@@ -11688,4 +11688,117 @@ test('media bind_scroll follow survives paused fade selection, template fallback
     p._applyGenericOverlayStyleToAllTasks(task1Img);
     assert.equal(task2Img.bind_scroll_offset_y, 45, 'Offset should sync to task2');
     assert.equal(task2Img.bind_scroll_overlay_id, 'sc_task2', 'task2 must keep its own scroll overlay ID, not task1 ID');
+});
+
+test('Cardinal reddish-brown feather, 7 new aesthetic feather/cardinal icons, and sentence-level cursor following in T-subtitle and scroll', () => {
+    const sandbox = {
+        console,
+        Math,
+        JSON,
+        Date,
+        Number,
+        String,
+        Boolean,
+        Array,
+        Object,
+        Set,
+        Map,
+        Path2D: class MockPath2D { constructor(d) { this.d = d; } },
+        Image: class MockImage {},
+        window: {},
+    };
+    sandbox.window = sandbox;
+    sandbox.globalThis = sandbox;
+    loadBrowserScript('src/reels-anim-engine.js', sandbox);
+    loadBrowserScript('src/reels-style-engine.js', sandbox);
+    loadBrowserScript('src/reels-presets-init.js', sandbox);
+    loadBrowserScript('src/reels-canvas-renderer.js', sandbox);
+    loadBrowserScript('src/reels-overlay.js', sandbox);
+
+    const newIds = [
+        'cardinal_feather', 'northern_cardinal', 'cardinal_quill_gold', 'amber_autumn_feather',
+        'crimson_rose_feather', 'frost_crystal_feather', 'peacock_plumage', 'dove_white_feather',
+    ];
+    let ops = 0;
+    const makeCtx = () => ({
+        lineCap: 'butt', lineJoin: 'miter', lineWidth: 1, globalAlpha: 1,
+        globalCompositeOperation: 'source-over', shadowColor: '', shadowBlur: 0,
+        shadowOffsetX: 0, shadowOffsetY: 0, fillStyle: '#000', strokeStyle: '#000',
+        font: '40px Arial', direction: 'ltr', textBaseline: 'alphabetic', textAlign: 'left',
+        save() {}, restore() {}, translate() {}, rotate() {}, scale() {}, clip() {},
+        beginPath() {}, closePath() {}, moveTo() {}, lineTo() {}, quadraticCurveTo() {},
+        bezierCurveTo() {}, arc() {}, ellipse() {}, rect() {}, roundRect() {}, setLineDash() {},
+        fill() { ops++; }, stroke() { ops++; }, fillRect() { ops++; }, strokeRect() {}, clearRect() {},
+        fillText() { ops++; }, strokeText() {}, drawImage() { ops++; },
+        measureText: (txt) => ({
+            width: String(txt || '').length * 14,
+            actualBoundingBoxAscent: 28,
+            actualBoundingBoxDescent: 8,
+        }),
+        createLinearGradient: () => ({ addColorStop() {} }),
+        createRadialGradient: () => ({ addColorStop() {} }),
+    });
+
+    for (const id of newIds) {
+        assert.equal(sandbox.window.isImageOrVectorWritingTip(id), true, `${id} must be registered as writing tip`);
+        assert.ok(sandbox.window.HOLIDAY_ICON_MAP[id], `${id} must exist in HOLIDAY_ICON_CATALOG`);
+        const before = ops;
+        assert.equal(sandbox.window.drawHolidayStickerIcon(makeCtx(), id, 120, 120, 160, { time: 0.4 }), true);
+        assert.ok(ops > before, `${id} should draw sticker geometry`);
+        const beforeTip = ops;
+        sandbox.window.drawSpeechWritingTip(makeCtx(), id, 40, 80, 36, -8);
+        assert.ok(ops > beforeTip, `${id} should draw speech writing tip`);
+    }
+
+    // Standard T-subtitle sentence reveal + cardinal_feather cursor
+    const renderer = new sandbox.window.ReelsCanvasRenderer({ width: 1080, height: 1920, getContext: makeCtx });
+    const drawnTexts = [];
+    renderer.ctx = {
+        ...makeCtx(),
+        fillText(t) { ops++; drawnTexts.push(String(t)); },
+    };
+    const seg = {
+        start: 0, end: 4,
+        text: 'Cardinals appear. Angels are near.',
+        words: [
+            { word: 'Cardinals', start: 0.0, end: 0.8 },
+            { word: 'appear.', start: 0.8, end: 1.6 },
+            { word: 'Angels', start: 2.0, end: 2.6 },
+            { word: 'are', start: 2.6, end: 3.1 },
+            { word: 'near.', start: 3.1, end: 3.8 },
+        ],
+    };
+    const style = {
+        ...sandbox.window.REELS_SUBTITLE_DEFAULTS,
+        anim_in_type: 'typewriter',
+        typewriter_reveal_type: 'sentence',
+        tw_unrevealed_opacity: 0,
+        subtitle_cursor_enabled: true,
+        fullpage_typewriter_cursor_kind: 'cardinal_feather',
+    };
+    renderer.renderSubtitle(style, seg, 0.2, 1080, 1920);
+    const joinedAt02 = drawnTexts.join(' ');
+    assert.ok(joinedAt02.includes('Cardinals') && joinedAt02.includes('appear.'), 'First sentence reveals together at 0.2s');
+    assert.ok(!joinedAt02.includes('Angels'), 'Second sentence stays hidden until second sentence begins');
+
+    // Scroll subtitle sentence mode + cardinal_feather
+    const scrollOv = sandbox.window.ReelsOverlay.createScrollOverlay({
+        content: 'Cardinals appear.\nAngels are near.',
+        scroll_typewriter_enabled: true,
+        scroll_tw_reveal_type: 'sentence',
+        scroll_tw_cursor_enabled: true,
+        scroll_tw_cursor_kind: 'cardinal_feather',
+        scroll_tw_hide_unread: true,
+        start: 0,
+        end: 6,
+    });
+    const beforeScroll = ops;
+    sandbox.window.ReelsOverlay.drawOverlay(makeCtx(), scrollOv, 1.5, 1080, 1920);
+    assert.ok(ops > beforeScroll, 'Scroll sentence mode with cardinal_feather should draw');
+
+    const htmlSrc = fs.readFileSync(path.join(ROOT, 'src/index.html'), 'utf8');
+    const panelSrc = fs.readFileSync(path.join(ROOT, 'src/reels-overlay-panel.js'), 'utf8');
+    assert.match(htmlSrc, /cardinal_feather/);
+    assert.match(htmlSrc, /id="reels-typewriter-reveal-type"[\s\S]*?<option value="sentence">/);
+    assert.match(panelSrc, /cardinal_feather/);
 });

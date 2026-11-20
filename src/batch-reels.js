@@ -4315,10 +4315,48 @@ window.reelsInitChristmasIconPickers = function() {
     const grid = document.getElementById('reels-xmas-subtitle-icon-grid');
     if (grid && !grid.dataset.populated) {
         grid.dataset.populated = '1';
+        const parent = grid.parentElement;
+        if (parent && !document.getElementById('reels-xmas-icon-cat-bar')) {
+            const catBar = document.createElement('div');
+            catBar.id = 'reels-xmas-icon-cat-bar';
+            catBar.style.cssText = 'display:flex;gap:4px;flex-wrap:wrap;margin-bottom:6px;';
+            const cats = [
+                { val: 'all', label: `全部 (${catalog.length})` },
+                { val: '飞羽红雀', label: '🪶 红雀羽毛' },
+                { val: '圣诞经典', label: '🔔 圣诞经典' },
+                { val: '萌物人物', label: '⛄ 萌物人物' },
+                { val: '圣夜信仰', label: '🌟 圣夜信仰' },
+                { val: '冬日美食', label: '🍪 冬日美食' },
+            ];
+            for (const c of cats) {
+                const btn = document.createElement('button');
+                btn.type = 'button';
+                btn.className = 'btn btn-secondary btn-small reels-xmas-cat-chip';
+                btn.dataset.cat = c.val;
+                btn.textContent = c.label;
+                btn.style.cssText = 'font-size:10px;padding:2px 7px;border-radius:999px;' + (c.val === 'all' ? 'background:rgba(250,204,21,0.22);border-color:#facc15;color:#fef08a;' : '');
+                catBar.appendChild(btn);
+            }
+            catBar.addEventListener('click', (ev) => {
+                const b = ev.target.closest('.reels-xmas-cat-chip');
+                if (!b) return;
+                const chosen = b.dataset.cat || 'all';
+                catBar.querySelectorAll('.reels-xmas-cat-chip').forEach((el) => {
+                    const act = el === b;
+                    el.style.background = act ? 'rgba(250,204,21,0.22)' : '';
+                    el.style.borderColor = act ? '#facc15' : '';
+                    el.style.color = act ? '#fef08a' : '';
+                });
+                grid.querySelectorAll('.reels-xmas-sub-icon-chip').forEach((chip) => {
+                    chip.style.display = (chosen === 'all' || chip.dataset.category === chosen) ? 'flex' : 'none';
+                });
+            });
+            parent.insertBefore(catBar, grid);
+        }
         grid.innerHTML = catalog.map((item) => {
             const safeId = String(item.id).replace(/[^a-zA-Z0-9_-]/g, '');
             const esc = (s) => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-            return `<button type="button" class="reels-xmas-sub-icon-chip" data-kind="${safeId}" title="${esc(item.emoji + ' ' + item.label + ' (' + item.category + ')')}" style="display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;padding:4px 3px;border-radius:6px;border:1px solid rgba(255,255,255,0.12);background:rgba(255,255,255,0.04);color:#f1f5f9;cursor:pointer;">
+            return `<button type="button" class="reels-xmas-sub-icon-chip" data-kind="${safeId}" data-category="${esc(item.category)}" title="${esc(item.emoji + ' ' + item.label + ' (' + item.category + ')')}" style="display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;padding:4px 3px;border-radius:6px;border:1px solid rgba(255,255,255,0.12);background:rgba(255,255,255,0.04);color:#f1f5f9;cursor:pointer;">
                 <canvas class="reels-xmas-sub-icon-cvs" data-kind="${safeId}" width="38" height="38" style="width:30px;height:30px;display:block;"></canvas>
                 <span style="font-size:9.5px;line-height:1.15;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(item.label)}</span>
             </button>`;
@@ -20264,12 +20302,15 @@ window.reelsSetSpeechWritingTip = function(kind, standardSubtitleMode = false) {
         set('reels-fullpage-typewriter-cursor-offset-x', 0);
         set('reels-fullpage-typewriter-cursor-offset-y', 0);
         set('reels-fullpage-typewriter-cursor-angle', 0);
-        // Ensure emerging word/char reveal is enabled together with the icon
+        // Ensure emerging word/char/sentence reveal is enabled together with the icon without clobbering user's sentence mode
         const animInEl = document.getElementById('reels-anim-in-type');
         if (animInEl && animInEl.value !== 'typewriter' && animInEl.value !== 'zoom_typewriter') {
             animInEl.value = 'typewriter';
         }
-        set('reels-typewriter-reveal-type', 'word');
+        const twRevEl = document.getElementById('reels-typewriter-reveal-type');
+        if (twRevEl && twRevEl.value !== 'sentence' && twRevEl.value !== 'char') {
+            twRevEl.value = 'word';
+        }
         set('reels-hide-until-spoken', true, true);
         set('reels-unread-opacity', 0);
         set('reels-unread-opacity-range', 0);
@@ -20279,7 +20320,10 @@ window.reelsSetSpeechWritingTip = function(kind, standardSubtitleMode = false) {
         set('reels-fullpage-typewriter', true, true);
         set('reels-fullpage-typewriter-cursor', true, true);
         set('reels-fullpage-typewriter-speech-sync', true, true);
-        set('reels-fullpage-typewriter-reveal-type', 'char');
+        const fpRevEl = document.getElementById('reels-fullpage-typewriter-reveal-type');
+        if (fpRevEl && fpRevEl.value !== 'sentence' && fpRevEl.value !== 'word') {
+            fpRevEl.value = 'char';
+        }
         set('reels-fullpage-typewriter-cursor-kind', kind);
         set('reels-fullpage-typewriter-cursor-scale', kind === 'rose' ? .75 : 1.4);
         set('reels-fullpage-typewriter-cursor-offset-x', 0);

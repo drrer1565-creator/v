@@ -5147,10 +5147,11 @@
                     </div>
                     <!-- 🎄 圣诞快速入口（无需折叠展开，直接可见） -->
                     <div style="margin-top:7px; padding-top:7px; border-top:1px dashed rgba(250,204,21,0.3); display:flex; align-items:center; gap:5px; flex-wrap:wrap;">
-                      <span style="font-size:11px; font-weight:700; color:#fde68a;">🎄 圣诞快配:</span>
-                      <button type="button" class="btn btn-secondary" style="font-size:11px; padding:3px 8px; background:linear-gradient(135deg,#15803d,#dc2626); color:#fff; border:1px solid #fde68a; font-weight:700;" onclick="var sec=document.getElementById('reels-xmas-icons-accordion'); if(sec){var p=sec.closest('details:not(#reels-xmas-icons-accordion)'); if(p)p.open=true; sec.open=true; sec.scrollIntoView({behavior:'smooth',block:'center'});} window.reelsAddChristmasStickerIcon && window.reelsAddChristmasStickerIcon('jingle_bell');" title="立即在画面上方居中放入圣诞小图标，并在 T字幕 内展开32款图标与位置/大小滑块">+ 🎄 放画面小图标(32款)</button>
+                      <span style="font-size:11px; font-weight:700; color:#fde68a;">🎄 圣诞/红雀快配:</span>
+                      <button type="button" class="btn btn-secondary" style="font-size:11px; padding:3px 8px; background:linear-gradient(135deg,#15803d,#dc2626); color:#fff; border:1px solid #fde68a; font-weight:700;" onclick="var sec=document.getElementById('reels-xmas-icons-accordion'); if(sec){var p=sec.closest('details:not(#reels-xmas-icons-accordion)'); if(p)p.open=true; sec.open=true; sec.scrollIntoView({behavior:'smooth',block:'center'});} window.reelsAddChristmasStickerIcon && window.reelsAddChristmasStickerIcon('jingle_bell');" title="立即在画面上方居中放入圣诞/红雀小图标，并在 T字幕 内展开40款图标与位置/大小滑块">+ 🎄 放画面小图标(40款)</button>
+                      <button type="button" class="btn btn-secondary" style="font-size:11px; padding:3px 8px; background:#8b2e20; color:#fef2f2; border:1px solid #fca5a5; font-weight:700;" onclick="window.reelsSetSpeechWritingTip && window.reelsSetSpeechWritingTip('cardinal_feather', true);" title="开启红雀红褐色羽毛跟读小图标（支持逐词/逐字/逐句出字）">🪶 红雀红褐羽毛+出字</button>
                       <button type="button" class="btn btn-secondary" style="font-size:11px; padding:3px 8px; background:#129E4D; color:#fff; border:1px solid #86EFAC; font-weight:700;" onclick="window.reelsApplyChristmasComboPreset && window.reelsApplyChristmasComboPreset('xmas_combo_tree_bells')" title="在画面上方添加金色双铃铛并同步切换翡翠绿胶囊圣诞字幕（图1同款）">🔔 树顶铃铛+翡翠绿字幕</button>
-                      <button type="button" class="btn btn-secondary" style="font-size:11px; padding:3px 8px; border-color:rgba(250,204,21,0.45); color:#fde68a;" onclick="var sec=document.getElementById('reels-xmas-icons-accordion'); if(sec){var p=sec.closest('details:not(#reels-xmas-icons-accordion)'); if(p)p.open=true; sec.open=true; sec.scrollIntoView({behavior:'smooth',block:'center'});}">✨ 打开32款图标+下方调节</button>
+                      <button type="button" class="btn btn-secondary" style="font-size:11px; padding:3px 8px; border-color:rgba(250,204,21,0.45); color:#fde68a;" onclick="var sec=document.getElementById('reels-xmas-icons-accordion'); if(sec){var p=sec.closest('details:not(#reels-xmas-icons-accordion)'); if(p)p.open=true; sec.open=true; sec.scrollIntoView({behavior:'smooth',block:'center'});}">✨ 打开40款图标+下方调节</button>
                     </div>
                   </div>
 
@@ -5559,6 +5560,11 @@
                         <button type="button" class="btn btn-secondary btn-small" style="font-size:10px; padding:2px 7px;" onclick="window.reelsDisableSubtitleCursor && window.reelsDisableSubtitleCursor()">🚫 关闭跟读图标</button>
                       </div>
                       <div style="display: flex; flex-wrap: wrap; gap: 5px;">
+                        <button type="button" class="btn btn-secondary btn-small" style="font-size:11px; padding:3px 8px; border-color:#f87171; background:rgba(139,46,32,0.45); color:#fef2f2; font-weight:700;" onclick="window.reelsSetSpeechWritingTip && window.reelsSetSpeechWritingTip('cardinal_feather', true)">🪶 红雀红褐羽毛+出字</button>
+                        <button type="button" class="btn btn-secondary btn-small" style="font-size:11px; padding:3px 8px; border-color:#ef4444; background:rgba(185,28,28,0.42); color:#fef2f2; font-weight:700;" onclick="window.reelsSetSpeechWritingTip && window.reelsSetSpeechWritingTip('northern_cardinal', true)">🐦 红雀鸟+出字</button>
+                        <button type="button" class="btn btn-secondary btn-small" style="font-size:11px; padding:3px 8px; border-color:#fb923c; background:rgba(124,45,18,0.40); color:#fef3c7; font-weight:700;" onclick="window.reelsSetSpeechWritingTip && window.reelsSetSpeechWritingTip('cardinal_quill_gold', true)">✒️ 红雀棕羽金笔+出字</button>
+                        <button type="button" class="btn btn-secondary btn-small" style="font-size:11px; padding:3px 8px; border-color:#2dd4bf; background:rgba(15,118,110,0.36); color:#ccfbf1; font-weight:700;" onclick="window.reelsSetSpeechWritingTip && window.reelsSetSpeechWritingTip('peacock_plumage', true)">🦚 孔雀翎羽+出字</button>
+                        <button type="button" class="btn btn-secondary btn-small" style="font-size:11px; padding:3px 8px; border-color:#38bdf8; background:rgba(3,105,161,0.36); color:#e0f2fe; font-weight:700;" onclick="window.reelsSetSpeechWritingTip && window.reelsSetSpeechWritingTip('frost_crystal_feather', true)">❄️ 冰晶雪羽+出字</button>
                         <button type="button" class="btn btn-secondary btn-small" style="font-size:11px; padding:3px 8px; border-color:#fbbf24; background:rgba(30,58,138,0.38); color:#fde68a; font-weight:700;" onclick="window.reelsSetSpeechWritingTip && window.reelsSetSpeechWritingTip('us_flag_shield', true)">🇺🇸 星条旗金盾+出字</button>
                         <button type="button" class="btn btn-secondary btn-small" style="font-size:11px; padding:3px 8px; border-color:#c084fc; background:rgba(88,28,135,0.32); color:#f3e8ff; font-weight:700;" onclick="window.reelsSetSpeechWritingTip && window.reelsSetSpeechWritingTip('purple_heart_medal', true)">🎖️ 紫心勋章+出字</button>
                         <button type="button" class="btn btn-secondary btn-small" style="font-size:11px; padding:3px 8px; border-color:#f59e0b; background:rgba(120,53,15,0.32); color:#fef08a; font-weight:700;" onclick="window.reelsSetSpeechWritingTip && window.reelsSetSpeechWritingTip('bald_eagle_crest', true)">🦅 白头海雕+出字</button>
@@ -5592,8 +5598,8 @@
 
                         <details id="reels-xmas-icons-accordion" open style="border-top:1px dashed rgba(255,255,255,0.15); padding-top:6px;">
                           <summary style="cursor:pointer; font-size:11px; color:#fef08a; font-weight:700; display:flex; align-items:center; justify-content:space-between; list-style:none;">
-                            <span>✨ 全部 32 款圣诞小图标库（点击放置到画面，或设成字幕跟读小图标）</span>
-                            <span style="font-size:10px; padding:1px 6px; border-radius:999px; background:rgba(250,204,21,0.18); color:#fde68a;">32款 ▾</span>
+                            <span>✨ 全部 40 款圣诞与红雀飞羽小图标库（点击放置到画面，或设成字幕逐句/逐词跟读小图标）</span>
+                            <span style="font-size:10px; padding:1px 6px; border-radius:999px; background:rgba(250,204,21,0.18); color:#fde68a;">40款 ▾</span>
                           </summary>
                           <div style="margin-top:6px;">
                             <div style="display:flex; align-items:center; justify-content:space-between; gap:6px; margin-bottom:6px; flex-wrap:wrap;">
@@ -6004,6 +6010,14 @@
                               <button type="button" class="btn btn-secondary" style="padding:3px 7px;font-size:11px;border-color:#c96d44;background:rgba(201,109,68,0.20);color:#faf6f0;" onclick="reelsSetSpeechWritingTip('minimal_pumpkin')">🎃 线条南瓜</button>
                               <button type="button" class="btn btn-secondary" style="padding:3px 7px;font-size:11px;border-color:#a89078;background:rgba(94,70,56,0.25);color:#f5efe6;" onclick="reelsSetSpeechWritingTip('warm_mug')">☕ 暖秋热饮</button>
                               <button type="button" class="btn btn-secondary" style="padding:3px 7px;font-size:11px;border-color:#8a9a86;background:rgba(120,137,114,0.22);color:#f5efe6;" onclick="reelsSetSpeechWritingTip('olive_branch')">🌿 感恩橄榄枝</button>
+                              <button type="button" class="btn btn-secondary" style="padding:3px 7px;font-size:11px;border-color:#b93827;background:rgba(139,46,32,0.38);color:#fef2f2;" onclick="reelsSetSpeechWritingTip('cardinal_feather')">🪶 红雀红褐羽</button>
+                              <button type="button" class="btn btn-secondary" style="padding:3px 7px;font-size:11px;border-color:#dc2626;background:rgba(185,28,28,0.35);color:#fef2f2;" onclick="reelsSetSpeechWritingTip('northern_cardinal')">🐦 红雀鸟松枝</button>
+                              <button type="button" class="btn btn-secondary" style="padding:3px 7px;font-size:11px;border-color:#9a3412;background:rgba(124,45,18,0.35);color:#fef3c7;" onclick="reelsSetSpeechWritingTip('cardinal_quill_gold')">✒️ 红雀棕羽笔</button>
+                              <button type="button" class="btn btn-secondary" style="padding:3px 7px;font-size:11px;border-color:#d97706;background:rgba(146,64,14,0.32);color:#fef3c7;" onclick="reelsSetSpeechWritingTip('amber_autumn_feather')">🍂 琥珀金羽</button>
+                              <button type="button" class="btn btn-secondary" style="padding:3px 7px;font-size:11px;border-color:#e11d48;background:rgba(136,19,55,0.35);color:#ffe4e6;" onclick="reelsSetSpeechWritingTip('crimson_rose_feather')">🥀 绯红金羽</button>
+                              <button type="button" class="btn btn-secondary" style="padding:3px 7px;font-size:11px;border-color:#38bdf8;background:rgba(3,105,161,0.32);color:#e0f2fe;" onclick="reelsSetSpeechWritingTip('frost_crystal_feather')">❄️ 冰晶雪羽</button>
+                              <button type="button" class="btn btn-secondary" style="padding:3px 7px;font-size:11px;border-color:#14b8a6;background:rgba(15,118,110,0.32);color:#ccfbf1;" onclick="reelsSetSpeechWritingTip('peacock_plumage')">🦚 孔雀翎羽</button>
+                              <button type="button" class="btn btn-secondary" style="padding:3px 7px;font-size:11px;border-color:#e0f2fe;background:rgba(51,65,85,0.35);color:#f8fafc;" onclick="reelsSetSpeechWritingTip('dove_white_feather')">🕊️ 鎏金白羽</button>
                               <button type="button" class="btn btn-secondary" style="padding:3px 7px;font-size:11px;" onclick="reelsUploadSpeechWritingImage()">🖼 上传图片</button>
                             </div>
                             <label style="display:flex;align-items:center;gap:6px;margin-bottom:6px;">
@@ -6047,6 +6061,14 @@
                                 <option value="minimal_pumpkin">🎃 奶油赤陶线条南瓜</option>
                                 <option value="warm_mug">☕ 暖秋手冲热饮杯</option>
                                 <option value="olive_branch">🌿 静谧感恩橄榄枝</option>
+                                <option value="cardinal_feather">🪶 红雀红褐色羽毛</option>
+                                <option value="northern_cardinal">🐦 红雀鸟松枝冬青</option>
+                                <option value="cardinal_quill_gold">✒️ 红雀棕羽金钢笔</option>
+                                <option value="amber_autumn_feather">🍂 焦糖琥珀金棕羽</option>
+                                <option value="crimson_rose_feather">🥀 绯红玫瑰金丝羽</option>
+                                <option value="frost_crystal_feather">❄️ 冰晶银蓝雪羽</option>
+                                <option value="peacock_plumage">🦚 翡翠孔雀翎羽</option>
+                                <option value="dove_white_feather">🕊️ 圣洁鎏金白鸽羽</option>
                                 <option value="image">🖼 上传的图片</option>
                               </select>
                             </div>
@@ -6341,9 +6363,10 @@
                           <div style="display: flex; flex-direction: column; gap: 5px;">
                             <div style="display: flex; flex-wrap: nowrap; align-items: center; gap: 6px; width: 100%;">
                               <label style="margin:0; font-size:12px; flex:0 0 60px; white-space:nowrap;">显示单位:</label>
-                              <select id="reels-typewriter-reveal-type" class="select" style="width:84px; height:24px; padding:2px 4px; font-size:11px;" onchange="reelsUpdatePreview()">
+                              <select id="reels-typewriter-reveal-type" class="select" style="width:94px; height:24px; padding:2px 4px; font-size:11px;" onchange="reelsUpdatePreview()">
                                 <option value="word" selected>按单词</option>
                                 <option value="char">按字符</option>
+                                <option value="sentence">按整句 (逐句)</option>
                               </select>
                             </div>
                             <div style="display: flex; flex-wrap: nowrap; align-items: center; gap: 6px; width: 100%;">
@@ -8318,7 +8341,7 @@
           <div class="form-section">
             <h3 class="section-title">关于</h3>
             <div class="about-info">
-              <p><strong>VideoKit</strong> <span id="app-version-display">v4.6.7-beta</span></p>
+              <p><strong>VideoKit</strong> <span id="app-version-display">v4.6.8-beta</span></p>
               <p>视频工具包-批量：音频生成-reels视频制作-多媒体转换</p>
               <div style="margin-top: 12px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
                 <button id="check-update-btn" class="btn btn-secondary" onclick="checkAppUpdate()"

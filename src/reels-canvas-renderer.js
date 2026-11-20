@@ -168,6 +168,14 @@ const HOLIDAY_ICON_CATALOG = [
     { id: 'xmas_hot_cocoa', emoji: '☕', label: '棉花糖热可可', category: '冬日美食', accent: '#991B1B' },
     { id: 'xmas_north_pole_sign', emoji: '🪧', label: '北极糖果路牌', category: '冬日美食', accent: '#DC2626' },
     { id: 'xmas_cookie_star', emoji: '⭐', label: '糖霜星形饼干', category: '冬日美食', accent: '#D97706' },
+    { id: 'cardinal_feather', emoji: '🪶', label: '红雀红褐羽毛', category: '飞羽红雀', accent: '#B93827' },
+    { id: 'northern_cardinal', emoji: '🐦', label: '红雀鸟松枝', category: '飞羽红雀', accent: '#DC2626' },
+    { id: 'cardinal_quill_gold', emoji: '✒️', label: '红雀棕羽金笔', category: '飞羽红雀', accent: '#9A3412' },
+    { id: 'amber_autumn_feather', emoji: '🍂', label: '焦糖琥珀金羽', category: '飞羽红雀', accent: '#D97706' },
+    { id: 'crimson_rose_feather', emoji: '🥀', label: '绯红玫瑰金羽', category: '飞羽红雀', accent: '#E11D48' },
+    { id: 'frost_crystal_feather', emoji: '❄️', label: '冰晶银蓝雪羽', category: '飞羽红雀', accent: '#38BDF8' },
+    { id: 'peacock_plumage', emoji: '🦚', label: '翡翠孔雀翎羽', category: '飞羽红雀', accent: '#14B8A6' },
+    { id: 'dove_white_feather', emoji: '🕊️', label: '圣洁鎏金白羽', category: '飞羽红雀', accent: '#E0F2FE' },
 ];
 const HOLIDAY_ICON_SET = new Set(HOLIDAY_ICON_CATALOG.map((item) => item.id));
 const HOLIDAY_ICON_MAP = Object.fromEntries(HOLIDAY_ICON_CATALOG.map((item) => [item.id, item]));
@@ -1116,6 +1124,245 @@ function drawHolidayStickerIcon(ctx, rawKind, cx, cy, size = 120, opts = {}) {
                 ctx.beginPath(); ctx.ellipse(bx, by + 0.12, 0.065, 0.095, 0, 0, Math.PI * 2); ctx.fill();
                 circle(bx - 0.02, by + 0.09, 0.02, 'rgba(255,255,255,0.8)');
             }
+            break;
+        }
+        case 'cardinal_feather':
+        case 'cardinal_quill_gold':
+        case 'amber_autumn_feather':
+        case 'crimson_rose_feather':
+        case 'frost_crystal_feather':
+        case 'peacock_plumage':
+        case 'dove_white_feather': {
+            const palettes = {
+                cardinal_feather: {
+                    upper: [[0, '#5c1d16'], [0.42, '#8b2e20'], [0.80, '#b93827'], [1, '#df7857']],
+                    lower: [[0, '#3a100c'], [0.5, '#681f16'], [1, '#9a2f22']],
+                    outline: '#2e0d09',
+                    rachis: '#2b0b07',
+                    rachisSheen: '#f6d2be',
+                    barb: 'rgba(253, 224, 206, 0.36)',
+                    tipGlint: '#f5b895',
+                },
+                cardinal_quill_gold: {
+                    upper: [[0, '#4a1811'], [0.45, '#82291d'], [0.84, '#b83726'], [1, '#d87a56']],
+                    lower: [[0, '#320d09'], [0.55, '#5d1c13'], [1, '#8c281c']],
+                    outline: '#2b0b08',
+                    rachis: '#3d150e',
+                    rachisSheen: '#fde68a',
+                    barb: 'rgba(253, 230, 138, 0.34)',
+                    tipGlint: '#fbbf24',
+                    goldNib: true,
+                },
+                amber_autumn_feather: {
+                    upper: [[0, '#5a2b0c'], [0.45, '#9a4714'], [0.82, '#d97706'], [1, '#fde68a']],
+                    lower: [[0, '#421d08'], [0.55, '#78350f'], [1, '#b45309']],
+                    outline: '#422006',
+                    rachis: '#451a03',
+                    rachisSheen: '#fef3c7',
+                    barb: 'rgba(254, 243, 199, 0.35)',
+                    tipGlint: '#fde047',
+                },
+                crimson_rose_feather: {
+                    upper: [[0, '#500724'], [0.45, '#9f1239'], [0.82, '#e11d48'], [1, '#fda4af']],
+                    lower: [[0, '#380519'], [0.55, '#881337'], [1, '#be123c']],
+                    outline: '#4c0519',
+                    rachis: '#4c0519',
+                    rachisSheen: '#fde047',
+                    barb: 'rgba(253, 224, 71, 0.42)',
+                    tipGlint: '#fef08a',
+                    goldVeins: true,
+                },
+                frost_crystal_feather: {
+                    upper: [[0, '#075985'], [0.42, '#0284c7'], [0.78, '#7dd3fc'], [1, '#f8fafc']],
+                    lower: [[0, '#0c4a6e'], [0.55, '#0369a1'], [1, '#38bdf8']],
+                    outline: '#0c4a6e',
+                    rachis: '#0369a1',
+                    rachisSheen: '#ffffff',
+                    barb: 'rgba(255, 255, 255, 0.56)',
+                    tipGlint: '#e0f2fe',
+                    frostGlints: true,
+                },
+                peacock_plumage: {
+                    upper: [[0, '#064e3b'], [0.45, '#047857'], [0.82, '#14b8a6'], [1, '#99f6e4']],
+                    lower: [[0, '#022c22'], [0.55, '#065f46'], [1, '#0d9488']],
+                    outline: '#042f2e',
+                    rachis: '#022c22',
+                    rachisSheen: '#fde68a',
+                    barb: 'rgba(167, 243, 208, 0.42)',
+                    tipGlint: '#fde047',
+                    peacockEye: true,
+                },
+                dove_white_feather: {
+                    upper: [[0, '#cbd5e1'], [0.42, '#e2e8f0'], [0.78, '#f8fafc'], [1, '#ffffff']],
+                    lower: [[0, '#94a3b8'], [0.55, '#cbd5e1'], [1, '#e0f2fe']],
+                    outline: '#64748b',
+                    rachis: '#d97706',
+                    rachisSheen: '#fef9c3',
+                    barb: 'rgba(255, 255, 255, 0.72)',
+                    tipGlint: '#fde047',
+                },
+            };
+            const pal = palettes[kind] || palettes.cardinal_feather;
+            // Upper vane with subtle natural feather notches
+            ctx.fillStyle = _holidayLinGrad(ctx, -0.26, 0.24, 0.38, -0.38, pal.upper, pal.upper[1][1]);
+            ctx.strokeStyle = pal.outline;
+            ctx.lineWidth = 0.016;
+            ctx.beginPath();
+            ctx.moveTo(-0.30, 0.26);
+            ctx.bezierCurveTo(-0.32, 0.02, -0.20, -0.18, -0.02, -0.26);
+            ctx.lineTo(-0.07, -0.17);
+            ctx.lineTo(0.02, -0.28);
+            ctx.bezierCurveTo(0.16, -0.38, 0.30, -0.44, 0.42, -0.42);
+            ctx.bezierCurveTo(0.32, -0.24, 0.14, -0.06, -0.30, 0.26);
+            ctx.closePath();
+            ctx.fill();
+            ctx.stroke();
+
+            // Lower vane
+            ctx.fillStyle = _holidayLinGrad(ctx, -0.26, 0.26, 0.38, -0.36, pal.lower, pal.lower[1][1]);
+            ctx.beginPath();
+            ctx.moveTo(-0.28, 0.28);
+            ctx.bezierCurveTo(-0.04, 0.24, 0.16, 0.12, 0.28, -0.04);
+            ctx.lineTo(0.18, -0.04);
+            ctx.lineTo(0.31, -0.09);
+            ctx.bezierCurveTo(0.39, -0.20, 0.43, -0.33, 0.42, -0.42);
+            ctx.bezierCurveTo(0.20, -0.18, -0.02, 0.04, -0.28, 0.28);
+            ctx.closePath();
+            ctx.fill();
+            ctx.stroke();
+
+            // Fine feather barb texture & golden veins
+            ctx.strokeStyle = pal.goldVeins ? 'rgba(253, 224, 71, 0.55)' : pal.barb;
+            ctx.lineWidth = pal.goldVeins ? 0.012 : 0.010;
+            for (let bi = 0; bi < 7; bi++) {
+                const bx = -0.20 + bi * 0.082;
+                const by = 0.18 - bi * 0.082;
+                ctx.beginPath();
+                ctx.moveTo(bx, by);
+                ctx.quadraticCurveTo(bx - 0.03, by - 0.09, bx - 0.09, by - 0.15);
+                ctx.moveTo(bx, by);
+                ctx.quadraticCurveTo(bx + 0.09, by - 0.01, bx + 0.15, by - 0.06);
+                ctx.stroke();
+            }
+
+            // Sculpted central rachis / quill spine down to (-0.43, 0.43)
+            ctx.lineCap = 'round';
+            ctx.strokeStyle = pal.rachis;
+            ctx.lineWidth = 0.030;
+            ctx.beginPath();
+            ctx.moveTo(-0.42, 0.42);
+            ctx.quadraticCurveTo(-0.06, 0.04, 0.36, -0.36);
+            ctx.stroke();
+            ctx.strokeStyle = pal.rachisSheen;
+            ctx.lineWidth = 0.011;
+            ctx.beginPath();
+            ctx.moveTo(-0.36, 0.36);
+            ctx.quadraticCurveTo(-0.04, 0.02, 0.34, -0.34);
+            ctx.stroke();
+
+            if (pal.goldNib) {
+                // Engraved 24k gold nib + collar ferrule at (-0.43, 0.43)
+                ctx.fillStyle = _holidayLinGrad(ctx, -0.45, 0.45, -0.26, 0.26, [
+                    [0, '#fef08a'], [0.5, '#f59e0b'], [1, '#92400e'],
+                ], '#f59e0b');
+                ctx.strokeStyle = '#78350f';
+                ctx.lineWidth = 0.013;
+                ctx.beginPath();
+                ctx.moveTo(-0.44, 0.44);
+                ctx.lineTo(-0.39, 0.27);
+                ctx.lineTo(-0.31, 0.35);
+                ctx.closePath();
+                ctx.fill();
+                ctx.stroke();
+                ctx.strokeStyle = '#451a03';
+                ctx.lineWidth = 0.008;
+                ctx.beginPath(); ctx.moveTo(-0.44, 0.44); ctx.lineTo(-0.35, 0.35); ctx.stroke();
+                circle(-0.35, 0.35, 0.016, '#451a03');
+            }
+            if (pal.peacockEye) {
+                // Iridescent sapphire + violet + gold peacock ocellus
+                ctx.fillStyle = _holidayRadGrad(ctx, 0.22, -0.22, 0.01, 0.22, -0.22, 0.14, [
+                    [0, '#0f172a'], [0.35, '#1d4ed8'], [0.68, '#14b8a6'], [0.92, '#fde047'], [1, 'rgba(253,224,71,0)'],
+                ], '#1d4ed8');
+                ctx.beginPath();
+                ctx.ellipse(0.22, -0.22, 0.12, 0.085, -0.78, 0, Math.PI * 2);
+                ctx.fill();
+                circle(0.22, -0.22, 0.038, '#1e1b4b', '#fde047', 0.010);
+            }
+            if (pal.frostGlints) {
+                circle(0.18, -0.26, 0.028, '#ffffff');
+                circle(-0.08, 0.02, 0.022, '#e0f2fe');
+                circle(0.32, -0.34, 0.022, '#ffffff');
+            }
+            // Tip sheen highlight
+            circle(0.36, -0.36, 0.024, pal.tipGlint);
+            break;
+        }
+        case 'northern_cardinal': {
+            // 🐦 Vivid Northern Cardinal perched on snow-dusted evergreen branch
+            _holidayPineSprig(ctx, -0.32, 0.28, 1.32, 0.62);
+            // Cardinal long scarlet tail feathers extending bottom-left
+            ctx.fillStyle = _holidayLinGrad(ctx, -0.05, 0.08, -0.36, 0.32, [
+                [0, '#b91c1c'], [1, '#6b1414'],
+            ], '#991b1b');
+            ctx.beginPath();
+            ctx.moveTo(-0.04, 0.04);
+            ctx.lineTo(-0.34, 0.30);
+            ctx.lineTo(-0.24, 0.35);
+            ctx.lineTo(0.02, 0.10);
+            ctx.closePath();
+            ctx.fill();
+            // Rich scarlet body
+            const bodyGrad = _holidayRadGrad(ctx, 0.06, -0.02, 0.02, 0.04, 0.02, 0.22, [
+                [0, '#ef4444'], [0.65, '#dc2626'], [1, '#991b1b'],
+            ], '#dc2626');
+            ctx.fillStyle = bodyGrad;
+            ctx.strokeStyle = '#7f1d1d';
+            ctx.lineWidth = 0.015;
+            ctx.beginPath();
+            ctx.ellipse(0.04, 0.04, 0.19, 0.15, -0.35, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.stroke();
+            // Reddish-brown layered primary wing feather (Signature Cardinal wing plumage!)
+            ctx.fillStyle = _holidayLinGrad(ctx, -0.10, -0.04, 0.10, 0.14, [
+                [0, '#9a3412'], [0.55, '#7c2d12'], [1, '#451a03'],
+            ], '#7c2d12');
+            ctx.beginPath();
+            ctx.ellipse(-0.02, 0.04, 0.14, 0.085, -0.42, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.strokeStyle = '#b91c1c';
+            ctx.lineWidth = 0.012;
+            ctx.stroke();
+            // Iconic Cardinal head + raised tall scarlet crest
+            ctx.fillStyle = '#dc2626';
+            ctx.beginPath();
+            ctx.arc(0.11, -0.14, 0.105, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.beginPath();
+            ctx.moveTo(0.02, -0.17);
+            ctx.lineTo(-0.06, -0.37);
+            ctx.lineTo(0.14, -0.22);
+            ctx.closePath();
+            ctx.fill();
+            // Black cardinal face mask + eye + bright orange-coral conical beak
+            ctx.fillStyle = '#111827';
+            ctx.beginPath();
+            ctx.ellipse(0.16, -0.13, 0.062, 0.055, 0, 0, Math.PI * 2);
+            ctx.fill();
+            circle(0.155, -0.148, 0.020, '#0f172a', '#ffffff', 0.008);
+            circle(0.161, -0.154, 0.007, '#ffffff');
+            ctx.fillStyle = _holidayLinGrad(ctx, 0.19, -0.16, 0.34, -0.12, [
+                [0, '#fb923c'], [1, '#ea580c'],
+            ], '#f97316');
+            ctx.beginPath();
+            ctx.moveTo(0.20, -0.175);
+            ctx.lineTo(0.35, -0.125);
+            ctx.lineTo(0.20, -0.085);
+            ctx.closePath();
+            ctx.fill();
+            // Glossy red holly berries beneath branch
+            _holidayGlossyBerry(ctx, 0.18, 0.24, 0.036);
+            _holidayGlossyBerry(ctx, 0.25, 0.22, 0.030);
             break;
         }
     }
@@ -2649,6 +2896,38 @@ class ReelsCanvasRenderer {
                 ? s.tw_unrevealed_opacity / 255 : s.tw_unrevealed_opacity)));
         let twRevealedCount = -1;
         let zoomTwState = null;
+        let twWordSentenceGroup = null;
+        if (isTypewriter && typewriterRevealType === 'sentence' && words.length > 0) {
+            twWordSentenceGroup = new Array(words.length);
+            let grpWords = [];
+            let gIdx = 0;
+            const flushGrp = () => {
+                if (!grpWords.length) return;
+                const firstIdx = grpWords[0];
+                const lastIdx = grpWords[grpWords.length - 1];
+                const gStart = resolvedWordTimings[firstIdx]?.start ?? segStart;
+                const gEnd = resolvedWordTimings[lastIdx]?.end ?? segEnd;
+                const grpObj = { groupIdx: gIdx++, start: gStart, end: gEnd };
+                for (const wi of grpWords) twWordSentenceGroup[wi] = grpObj;
+                grpWords = [];
+            };
+            for (let wi = 0; wi < words.length; wi++) {
+                grpWords.push(wi);
+                if (/[.!?。！？；;…]+['"”’)\]]*$/.test(String(words[wi] || '').trim())) {
+                    flushGrp();
+                }
+            }
+            flushGrp();
+        }
+        const isTwSentenceRevealed = (wi) => {
+            if (!twWordSentenceGroup) return false;
+            const grp = twWordSentenceGroup[wi];
+            if (!grp) return true;
+            if (currentTime != null) {
+                return currentTime >= grp.start || grp.groupIdx < twRevealedCount;
+            }
+            return true;
+        };
         if (isZoomTypewriter && anim && typeof anim.computeZoomTypewriterState === 'function') {
             const totalCharsForZoom = words.reduce((count, word) => count + Array.from(word).length, 0);
             zoomTwState = anim.computeZoomTypewriterState(currentTime, segStart, segEnd, totalCharsForZoom, {
@@ -2664,11 +2943,15 @@ class ReelsCanvasRenderer {
         } else if (isTypewriter && anim) {
             const totalUnits = typewriterRevealType === 'char'
                 ? words.reduce((count, word) => count + Array.from(word).length, 0)
-                : words.length;
+                : (typewriterRevealType === 'sentence' && twWordSentenceGroup
+                    ? ((twWordSentenceGroup[words.length - 1]?.groupIdx ?? 0) + 1)
+                    : words.length);
             twRevealedCount = anim.computeTypewriterProgress(
                 currentTime, segStart, segEnd, totalUnits
             );
-            if (typewriterRevealType !== 'char' && activeSpokenIdx >= 0) {
+            if (typewriterRevealType === 'sentence' && activeSpokenIdx >= 0 && twWordSentenceGroup?.[activeSpokenIdx]) {
+                twRevealedCount = Math.max(twRevealedCount, twWordSentenceGroup[activeSpokenIdx].groupIdx + 1);
+            } else if (typewriterRevealType !== 'char' && typewriterRevealType !== 'sentence' && activeSpokenIdx >= 0) {
                 twRevealedCount = Math.max(twRevealedCount, activeSpokenIdx + 1);
             }
         }
@@ -2950,15 +3233,19 @@ class ReelsCanvasRenderer {
                         if (s.only_show_active_word) {
                             isVis = currentTime == null || (currentTime >= wordStart && (wordIdx === totalWordCount - 1 ? currentTime <= wordEnd : currentTime < wordEnd));
                         } else if (progressiveTw) {
-                            const chars = Array.from(wordStr);
-                            const wordUnits = typewriterRevealType === 'char' ? chars.length : 1;
-                            const revealedUnits = Math.max(0, Math.min(wordUnits, twRevealedCount - cCounter));
-                            cCounter += wordUnits;
-                            if (revealedUnits <= 0) {
-                                isVis = false;
-                            } else if (typewriterRevealType === 'char' && revealedUnits < wordUnits) {
-                                visText = chars.slice(0, revealedUnits).join('');
-                                visW = this._measureTextWithSpacing(ctx, visText, letterSpacing) * lineScale;
+                            if (typewriterRevealType === 'sentence' && twWordSentenceGroup) {
+                                isVis = isTwSentenceRevealed(wordIdx);
+                            } else {
+                                const chars = Array.from(wordStr);
+                                const wordUnits = typewriterRevealType === 'char' ? chars.length : 1;
+                                const revealedUnits = Math.max(0, Math.min(wordUnits, twRevealedCount - cCounter));
+                                cCounter += wordUnits;
+                                if (revealedUnits <= 0) {
+                                    isVis = false;
+                                } else if (typewriterRevealType === 'char' && revealedUnits < wordUnits) {
+                                    visText = chars.slice(0, revealedUnits).join('');
+                                    visW = this._measureTextWithSpacing(ctx, visText, letterSpacing) * lineScale;
+                                }
                             }
                         } else if (progressiveSpoken) {
                             isVis = currentTime >= wordStart || wordIdx === activeSpokenIdx;
@@ -3535,13 +3822,16 @@ class ReelsCanvasRenderer {
                     );
                 }
 
+                const effectiveWordGateStart = (isTypewriter && typewriterRevealType === 'sentence' && twWordSentenceGroup?.[wordIdx])
+                    ? twWordSentenceGroup[wordIdx].start
+                    : wordStart;
                 let wordOpacity = lineAlpha;
                 if (s.only_show_active_word && currentTime != null && !isWordActive) {
                     wordOpacity = 0.0;
                 } else if ((s.ambient_glow_enabled || style?._ambient_text_final_pass)
-                    && currentTime != null && currentTime < wordStart) {
+                    && currentTime != null && currentTime < effectiveWordGateStart) {
                     wordOpacity = 0.0;
-                } else if (hideUntilSpoken && currentTime != null && currentTime < wordStart && !isActiveSpoken) {
+                } else if (hideUntilSpoken && currentTime != null && currentTime < effectiveWordGateStart && !isActiveSpoken) {
                     wordOpacity *= unreadOpacityFactor;
                 }
                 let wordColor = isHighlight ? highColor : textColor;
@@ -3553,8 +3843,10 @@ class ReelsCanvasRenderer {
                     const chars = Array.from(wordStr);
                     const wordUnits = typewriterRevealType === 'char' ? chars.length : 1;
                     const wordStartCharIdx = twCharCounter;
-                    const revealedUnits = twRevealedCount < 0 ? wordUnits
-                        : Math.max(0, Math.min(wordUnits, twRevealedCount - twCharCounter));
+                    const revealedUnits = (typewriterRevealType === 'sentence' && twWordSentenceGroup)
+                        ? (isTwSentenceRevealed(wordIdx) ? wordUnits : 0)
+                        : (twRevealedCount < 0 ? wordUnits
+                            : Math.max(0, Math.min(wordUnits, twRevealedCount - twCharCounter)));
                     if (twRevealedCount >= 0) {
                         if (revealedUnits === 0) {
                             wordColor = s.tw_unrevealed_color || '#808080';
@@ -4032,6 +4324,10 @@ class ReelsCanvasRenderer {
                             subCursorX = textDirection === 'rtl'
                                 ? (drawX + wordW * lineScale * (1 - wp))
                                 : (drawX + wordW * lineScale * wp);
+                            subCursorY = wordY;
+                            subCursorSize = fontSize * lineScale;
+                        } else if (isTypewriter && typewriterRevealType === 'sentence' && twWordSentenceGroup?.[wordIdx] && currentTime >= twWordSentenceGroup[wordIdx].start) {
+                            subCursorX = textDirection === 'rtl' ? drawX : (drawX + wordW * lineScale);
                             subCursorY = wordY;
                             subCursorSize = fontSize * lineScale;
                         }
