@@ -733,21 +733,25 @@ class ReelsOverlayPanel {
                     </div>
                     <!-- 跟随滚动字幕绑定 -->
                     <div style="margin-top:8px;padding-top:8px;border-top:1px solid var(--border-color);">
-                        <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;">
+                        <div style="display:flex;align-items:center;justify-content:space-between;gap:6px;margin-bottom:6px;flex-wrap:wrap;">
                             <span style="font-size:12px;color:var(--accent-primary,#7b8bef);font-weight:600;">🔗 跟随滚动字幕</span>
+                            <div style="display:flex;gap:4px;">
+                                <button type="button" id="rop-bind-scroll-auto-offset" class="btn btn-secondary rop-btn" style="padding:1px 6px;font-size:10px;" title="按画布中图片与字幕第一行的当前距离自动填入 Y偏移">🧲 保持当前间距</button>
+                                <button type="button" id="rop-bind-scroll-clear-bounds" class="btn btn-secondary rop-btn" style="padding:1px 6px;font-size:10px;" title="清空上边界Y和下边界Y限制">↺ 清空边界</button>
+                            </div>
                         </div>
                         <div class="rop-grid">
                             <label>绑定目标</label>
                             <select id="rop-bind-scroll-target" class="rop-select">
                                 <option value="">— 不绑定 —</option>
                             </select>
-                            <label title="Y方向偏移(正=下移)">Y偏移</label><input type="number" id="rop-bind-scroll-offset-y" class="rop-input" step="10" value="0">
-                            <label title="Y上限(最小Y，图片不会超过此位置往上)">上边界Y</label><input type="number" id="rop-bind-scroll-clamp-min-y" class="rop-input" step="10" placeholder="不限">
-                            <label title="Y下限(最大Y，图片不会超过此位置往下)">下边界Y</label><input type="number" id="rop-bind-scroll-clamp-max-y" class="rop-input" step="10" placeholder="不限">
+                            <label title="Y方向偏移(正=下移，负=上移)">Y偏移</label><input type="number" id="rop-bind-scroll-offset-y" class="rop-input" step="10" value="0">
+                            <label title="画布Y上限(0=最顶部，图片不会超过此位置往上；留空不限)">上边界Y</label><input type="number" id="rop-bind-scroll-clamp-min-y" class="rop-input" step="10" placeholder="不限(顶0)">
+                            <label title="画布Y下限(1920=最底部，图片不会超过此位置往下；留空不限)">下边界Y</label><input type="number" id="rop-bind-scroll-clamp-max-y" class="rop-input" step="10" placeholder="不限(底1920)">
                             <label title="X方向偏移(配合跟随X使用)">X偏移</label><input type="number" id="rop-bind-scroll-offset-x" class="rop-input" step="10" value="0">
                             <label>跟随X</label><input type="checkbox" id="rop-bind-scroll-follow-x">
                         </div>
-                        <div style="font-size:10px;color:var(--text-muted);margin-top:4px;line-height:1.4;">绑定后，此媒体覆层的 Y 坐标将跟随滚动字幕正文第一行实时移动。上/下边界限制图片的移动范围。</div>
+                        <div id="rop-bind-scroll-hint" style="font-size:10px;color:var(--text-muted);margin-top:4px;line-height:1.45;">绑定后，此媒体覆层的画布左上角 Y 坐标(0~1920)将跟随滚动字幕正文第一行实时移动。</div>
                     </div>
                 </div>
 
@@ -3223,6 +3227,43 @@ class ReelsOverlayPanel {
             if (typeof window._scheduleReelsHistorySave === 'function') window._scheduleReelsHistorySave(280);
             else if (typeof window.reelsSaveHistory === 'function') window.reelsSaveHistory();
             this._requestRender();
+        });
+
+        this.container.querySelector('#rop-bind-scroll-auto-offset')?.addEventListener('click', () => {
+            const ov = this._selectedOv;
+            if (!ov || (ov.type !== 'image' && ov.type !== 'video')) return;
+            const mgr = this.videoCanvas?.overlayMgr;
+            const overlays = mgr?.overlays || [];
+            let scrollOv = overlays.find(o => o && o.id === ov.bind_scroll_overlay_id && o.type === 'scroll');
+            if (!scrollOv) {
+                scrollOv = overlays.find(o => o && o.type === 'scroll' && !o.disabled) || overlays.find(o => o && o.type === 'scroll');
+                if (scrollOv) {
+                    ov.bind_scroll_overlay_id = scrollOv.id;
+                    ov._bindScrollTemplateOverlayId = scrollOv._templateOverlayId || scrollOv.id;
+                }
+            }
+            if (!scrollOv) return;
+            const anchorY = Number.isFinite(Number(scrollOv._scrollBodyFirstLineY))
+                ? Number(scrollOv._scrollBodyFirstLineY)
+                : (Number(scrollOv.y) || 600);
+            const curTopY = Number(ov.y || 0);
+            const offset = Math.round(curTopY - anchorY);
+            ov.bind_scroll_offset_y = offset;
+            this._val('rop-bind-scroll-target', ov.bind_scroll_overlay_id || '');
+            this._val('rop-bind-scroll-offset-y', offset);
+            this._syncToOverlay({ commit: true });
+        });
+
+        this.container.querySelector('#rop-bind-scroll-clear-bounds')?.addEventListener('click', () => {
+            const ov = this._selectedOv;
+            if (!ov || (ov.type !== 'image' && ov.type !== 'video')) return;
+            const minEl = this.container.querySelector('#rop-bind-scroll-clamp-min-y');
+            const maxEl = this.container.querySelector('#rop-bind-scroll-clamp-max-y');
+            if (minEl) minEl.value = '';
+            if (maxEl) maxEl.value = '';
+            ov.bind_scroll_clamp_min_y = null;
+            ov.bind_scroll_clamp_max_y = null;
+            this._syncToOverlay({ commit: true });
         });
 
         // 滚动字幕出字效果：快捷按钮、16款小图标点选与图片上传
@@ -6602,6 +6643,30 @@ class ReelsOverlayPanel {
         }
     }
 
+    _updateBindScrollHint(ov) {
+        const hintEl = this.container?.querySelector?.('#rop-bind-scroll-hint');
+        if (!hintEl || !ov) return;
+        const scrollOv = this.videoCanvas?.overlayMgr?.overlays?.find(o => o && o.id === ov.bind_scroll_overlay_id && o.type === 'scroll') || null;
+        const anchorY = Number(scrollOv?._scrollBodyFirstLineY);
+        const minRaw = ov.bind_scroll_clamp_min_y;
+        const maxRaw = ov.bind_scroll_clamp_max_y;
+        const hasMin = minRaw != null && minRaw !== '' && Number.isFinite(Number(minRaw));
+        const hasMax = maxRaw != null && maxRaw !== '' && Number.isFinite(Number(maxRaw));
+        if (hasMax && Number(maxRaw) <= 0 && (!Number.isFinite(anchorY) || anchorY > 0)) {
+            hintEl.style.color = '#fbbf24';
+            hintEl.textContent = `⚠️ 注意：边界Y使用画布坐标(顶=0 ~ 底=1920)，当前下边界Y=${maxRaw}≤0 会把图片一直卡在画面顶部无法随字幕移动；留空或点“清空边界”可解除限制。`;
+            return;
+        }
+        if (hasMin && hasMax && Number(minRaw) > Number(maxRaw)) {
+            hintEl.style.color = '#fbbf24';
+            hintEl.textContent = `⚠️ 上边界Y (${minRaw}) 大于 下边界Y (${maxRaw})，渲染时已自动交换范围。`;
+            return;
+        }
+        hintEl.style.color = 'var(--text-muted)';
+        const anchorText = Number.isFinite(anchorY) ? ` · 当前正文首行Y≈${Math.round(anchorY)}` : '';
+        hintEl.textContent = `画布Y坐标范围 0(顶部)~1920(底部)${anchorText} · 当前框左上Y=${Math.round(ov.y || 0)}。`;
+    }
+
     _syncFromOverlay(ov) {
         if (!ov) return;
         if (ov.type === 'scroll') ov.fixed_text = false;
@@ -6755,6 +6820,13 @@ class ReelsOverlayPanel {
             this._val('rop-keep-aspect', ov.keep_aspect !== false);
 
             // 跟随滚动字幕绑定
+            if (ov.bind_scroll_overlay_id && this.videoCanvas?.overlayMgr?.overlays) {
+                const ovs = this.videoCanvas.overlayMgr.overlays;
+                if (!ovs.some(o => o && o.id === ov.bind_scroll_overlay_id && o.type === 'scroll') && ov._bindScrollTemplateOverlayId) {
+                    const matchedScroll = ovs.find(o => o && o.type === 'scroll' && (o._templateOverlayId === ov._bindScrollTemplateOverlayId || o.id === ov._bindScrollTemplateOverlayId));
+                    if (matchedScroll) ov.bind_scroll_overlay_id = matchedScroll.id;
+                }
+            }
             this._val('rop-bind-scroll-offset-y', ov.bind_scroll_offset_y || 0);
             this._val('rop-bind-scroll-offset-x', ov.bind_scroll_offset_x || 0);
             this._val('rop-bind-scroll-follow-x', ov.bind_scroll_follow_x || false);
@@ -6762,6 +6834,7 @@ class ReelsOverlayPanel {
             if (clampMinEl) clampMinEl.value = ov.bind_scroll_clamp_min_y != null ? ov.bind_scroll_clamp_min_y : '';
             const clampMaxEl = this.container.querySelector('#rop-bind-scroll-clamp-max-y');
             if (clampMaxEl) clampMaxEl.value = ov.bind_scroll_clamp_max_y != null ? ov.bind_scroll_clamp_max_y : '';
+            this._updateBindScrollHint?.(ov);
             // 填充绑定目标下拉列表
             const bindSelect = this.container.querySelector('#rop-bind-scroll-target');
             if (bindSelect) {
@@ -7462,6 +7535,12 @@ class ReelsOverlayPanel {
             // 跟随滚动字幕绑定
             const bindTarget = this._get('rop-bind-scroll-target') || '';
             ov.bind_scroll_overlay_id = bindTarget || null;
+            if (ov.bind_scroll_overlay_id && this.videoCanvas?.overlayMgr?.overlays) {
+                const targetScroll = this.videoCanvas.overlayMgr.overlays.find(o => o && o.id === ov.bind_scroll_overlay_id && o.type === 'scroll');
+                ov._bindScrollTemplateOverlayId = targetScroll ? (targetScroll._templateOverlayId || targetScroll.id) : ov._bindScrollTemplateOverlayId;
+            } else if (!ov.bind_scroll_overlay_id) {
+                delete ov._bindScrollTemplateOverlayId;
+            }
             ov.bind_scroll_offset_y = parseFloat(this._get('rop-bind-scroll-offset-y')) || 0;
             ov.bind_scroll_offset_x = parseFloat(this._get('rop-bind-scroll-offset-x')) || 0;
             ov.bind_scroll_follow_x = this._get('rop-bind-scroll-follow-x') || false;
@@ -7469,6 +7548,7 @@ class ReelsOverlayPanel {
             ov.bind_scroll_clamp_min_y = (clampMinEl && clampMinEl.value !== '') ? parseFloat(clampMinEl.value) : null;
             const clampMaxEl = this.container.querySelector('#rop-bind-scroll-clamp-max-y');
             ov.bind_scroll_clamp_max_y = (clampMaxEl && clampMaxEl.value !== '') ? parseFloat(clampMaxEl.value) : null;
+            this._updateBindScrollHint?.(ov);
         }
 
         if (ov.type === 'textcard' || ov.type === 'solid_mask') {
@@ -8344,6 +8424,14 @@ class ReelsOverlayPanel {
         if (task.overlays.includes(sourceOv)) return null;
         const isPhoneCta = Boolean(sourceOv.is_phone_cta);
         const matchesSubKind = (o) => Boolean(o && o.type === sourceOv.type && Boolean(o.is_phone_cta) === isPhoneCta);
+        if (sourceOv.id) {
+            const byId = task.overlays.find(o => o && o.id === sourceOv.id && matchesSubKind(o));
+            if (byId) return byId;
+        }
+        if (sourceOv._templateOverlayId) {
+            const byTpl = task.overlays.find(o => o && o._templateOverlayId === sourceOv._templateOverlayId && matchesSubKind(o));
+            if (byTpl) return byTpl;
+        }
         const mgrOverlays = this.videoCanvas?.overlayMgr?.overlays || [];
         const exactIdx = mgrOverlays.indexOf(sourceOv);
         if (exactIdx >= 0 && matchesSubKind(task.overlays[exactIdx])) {
@@ -8406,15 +8494,42 @@ class ReelsOverlayPanel {
                 delete cloneBase.content;
                 delete cloneBase.styled_ranges;
             }
+            const mgrOverlays = this.videoCanvas?.overlayMgr?.overlays || [];
+            const curState = typeof window !== 'undefined' ? window._reelsState : null;
+            const curTask = this.videoCanvas?.scopedTask || (curState && curState.selectedIdx >= 0 ? curState.tasks?.[curState.selectedIdx] : null) || null;
+            const activeTaskOverlays = curTask?.overlays || [];
+            const sourceScrollOv = ov.bind_scroll_overlay_id
+                ? (mgrOverlays.find(o => o && o.id === ov.bind_scroll_overlay_id && o.type === 'scroll')
+                    || activeTaskOverlays.find(o => o && o.id === ov.bind_scroll_overlay_id && o.type === 'scroll'))
+                : null;
             scopedTasks.forEach(task => {
                 if (!task) return;
                 if (!Array.isArray(task.overlays)) task.overlays = [];
                 const targetOv = this._findMatchingOverlayInTask(task, ov);
+                const remapScrollBinding = (copy) => {
+                    if (!copy.bind_scroll_overlay_id) return;
+                    let targetScroll = sourceScrollOv ? this._findMatchingOverlayInTask(task, sourceScrollOv) : null;
+                    if (!targetScroll && copy._bindScrollTemplateOverlayId) {
+                        targetScroll = task.overlays.find(o => o && o.type === 'scroll' && (o._templateOverlayId === copy._bindScrollTemplateOverlayId || o.id === copy._bindScrollTemplateOverlayId));
+                    }
+                    if (!targetScroll) {
+                        targetScroll = task.overlays.find(o => o && o.type === 'scroll' && !o.disabled)
+                            || task.overlays.find(o => o && o.type === 'scroll');
+                    }
+                    if (targetScroll) {
+                        copy.bind_scroll_overlay_id = targetScroll.id;
+                        copy._bindScrollTemplateOverlayId = targetScroll._templateOverlayId || targetScroll.id;
+                    } else {
+                        copy.bind_scroll_overlay_id = null;
+                    }
+                };
                 if (targetOv) {
                     const styleCopy = JSON.parse(JSON.stringify(cloneBase));
+                    remapScrollBinding(styleCopy);
                     Object.assign(targetOv, styleCopy);
                 } else if (ov.type === 'decor' && !task.overlays.includes(ov)) {
                     const styleCopy = JSON.parse(JSON.stringify(cloneBase));
+                    remapScrollBinding(styleCopy);
                     styleCopy.id = 'ov_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
                     task.overlays.push(styleCopy);
                 }

@@ -1871,17 +1871,25 @@
                 if (!ov || ov.type !== 'scroll') continue;
                 delete ov._scrollBodyFirstLineY;
                 delete ov._scrollBodyCurX;
+                delete ov._scrollMeasuredEvalTime;
                 const evalTime = resolveOverlayEvalTime(ov);
-                if (ov.disabled || evalTime < numberOr(ov.start, 0)) continue;
+                const isEndPreview = Boolean(window?._reelsState?._scrollPreviewEnd);
+                if (ov.disabled || (!isEndPreview && evalTime < numberOr(ov.start, 0))) continue;
                 const measured = { ...(window.ReelsScrollTiming?.renderingOverlay(ov, task, {
                     bodyDuration: Math.max(0, computeDuration() - getTimelineOffset(task) - introDelay),
                     mediaDurations: window._reelsState?._mediaDurations || {},
                 }) || ov), _taskSegments: task.segments, _exporting: false, _previewPlaying: Boolean(state.isPlaying) };
+                const resolvedEnd = Number.isFinite(Number(measured.end)) ? Number(measured.end) : numberOr(ov.end, 10);
+                const measureTime = isEndPreview ? resolvedEnd : evalTime;
                 try {
-                    window.ReelsOverlay.drawOverlay(measureCtx, measured, evalTime, w, h);
+                    window.ReelsOverlay.drawOverlay(measureCtx, measured, measureTime, w, h);
                     ov._scrollBodyFirstLineY = measured._scrollBodyFirstLineY;
                     ov._scrollBodyCurX = measured._scrollBodyCurX;
-                    if (Number.isFinite(Number(measured.end))) ov._scrollResolvedEndTime = Number(measured.end);
+                    ov._scrollResolvedEndTime = resolvedEnd;
+                    ov._scrollMeasuredEvalTime = measureTime;
+                    ov._scrollMeasuredW = w;
+                    ov._scrollMeasuredH = h;
+                    ov._taskSegments = task.segments;
                 } catch (err) { console.warn('[PreviewV2] scroll anchor failed', err); }
             }
         }
@@ -1957,14 +1965,15 @@
         let x = numberOr(ov.x, 0);
         let y = ov.type === 'textcard' && ov._renderedY != null ? numberOr(ov._renderedY, 0) : numberOr(ov.y, 0);
         if (ov.type === 'textcard' && ov._renderedH != null) height = numberOr(ov._renderedH, height);
-        if (ov.type === 'scroll' && ov._renderedW > 0 && ov._renderedH > 0) {
+        const hasBoundRendered = Boolean(ov.bind_scroll_overlay_id && ov._renderedY != null);
+        if (hasBoundRendered || (ov.type === 'scroll' && ov._renderedW > 0 && ov._renderedH > 0)) {
             x = numberOr(ov._renderedX, x);
             y = numberOr(ov._renderedY, y);
-            width = numberOr(ov._renderedW, width);
-            height = numberOr(ov._renderedH, height);
+            if (ov._renderedW > 0) width = numberOr(ov._renderedW, width);
+            if (ov._renderedH > 0) height = numberOr(ov._renderedH, height);
         }
 
-        if (ov.anim_dest_enabled && ov.type !== 'scroll') {
+        if (!hasBoundRendered && ov.anim_dest_enabled && ov.type !== 'scroll') {
             const start = numberOr(ov.start, 0);
             const end = numberOr(ov.end, 0);
             if (end > start) {

@@ -1879,6 +1879,11 @@ function _ovGetBounds(ov) {
         }
         y = ov._renderedY;
         h = ov._renderedH || 100;
+    } else if (ov.bind_scroll_overlay_id && ov._renderedY != null) {
+        x = ov._renderedX ?? x;
+        y = ov._renderedY;
+        if (ov._renderedW > 0) w = ov._renderedW;
+        if (ov._renderedH > 0) h = ov._renderedH;
     } else if (ov.type === 'scroll' && ov._renderedW > 0 && ov._renderedH > 0) {
         x = ov._renderedX ?? x;
         y = ov._renderedY ?? parseFloat(ov.y || 0);
@@ -1888,7 +1893,7 @@ function _ovGetBounds(ov) {
         y = parseFloat(ov.y || 0);
         h = parseFloat(ov.h || 100);
     }
-    if (ov.anim_dest_enabled && ov.type !== 'scroll') {
+    if (!(ov.bind_scroll_overlay_id && ov._renderedY != null) && ov.anim_dest_enabled && ov.type !== 'scroll') {
         const start = parseFloat(ov.start || 0);
         const end = parseFloat(ov.end || 0);
         if (end > start) {
@@ -5075,7 +5080,43 @@ function _reelsUpdatePreviewInternal() {
             return true;
         });
         if (overlays.length > 0) {
-            // 注入覆层列表引用（供跟随绑定），确保 scroll 先渲染
+            // 预测量所有启用滚动层，确保任意 z_index 顺序下绑定媒体都能读到已应用 ReelsScrollTiming 的正文锚点
+            if (allEnabledOverlays.some(o => o && o.bind_scroll_overlay_id)) {
+                for (const sOv of allEnabledOverlays) {
+                    if (!sOv || sOv.disabled || sOv.type !== 'scroll') continue;
+                    delete sOv._scrollBodyFirstLineY;
+                    delete sOv._scrollBodyCurX;
+                    delete sOv._scrollMeasuredEvalTime;
+                    const isBodyOvS = !sOv.is_intro_countdown && sOv.type !== 'decor' && !sOv._insertClip && !sOv.intro_keep_visible;
+                    if (_introDelay > 0 && isBodyOvS && bodyCycleTime < 0 && !_reelsState._scrollPreviewEnd) continue;
+                    let sTime = (_introDelay > 0 && isBodyOvS) ? bodyCycleTime : cycleTime;
+                    const sOffset = (_reelsState.hookDuration || 0) + (_selectedTask?.cover?.enabled ? (Number(_selectedTask.cover.duration) || .01) : 0) + (_introDelay > 0 && isBodyOvS ? _introDelay : 0);
+                    const sBodyDur = Math.max(0, _getPreviewDuration() - sOffset);
+                    const sBase = window.ReelsScrollTiming?.renderingOverlay(sOv, _selectedTask, {
+                        bodyDuration: sBodyDur, mediaDurations: _reelsState._mediaDurations,
+                    }) || sOv;
+                    const sResolvedEnd = Number.isFinite(Number(sBase.end)) ? Number(sBase.end) : parseFloat(sOv.end || 10);
+                    sOv._scrollResolvedEndTime = sResolvedEnd;
+                    if (_reelsState._scrollPreviewEnd) sTime = sResolvedEnd;
+                    const anchor = {};
+                    const sMeasure = {
+                        ...sBase,
+                        _taskSegments: _selectedTask ? _selectedTask.segments : null,
+                        _scrollBindingMeasureOnly: true,
+                        _scrollBindingResult: anchor,
+                    };
+                    ReelsOverlay.drawOverlay(ctx, sMeasure, sTime, w, h);
+                    if (Number.isFinite(anchor.y)) {
+                        sOv._scrollBodyFirstLineY = anchor.y;
+                        sOv._scrollBodyCurX = anchor.x;
+                        sOv._scrollMeasuredEvalTime = sTime;
+                        sOv._scrollMeasuredW = w;
+                        sOv._scrollMeasuredH = h;
+                        sOv._taskSegments = _selectedTask ? _selectedTask.segments : null;
+                    }
+                }
+            }
+            // 注入覆层列表引用（供跟随绑定）
             const sorted = overlays.filter(o => !o.disabled).slice().sort((a, b) => {
                 return (Number(a.z_index) || 0) - (Number(b.z_index) || 0);
             });

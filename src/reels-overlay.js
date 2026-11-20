@@ -2243,6 +2243,7 @@ function drawOverlay(ctx, origOv, currentTime = 0, canvasW = 1920, canvasH = 108
         }
     }
 
+    const _bindRawTime = currentTime;
     const start = parseFloat(ov.start || 0);
     const end = parseFloat(ov.end || 0);
 
@@ -2351,21 +2352,78 @@ function drawOverlay(ctx, origOv, currentTime = 0, canvasW = 1920, canvasH = 108
 
     // Binding owns position after A→B animation; scale animation remains active.
     // ── 跟随滚动字幕正文绑定 ──
-    if (ov.bind_scroll_overlay_id && (ov.type === 'image' || ov.type === 'video')) {
+    if (ov.bind_scroll_overlay_id && (ov.type === 'image' || ov.type === 'video' || ov.type === 'sticker')) {
         const allOvs = ov._allOverlays || [];
-        const scrollOv = allOvs.find(o => o.id === ov.bind_scroll_overlay_id && o.type === 'scroll');
-        // Measure this frame on a private proxy. Preview clones and layer order
-        // must not decide whether a binding sees fresh coordinates.
+        let scrollOv = allOvs.find(o => o && o.id === ov.bind_scroll_overlay_id && o.type === 'scroll');
+        if (!scrollOv && ov._bindScrollTemplateOverlayId) {
+            scrollOv = allOvs.find(o => o && o.type === 'scroll' && (o._templateOverlayId === ov._bindScrollTemplateOverlayId || o.id === ov._bindScrollTemplateOverlayId));
+        }
+        // Measure this frame on a resolved proxy unless caller already measured
+        // this exact frame time/size (prevents raw un-timed proxy overwriting PreviewV2).
         const anchor = {
             x: scrollOv?._scrollBodyCurX,
             y: scrollOv?._scrollBodyFirstLineY,
         };
         if (scrollOv && !scrollOv.disabled && typeof drawOverlay === 'function') {
-            const scrollTime = (typeof window !== 'undefined' && window._reelsState?._scrollPreviewEnd && !ov._exporting)
-                ? parseFloat(scrollOv.end || 10) : currentTime;
-            const proxy = { ...scrollOv, _scrollBindingMeasureOnly: true, _scrollBindingResult: anchor };
-            if (ov._exportDuration > 0) proxy._exportDuration = ov._exportDuration;
-            drawOverlay(ctx, proxy, scrollTime, canvasW, canvasH);
+            const baseTime = (typeof _bindRawTime === 'number' && Number.isFinite(_bindRawTime)) ? _bindRawTime : currentTime;
+            const isPreviewEnd = Boolean(typeof window !== 'undefined' && window._reelsState?._scrollPreviewEnd && !ov._exporting);
+            let resolvedEnd = (Number.isFinite(Number(scrollOv._scrollResolvedEndTime)) && Number(scrollOv._scrollResolvedEndTime) > 0)
+                ? Number(scrollOv._scrollResolvedEndTime)
+                : ((Number.isFinite(Number(scrollOv.end)) && Number(scrollOv.end) > 0 && Number(scrollOv.end) < 9999) ? Number(scrollOv.end) : 0);
+            let timingPatchedScroll = null;
+            if (!resolvedEnd && scrollOv.scroll_end_auto !== false && !scrollOv.display_ranges?.length && typeof window !== 'undefined' && window.ReelsScrollTiming?.renderingOverlay) {
+                const activeTask = (!ov._exporting && window._reelsState?.tasks)
+                    ? (window._reelsState.tasks[window._reelsState.selectedIdx] || null)
+                    : null;
+                timingPatchedScroll = window.ReelsScrollTiming.renderingOverlay(scrollOv, activeTask, {
+                    bodyDuration: ov._exportDuration > 0 ? ov._exportDuration : 0,
+                    mediaDurations: window._reelsState?._mediaDurations || {},
+                });
+                if (timingPatchedScroll && Number.isFinite(Number(timingPatchedScroll.end)) && Number(timingPatchedScroll.end) > 0 && Number(timingPatchedScroll.end) < 9999) {
+                    resolvedEnd = Number(timingPatchedScroll.end);
+                }
+            }
+            const scrollTime = isPreviewEnd
+                ? (resolvedEnd || parseFloat(scrollOv.end || 10))
+                : baseTime;
+            const alreadyFresh = Boolean(
+                scrollOv._scrollMeasuredEvalTime != null
+                && Math.abs(scrollOv._scrollMeasuredEvalTime - scrollTime) < 1e-6
+                && scrollOv._scrollMeasuredW === canvasW
+                && scrollOv._scrollMeasuredH === canvasH
+                && Number.isFinite(anchor.y)
+            );
+            if (!alreadyFresh) {
+                const baseScroll = timingPatchedScroll || scrollOv;
+                const proxy = {
+                    ...baseScroll,
+                    _selected: false,
+                    _scrollBindingMeasureOnly: true,
+                    _scrollBindingResult: anchor,
+                    _exporting: Boolean(baseScroll._exporting || ov._exporting),
+                    _previewPlaying: Boolean(baseScroll._previewPlaying || ov._previewPlaying),
+                    _taskSegments: baseScroll._taskSegments || ov._taskSegments,
+                };
+                delete proxy._ctaAnimPreviewStart;
+                if (resolvedEnd > 0 && proxy.scroll_end_auto !== false && !proxy.display_ranges?.length) {
+                    proxy.end = resolvedEnd;
+                }
+                if (ov._exportDuration > 0 && !(proxy._exportDuration > 0)) {
+                    proxy._exportDuration = ov._exportDuration;
+                }
+                const sStart = parseFloat(proxy.start || 0);
+                const measureTime = scrollTime < sStart ? sStart : scrollTime;
+                if (Array.isArray(proxy.display_ranges) && proxy.display_ranges.length > 0) {
+                    const activeRange = proxy.display_ranges.find(r => measureTime >= Number(r?.start) && measureTime <= Number(r?.end) + 0.001)
+                        || proxy.display_ranges[proxy.display_ranges.length - 1];
+                    if (activeRange) {
+                        proxy.start = Number(activeRange.start) || 0;
+                        proxy.end = Number(activeRange.end) || proxy.end;
+                    }
+                    proxy._displayRangeDrawing = true;
+                }
+                drawOverlay(ctx, proxy, measureTime, canvasW, canvasH);
+            }
         }
         if (Number.isFinite(anchor.y)) {
             const bindOffsetX = parseFloat(ov.bind_scroll_offset_x || 0);
@@ -2375,13 +2433,15 @@ function drawOverlay(ctx, origOv, currentTime = 0, canvasW = 1920, canvasH = 108
 
             // Y 跟随正文第一行
             let targetY = anchor.y + bindOffsetY;
-            // 应用边界钳制
-            if (bindMinY != null && !isNaN(parseFloat(bindMinY))) {
-                targetY = Math.max(parseFloat(bindMinY), targetY);
-            }
-            if (bindMaxY != null && !isNaN(parseFloat(bindMaxY))) {
-                targetY = Math.min(parseFloat(bindMaxY), targetY);
-            }
+            // 应用边界钳制（自动兼容意外填反的上下边界）
+            const parsedMin = bindMinY != null && bindMinY !== '' ? parseFloat(bindMinY) : NaN;
+            const parsedMax = bindMaxY != null && bindMaxY !== '' ? parseFloat(bindMaxY) : NaN;
+            const hasMin = Number.isFinite(parsedMin);
+            const hasMax = Number.isFinite(parsedMax);
+            const clampMin = (hasMin && hasMax) ? Math.min(parsedMin, parsedMax) : parsedMin;
+            const clampMax = (hasMin && hasMax) ? Math.max(parsedMin, parsedMax) : parsedMax;
+            if (hasMin) targetY = Math.max(clampMin, targetY);
+            if (hasMax) targetY = Math.min(clampMax, targetY);
             y = targetY;
 
             // X 可选跟随
@@ -9648,12 +9708,16 @@ class OverlayManager {
         // 从上到下（后绘制的在上面）
         for (let i = visible.length - 1; i >= 0; i--) {
             const ov = visible[i];
-            const x = parseFloat(ov.x || 0);
-            // For textcard: use rendered Y/H (auto-fit) if available
-            const y = ov.type === 'textcard' && ov._renderedY != null
+            const useRendered = (ov.type === 'textcard' && ov._renderedY != null)
+                || (ov.bind_scroll_overlay_id && ov._renderedY != null);
+            const x = useRendered && ov._renderedX != null
+                ? ov._renderedX : parseFloat(ov.x || 0);
+            // For textcard / bound media: use rendered Y/W/H if available
+            const y = useRendered
                 ? ov._renderedY : parseFloat(ov.y || 0);
-            const w = parseFloat(ov.w || 100);
-            const h = ov.type === 'textcard' && ov._renderedH != null
+            const w = useRendered && ov._renderedW != null
+                ? ov._renderedW : parseFloat(ov.w || 100);
+            const h = useRendered && ov._renderedH != null
                 ? ov._renderedH : parseFloat(ov.h || 100);
             if (mx >= x && mx <= x + w && my >= y && my <= y + h) {
                 return ov;

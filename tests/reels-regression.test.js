@@ -11506,3 +11506,186 @@ test('Christmas sticker icons (32 shaded vector icons), draggable sticker overla
     assert.match(htmlSrc, /reelsApplyChristmasComboPreset\('xmas_combo_tree_bells'\)/);
     assert.match(batchSrc, /reelsSyncChristmasIconAdjustUI/);
 });
+
+test('media bind_scroll follow survives paused fade selection, template fallback, inverted bounds, hitTest, and batch task sync', () => {
+    const sandbox = {
+        console,
+        Math,
+        JSON,
+        Date,
+        Number,
+        String,
+        Boolean,
+        Array,
+        Object,
+        Set,
+        Map,
+        Path2D: class MockPath2D { constructor(d) { this.d = d; } },
+        Image: class MockImage {},
+        window: {},
+    };
+    sandbox.window = sandbox;
+    sandbox.globalThis = sandbox;
+    loadBrowserScript('src/reels-anim-engine.js', sandbox);
+    loadBrowserScript('src/reels-style-engine.js', sandbox);
+    loadBrowserScript('src/reels-canvas-renderer.js', sandbox);
+    loadBrowserScript('src/reels-overlay.js', sandbox);
+    const RO = sandbox.window.ReelsOverlay;
+    assert.ok(RO);
+
+    const makeCtx = () => ({
+        lineCap: 'butt',
+        lineJoin: 'miter',
+        lineWidth: 1,
+        globalAlpha: 1,
+        globalCompositeOperation: 'source-over',
+        shadowColor: '',
+        shadowBlur: 0,
+        shadowOffsetX: 0,
+        shadowOffsetY: 0,
+        fillStyle: '#000',
+        strokeStyle: '#000',
+        font: '40px Arial',
+        direction: 'ltr',
+        save() {},
+        restore() {},
+        translate() {},
+        rotate() {},
+        scale() {},
+        clip() {},
+        beginPath() {},
+        closePath() {},
+        moveTo() {},
+        lineTo() {},
+        quadraticCurveTo() {},
+        bezierCurveTo() {},
+        arc() {},
+        ellipse() {},
+        rect() {},
+        roundRect() {},
+        setLineDash() {},
+        fill() {},
+        stroke() {},
+        fillRect() {},
+        strokeRect() {},
+        clearRect() {},
+        fillText() {},
+        strokeText() {},
+        drawImage() {},
+        measureText: (txt) => ({
+            width: String(txt || '').length * 16,
+            actualBoundingBoxAscent: 32,
+            actualBoundingBoxDescent: 8,
+        }),
+        createLinearGradient: () => ({ addColorStop() {} }),
+        createRadialGradient: () => ({ addColorStop() {} }),
+    });
+
+    // 1. Bound media in paused editor at t=0 with anim_in_type='fade' must evaluate scroll at t=0 (not shifted t=0.45s)
+    const scrollOv = RO.createScrollOverlay({
+        content: 'Line 1 words\nLine 2 words',
+        scroll_from_y: 1200,
+        scroll_to_y: 300,
+        scroll_end_y_auto: false,
+        start: 0,
+        end: 10,
+        scroll_end_auto: false,
+    });
+    scrollOv.id = 'scroll_a';
+    scrollOv._templateOverlayId = 'tpl_scroll_1';
+    const mediaAtT0 = RO.createImageOverlay({
+        content: '',
+        x: 100,
+        y: 100,
+        w: 200,
+        h: 200,
+        start: 0,
+        end: 10,
+        anim_in_type: 'fade',
+        anim_in_duration: 0.4,
+    });
+    mediaAtT0.id = 'img_bind_1';
+    mediaAtT0.bind_scroll_overlay_id = 'scroll_a';
+    mediaAtT0.bind_scroll_offset_y = 0;
+    mediaAtT0._selected = true;
+
+    const mgr = new RO.OverlayManager();
+    mgr.addOverlay(scrollOv);
+    mgr.addOverlay(mediaAtT0);
+    mgr.renderAll(makeCtx(), 0, 1080, 1920);
+    const yAtPausedSelectedT0 = mediaAtT0._renderedY;
+    assert.ok(Number.isFinite(yAtPausedSelectedT0));
+    assert.ok(Math.abs(yAtPausedSelectedT0 - scrollOv._scrollBodyFirstLineY) < 0.01, 'Selected fade media at t=0 should follow scroll line 1 at t=0, not t+inDur');
+
+    // 2. Inverted clamp bounds (min=900, max=300) still move & clamp cleanly inside [300, 900]
+    mediaAtT0.bind_scroll_clamp_min_y = 900;
+    mediaAtT0.bind_scroll_clamp_max_y = 300;
+    mediaAtT0._selected = false;
+    mgr.renderAll(makeCtx(), 5, 1080, 1920);
+    assert.ok(mediaAtT0._renderedY >= 300 && mediaAtT0._renderedY <= 900);
+
+    // 3. hitTest uses _renderedX/_renderedY so user can click bound media at its moved position
+    mediaAtT0.bind_scroll_clamp_min_y = null;
+    mediaAtT0.bind_scroll_clamp_max_y = null;
+    mgr.renderAll(makeCtx(), 8, 1080, 1920);
+    assert.equal(mgr.hitTest(150, mediaAtT0._renderedY + 50, 8)?.id, mediaAtT0.id);
+
+    // 4. Stale ID recovers via _bindScrollTemplateOverlayId fallback
+    const clonedMedia = RO.createImageOverlay({
+        content: '',
+        x: 50,
+        y: 50,
+        w: 180,
+        h: 180,
+        start: 0,
+        end: 10,
+    });
+    clonedMedia.id = 'img_bind_cloned';
+    clonedMedia.bind_scroll_overlay_id = 'stale_deleted_scroll_id';
+    clonedMedia._bindScrollTemplateOverlayId = 'tpl_scroll_1';
+    clonedMedia.bind_scroll_offset_y = 12;
+    clonedMedia._allOverlays = [scrollOv];
+    RO.drawOverlay(makeCtx(), clonedMedia, 5, 1080, 1920);
+    RO.drawOverlay(makeCtx(), scrollOv, 5, 1080, 1920);
+    assert.equal(Math.round(clonedMedia._renderedY), Math.round(scrollOv._scrollBodyFirstLineY + 12));
+
+    // 5. Sticker overlay can also bind & follow scrolling text
+    const boundSticker = RO.createStickerOverlay({
+        sticker_kind: 'jingle_bell',
+        x: 410,
+        y: 220,
+        w: 220,
+        h: 220,
+        start: 0,
+        end: 10,
+    });
+    boundSticker.id = 'stk_bind_1';
+    boundSticker.bind_scroll_overlay_id = 'scroll_a';
+    boundSticker.bind_scroll_offset_y = -25;
+    boundSticker._allOverlays = [scrollOv];
+    RO.drawOverlay(makeCtx(), boundSticker, 4, 1080, 1920);
+    RO.drawOverlay(makeCtx(), scrollOv, 4, 1080, 1920);
+    assert.equal(Math.round(boundSticker._renderedY), Math.round(scrollOv._scrollBodyFirstLineY - 25));
+
+    // 6. _applyGenericOverlayStyleToAllTasks remaps bind_scroll_overlay_id per target task (no cross-task stale ID leak)
+    const panelSrc = fs.readFileSync(path.join(ROOT, 'src/reels-overlay-panel.js'), 'utf8');
+    const fnStart = panelSrc.indexOf('    _findMatchingOverlayInTask(task, sourceOv) {');
+    const fnEnd = panelSrc.indexOf('    _applyTextcardStyleToAllTasks(ov) {', fnStart);
+    const panelSnippet = `class FakePanel { constructor() { this.videoCanvas = null; } _shouldSyncStyleToScope() { return true; } _getStyleApplyScopeTasks() { return this._tasks; } _afterScopeStyleSync() {}\n${panelSrc.slice(fnStart, fnEnd)}\n}`;
+    const task1Scroll = { id: 'sc_task1', type: 'scroll', _templateOverlayId: 'tpl_sc' };
+    const task1Img = { id: 'img_task1', type: 'image', bind_scroll_overlay_id: 'sc_task1', bind_scroll_offset_y: 45 };
+    const task2Scroll = { id: 'sc_task2', type: 'scroll', _templateOverlayId: 'tpl_sc' };
+    const task2Img = { id: 'img_task2', type: 'image', bind_scroll_overlay_id: 'sc_task2', bind_scroll_offset_y: 0 };
+    const panelCtx = { window: { _reelsState: { tasks: [], selectedIdx: 0 } }, console };
+    vm.createContext(panelCtx);
+    const PanelCls = vm.runInContext(`(${panelSnippet})`, panelCtx);
+    const p = new PanelCls();
+    const task1 = { overlays: [task1Scroll, task1Img] };
+    const task2 = { overlays: [task2Scroll, task2Img] };
+    p.videoCanvas = { scopedTask: task1, overlayMgr: { overlays: task1.overlays } };
+    p._tasks = [task1, task2];
+    panelCtx.window._reelsState.tasks = [task1, task2];
+    p._applyGenericOverlayStyleToAllTasks(task1Img);
+    assert.equal(task2Img.bind_scroll_offset_y, 45, 'Offset should sync to task2');
+    assert.equal(task2Img.bind_scroll_overlay_id, 'sc_task2', 'task2 must keep its own scroll overlay ID, not task1 ID');
+});

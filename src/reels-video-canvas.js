@@ -196,10 +196,11 @@ class ReelsVideoCanvas {
         const scaleX = cw / this.videoW;
         const scaleY = ch / this.videoH;
 
-        const x = ov.x * scaleX;
-        const y = ov.y * scaleY;
-        const w = ov.w * scaleX;
-        const h = ov.h * scaleY;
+        const useRendered = (ov.type === 'textcard' || ov.type === 'scroll' || Boolean(ov.bind_scroll_overlay_id)) && ov._renderedY != null;
+        const x = (useRendered && ov._renderedX != null ? ov._renderedX : ov.x) * scaleX;
+        const y = (useRendered ? ov._renderedY : ov.y) * scaleY;
+        const w = (useRendered && ov._renderedW > 0 ? ov._renderedW : ov.w) * scaleX;
+        const h = (useRendered && ov._renderedH > 0 ? ov._renderedH : ov.h) * scaleY;
 
         // 虚线选框
         ctx.save();
