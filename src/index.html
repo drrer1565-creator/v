@@ -5145,6 +5145,13 @@
                       <button class="btn btn-primary" style="font-size: 11px; padding: 3px 10px; flex:0 0 auto; background: var(--accent); color: white;" onclick="window._reelsState.overlayPanel._batchImportTextCards()" title="复制Excel/表格数据来批量生成覆层任务">📋 批量表格</button>
                       <span id="reels-default-preset-indicator" style="font-size:11px;color:var(--text-secondary); flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">默认模板: 未设置</span>
                     </div>
+                    <!-- 🎄 圣诞快速入口（无需折叠展开，直接可见） -->
+                    <div style="margin-top:7px; padding-top:7px; border-top:1px dashed rgba(250,204,21,0.3); display:flex; align-items:center; gap:5px; flex-wrap:wrap;">
+                      <span style="font-size:11px; font-weight:700; color:#fde68a;">🎄 圣诞快配:</span>
+                      <button type="button" class="btn btn-secondary" style="font-size:11px; padding:3px 8px; background:linear-gradient(135deg,#15803d,#dc2626); color:#fff; border:1px solid #fde68a; font-weight:700;" onclick="window.reelsInspectorSwitch && reelsInspectorSwitch('overlay', document.querySelector('.inspector-tab[data-tab=&quot;overlay&quot;]')); window.reelsAddChristmasStickerIcon && window.reelsAddChristmasStickerIcon('jingle_bell');" title="立即在画面上方居中放入圣诞小图标，并打开32款小图标库供切换和拖拽">+ 🎄 放上方小图标(32款)</button>
+                      <button type="button" class="btn btn-secondary" style="font-size:11px; padding:3px 8px; background:#129E4D; color:#fff; border:1px solid #86EFAC; font-weight:700;" onclick="window.reelsApplyChristmasComboPreset && window.reelsApplyChristmasComboPreset('xmas_combo_tree_bells')" title="在画面上方添加金色双铃铛并同步切换翡翠绿胶囊圣诞字幕（图1同款）">🔔 树顶铃铛+翡翠绿字幕</button>
+                      <button type="button" class="btn btn-secondary" style="font-size:11px; padding:3px 8px; border-color:rgba(250,204,21,0.45); color:#fde68a;" onclick="var sec=document.getElementById('reels-xmas-icons-accordion'); if(sec){var p=sec.closest('details:not(#reels-xmas-icons-accordion)'); if(p)p.open=true; sec.open=true; sec.scrollIntoView({behavior:'smooth',block:'center'});}">✨ 打开32款图标+搭配区</button>
+                    </div>
                   </div>
 
                   
@@ -5532,6 +5539,9 @@
                       <button type="button" class="btn btn-secondary btn-small" style="font-size:11px; padding:3px 8px; background:linear-gradient(180deg, #2A241E 45%, #D99B26 45%); color:#FFFFFF; border:1px solid #F3C65F; font-weight:700;" onclick="window.reelsApplyTextBackingPreset && window.reelsApplyTextBackingPreset('bottom_gold_bar')">🌟 鎏金半高底条</button>
                       <button type="button" class="btn btn-secondary btn-small" style="font-size:11px; padding:3px 8px; background:linear-gradient(180deg, #2A1E22 45%, #C85A70 45%); color:#FFFFFF; border:1px solid #E58FA0; font-weight:700;" onclick="window.reelsApplyTextBackingPreset && window.reelsApplyTextBackingPreset('bottom_rose_brush')">🌸 玫瑰手绘底条</button>
                       <button type="button" class="btn btn-secondary btn-small" style="font-size:11px; padding:3px 8px; background:linear-gradient(180deg, #222 45%, #FACC15 45%); color:#FFFFFF; border:1px solid #FDE047; font-weight:700;" onclick="window.reelsApplyTextBackingPreset && window.reelsApplyTextBackingPreset('bottom_neon_marker')">🖍️ 荧光马克笔底条</button>
+                      <button type="button" class="btn btn-secondary btn-small" style="font-size:11px; padding:3px 8px; background:#129E4D; color:#FFFFFF; border:1px solid #86EFAC; font-weight:700;" onclick="window.reelsApplyTextBackingPreset && window.reelsApplyTextBackingPreset('xmas_emerald_pill')">🔔 圣诞翡翠绿胶囊(图1)</button>
+                      <button type="button" class="btn btn-secondary btn-small" style="font-size:11px; padding:3px 8px; background:#C81E2B; color:#FFFFFF; border:1px solid #FCA5A5; font-weight:700;" onclick="window.reelsApplyTextBackingPreset && window.reelsApplyTextBackingPreset('xmas_crimson_pill')">🎅 圣诞正红胶囊</button>
+                      <button type="button" class="btn btn-secondary btn-small" style="font-size:11px; padding:3px 8px; background:#FFF9EC; color:#14532D; border:1px solid #FACC15; font-weight:700;" onclick="window.reelsApplyTextBackingPreset && window.reelsApplyTextBackingPreset('xmas_snow_cream_pill')">⛄ 圣诞奶油胶囊</button>
                       <button type="button" class="btn btn-secondary btn-small" style="font-size:11px; padding:3px 8px; background:#88131B; color:#FFFDF9; border:2px dashed #FCA5A5; font-weight:700;" onclick="window.reelsApplyTextBackingPreset && window.reelsApplyTextBackingPreset('xmas_candy_ribbon')">🍬 圣诞拐杖糖带</button>
                       <button type="button" class="btn btn-secondary btn-small" style="font-size:11px; padding:3px 8px; background:#7A111A; color:#FDE047; border:1px solid #FACC15; font-weight:700;" onclick="window.reelsApplyTextBackingPreset && window.reelsApplyTextBackingPreset('xmas_velvet_gold')">🎅 圣诞红丝绒烫金带</button>
                       <button type="button" class="btn btn-secondary btn-small" style="font-size:11px; padding:3px 8px; background:#124229; color:#FFFFFF; border:1px solid #F8FAFC; font-weight:700;" onclick="window.reelsApplyTextBackingPreset && window.reelsApplyTextBackingPreset('xmas_pine_snow')">🎄 圣诞松林覆雪带</button>
@@ -5560,6 +5570,41 @@
                         <button type="button" class="btn btn-secondary btn-small" style="font-size:11px; padding:3px 8px;" onclick="window.reelsSetSpeechWritingTip && window.reelsSetSpeechWritingTip('fountain_pen', true)">🖋️ 钢笔尖+出字</button>
                         <button type="button" class="btn btn-secondary btn-small" style="font-size:11px; padding:3px 8px; border-color:#dc2626;" onclick="window.reelsSetSpeechWritingTip && window.reelsSetSpeechWritingTip('candy_cane', true)">🍬 拐杖糖+出字</button>
                         <button type="button" class="btn btn-secondary btn-small" style="font-size:11px; padding:3px 8px; border-color:#16a34a;" onclick="window.reelsSetSpeechWritingTip && window.reelsSetSpeechWritingTip('christmas_tree', true)">🎄 圣诞树+出字</button>
+                        <button type="button" class="btn btn-secondary btn-small" style="font-size:11px; padding:3px 8px; border-color:#eab308;" onclick="window.reelsSetSpeechWritingTip && window.reelsSetSpeechWritingTip('jingle_bell', true)">🔔 金铃铛+出字</button>
+                      </div>
+
+                      <!-- 🎄 圣诞节限定：32款立体圣诞小图标 + 一键搭配圣诞字幕 -->
+                      <div style="margin-top: 9px; padding: 8px; border-radius: 8px; background: linear-gradient(135deg, rgba(22,163,74,0.12), rgba(185,28,28,0.12)); border: 1px solid rgba(250,204,21,0.34);">
+                        <div style="font-size: 11.5px; font-weight: 700; color: #fde68a; margin-bottom: 6px; display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:6px;">
+                          <span>🎄 <b>圣诞小图标 + 圣诞字幕一键搭配</b></span>
+                          <span style="font-size:10px; color:#a7f3d0;">树顶摆小图标 + 配套圣诞字幕</span>
+                        </div>
+                        <div style="display:flex; flex-wrap:wrap; gap:5px; margin-bottom:8px;">
+                          <button type="button" class="btn btn-secondary btn-small" style="font-size:11px; padding:3px 8px; background:#129E4D; color:#fff; border:1px solid #86EFAC; font-weight:700;" onclick="window.reelsApplyChristmasComboPreset && window.reelsApplyChristmasComboPreset('xmas_combo_tree_bells')">🔔 双金铃+翡翠绿字(爆款)</button>
+                          <button type="button" class="btn btn-secondary btn-small" style="font-size:11px; padding:3px 8px; background:#0369A1; color:#fff; border:1px solid #7DD3FC; font-weight:700;" onclick="window.reelsApplyChristmasComboPreset && window.reelsApplyChristmasComboPreset('xmas_combo_snow_globe')">🔮 水晶雪球+冰雪字</button>
+                          <button type="button" class="btn btn-secondary btn-small" style="font-size:11px; padding:3px 8px; background:#7A111A; color:#FDE047; border:1px solid #FACC15; font-weight:700;" onclick="window.reelsApplyChristmasComboPreset && window.reelsApplyChristmasComboPreset('xmas_combo_bethlehem')">🌟 伯利恒星+红丝绒金字</button>
+                          <button type="button" class="btn btn-secondary btn-small" style="font-size:11px; padding:3px 8px; background:#FFF9EC; color:#14532D; border:1px solid #86EFAC; font-weight:700;" onclick="window.reelsApplyChristmasComboPreset && window.reelsApplyChristmasComboPreset('xmas_combo_snowman')">⛄ 围巾雪人+奶油胶囊字</button>
+                          <button type="button" class="btn btn-secondary btn-small" style="font-size:11px; padding:3px 8px; background:#C81E2B; color:#fff; border:1px solid #FCA5A5; font-weight:700;" onclick="window.reelsApplyChristmasComboPreset && window.reelsApplyChristmasComboPreset('xmas_combo_crimson_bell')">🎅 圣诞帽+正红胶囊字</button>
+                          <button type="button" class="btn btn-secondary btn-small" style="font-size:11px; padding:3px 8px; background:#7C3F1C; color:#FFFDF5; border:1px solid #FDBA74; font-weight:700;" onclick="window.reelsApplyChristmasComboPreset && window.reelsApplyChristmasComboPreset('xmas_combo_reindeer')">🦌 驯鹿+姜饼暖心带</button>
+                          <button type="button" class="btn btn-secondary btn-small" style="font-size:11px; padding:3px 8px; background:#88131B; color:#FFFDF9; border:1px dashed #FCA5A5; font-weight:700;" onclick="window.reelsApplyChristmasComboPreset && window.reelsApplyChristmasComboPreset('xmas_combo_gingerbread')">🍪 姜饼+拐杖糖带</button>
+                          <button type="button" class="btn btn-secondary btn-small" style="font-size:11px; padding:3px 8px; background:#124229; color:#FEF08A; border:1px solid #FDE047; font-weight:700;" onclick="window.reelsApplyChristmasComboPreset && window.reelsApplyChristmasComboPreset('xmas_combo_angel')">👼 天使+松林覆雪金字</button>
+                        </div>
+
+                        <details id="reels-xmas-icons-accordion" style="border-top:1px dashed rgba(255,255,255,0.15); padding-top:6px;">
+                          <summary style="cursor:pointer; font-size:11px; color:#fef08a; font-weight:700; display:flex; align-items:center; justify-content:space-between; list-style:none;">
+                            <span>✨ 展开全部 32 款圣诞小图标库（点击放置到画面，或设成字幕跟读小图标）</span>
+                            <span style="font-size:10px; padding:1px 6px; border-radius:999px; background:rgba(250,204,21,0.18); color:#fde68a;">32款 ▾</span>
+                          </summary>
+                          <div style="margin-top:6px;">
+                            <div style="display:flex; align-items:center; justify-content:space-between; gap:6px; margin-bottom:6px; flex-wrap:wrap;">
+                              <div style="display:flex; gap:6px; align-items:center;">
+                                <label style="font-size:10.5px; color:#cbd5e1; cursor:pointer; display:flex; align-items:center; gap:3px; margin:0;"><input type="radio" name="reels-xmas-icon-mode" value="sticker" checked><span>📍 放到视频画面 (可自由拖拽缩放)</span></label>
+                                <label style="font-size:10.5px; color:#cbd5e1; cursor:pointer; display:flex; align-items:center; gap:3px; margin:0;"><input type="radio" name="reels-xmas-icon-mode" value="cursor"><span>✍️ 设为字幕跟读小图标</span></label>
+                              </div>
+                            </div>
+                            <div id="reels-xmas-subtitle-icon-grid" style="display:grid; grid-template-columns:repeat(4, minmax(0, 1fr)); gap:5px; max-height:220px; overflow-y:auto; padding:3px; background:rgba(0,0,0,0.22); border-radius:6px;"></div>
+                          </div>
+                        </details>
                       </div>
                     </div>
                   </div>
@@ -8227,7 +8272,7 @@
           <div class="form-section">
             <h3 class="section-title">关于</h3>
             <div class="about-info">
-              <p><strong>VideoKit</strong> <span id="app-version-display">v4.6.4-beta</span></p>
+              <p><strong>VideoKit</strong> <span id="app-version-display">v4.6.5-beta</span></p>
               <p>视频工具包-批量：音频生成-reels视频制作-多媒体转换</p>
               <div style="margin-top: 12px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
                 <button id="check-update-btn" class="btn btn-secondary" onclick="checkAppUpdate()"

@@ -547,11 +547,11 @@ test('A20: All 114 preset IDs (se-*, sub-*, scroll-*, ov-*), Canvas style routin
         resolveBuiltinPreset,
     } = require('../src/reels-presets-init.js');
 
-    // 1. All 277 subtitle/scroll preset IDs + 35 overlay preset IDs + 130 curated scroll style IDs (and all legacy aliases sc-01..sc-214) must resolve
+    // 1. All 283 subtitle/scroll preset IDs + 35 overlay preset IDs + 130 curated scroll style IDs (and all legacy aliases sc-01..sc-214) must resolve
     const subIds = Object.keys(REELS_PRESET_ID_MAP);
     const ovIds = Object.keys(REELS_OVERLAY_PRESET_ID_MAP);
     const scIds = Object.keys(REELS_SCROLL_PRESET_ID_MAP);
-    assert.equal(subIds.length, 277, 'Expected 277 subtitle/scroll preset IDs');
+    assert.equal(subIds.length, 283, 'Expected 283 subtitle/scroll preset IDs');
     assert.equal(ovIds.length, 35, 'Expected 35 overlay preset IDs');
     assert.equal(Object.keys(REELS_BUILTIN_SCROLL_STYLE_PRESETS).length, 65, 'Expected 65 curated builtin scroll style presets');
     assert.equal(scIds.length, 130, 'Expected 130 curated scroll style ID mappings');
@@ -579,7 +579,7 @@ test('A20: All 114 preset IDs (se-*, sub-*, scroll-*, ov-*), Canvas style routin
     // 3. Validate preset IDs and Canvas-exclusive engine routing + real Electron WYSIWYG render
     const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'vk-cli-a20-'));
     try {
-        for (const presetId of ['se-01', 'se-12', 'sub-03', 'sub-25', 'sub-27', 'sub-35', 'sub-36', 'sub-39', 'sub-40', 'sub-53', 'sub-55', 'sub-68', 'sub-70', 'sub-228', 'sub-229', 'sub-235', 'sub-240', 'sub-244', 'scroll-blessed-grace', 'scroll-lyrics-pink', 'ov-01', 'ov-15', 'ov-16', 'ov-17', 'ov-19', 'ov-21', 'ov-23', 'ov-27', 'ov-28', 'ov-30', 'ov-33', 'ov-34', 'ov-35', 'sc-01', 'sc-13', 'sc-25', 'sc-26', 'sc-30', 'sc-34', 'sc-35', 'sc-38', 'sc-39', 'sc-40', 'sc-41', 'sc-49', 'sc-65', 'sc-81', 'sc-97', 'sc-115', 'sc-133', 'sc-148', 'sc-149', 'sc-162', 'sc-175', 'sc-187', 'sc-198', 'sc-199', 'sc-206', 'sc-214', 'scroll-15', 'scroll-49', 'scroll-148', 'scroll-149', 'scroll-198', 'scroll-199', 'scroll-214']) {
+        for (const presetId of ['se-01', 'se-12', 'sub-03', 'sub-25', 'sub-27', 'sub-35', 'sub-36', 'sub-39', 'sub-40', 'sub-53', 'sub-55', 'sub-68', 'sub-70', 'sub-228', 'sub-229', 'sub-235', 'sub-240', 'sub-244', 'sub-245', 'sub-246', 'sub-248', 'sub-250', 'scroll-blessed-grace', 'scroll-lyrics-pink', 'ov-01', 'ov-15', 'ov-16', 'ov-17', 'ov-19', 'ov-21', 'ov-23', 'ov-27', 'ov-28', 'ov-30', 'ov-33', 'ov-34', 'ov-35', 'sc-01', 'sc-13', 'sc-25', 'sc-26', 'sc-30', 'sc-34', 'sc-35', 'sc-38', 'sc-39', 'sc-40', 'sc-41', 'sc-49', 'sc-65', 'sc-81', 'sc-97', 'sc-115', 'sc-133', 'sc-148', 'sc-149', 'sc-162', 'sc-175', 'sc-187', 'sc-198', 'sc-199', 'sc-206', 'sc-214', 'scroll-15', 'scroll-49', 'scroll-148', 'scroll-149', 'scroll-198', 'scroll-199', 'scroll-214']) {
             const p = path.join(tmpDir, `task-${presetId}.json`);
             fs.writeFileSync(p, JSON.stringify({
                 id: `check-${presetId}`,
@@ -792,4 +792,11 @@ test('A23: CLI update subcommand parsing, mocked update check, and cloud-update.
     assert.equal(cloudScriptText.includes('\r\n'), false, 'scripts/cloud-update.sh must use LF line endings for Linux');
     assert.match(cloudScriptText, /--check/);
     assert.match(cloudScriptText, /--stash/);
+});
+
+test('A24: CLI routes draggable Christmas sticker overlays to wysiwyg engine automatically', () => {
+    const { resolveTaskEngine } = require('../bin/videokit-cli.cjs');
+    const routed = resolveTaskEngine({ engine: 'auto' }, {}, [{ type: 'sticker', sticker_kind: 'jingle_bell', x: 410, y: 220, w: 260, h: 260 }]);
+    assert.equal(routed.engine, 'wysiwyg');
+    assert.match(routed.engineReason, /overlay_type=sticker/);
 });

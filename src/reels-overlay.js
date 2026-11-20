@@ -1566,6 +1566,42 @@ function getIntroDelaySec(overlays, options = {}) {
     return Number.isFinite(endSec) && endSec > 0 ? endSec : 0;
 }
 
+/**
+ * 创建独立可拖拽/缩放/动效的圣诞/节日小图标贴纸覆层 (`type: 'sticker'`)。
+ */
+function createStickerOverlay(opts = {}) {
+    const kind = String(opts.sticker_kind || opts.kind || 'jingle_bell').trim() || 'jingle_bell';
+    const meta = (typeof window !== 'undefined' && window.HOLIDAY_ICON_MAP && window.HOLIDAY_ICON_MAP[kind]) || null;
+    const defaultLabel = meta ? `${meta.emoji} ${meta.label}` : `🎄 ${kind}`;
+    const size = Math.max(48, Math.min(800, Number(opts.w ?? opts.size ?? 260) || 260));
+    const h = Math.max(48, Math.min(800, Number(opts.h ?? size) || size));
+    return {
+        id: opts.id || ('ov_stk_' + Math.random().toString(36).slice(2, 8)),
+        type: 'sticker',
+        name: opts.name || defaultLabel,
+        sticker_kind: kind,
+        sticker_shadow: opts.sticker_shadow !== false,
+        sticker_sparkles: Boolean(opts.sticker_sparkles),
+        x: opts.x !== undefined ? Number(opts.x) : 410,
+        y: opts.y !== undefined ? Number(opts.y) : 230,
+        w: size,
+        h,
+        rotation: opts.rotation !== undefined ? Number(opts.rotation) : 0,
+        opacity: opts.opacity !== undefined ? Number(opts.opacity) : 255,
+        start: opts.start !== undefined ? Number(opts.start) : 0,
+        end: opts.end !== undefined ? Number(opts.end) : 9999,
+        scroll_end_auto: opts.scroll_end_auto !== undefined ? Boolean(opts.scroll_end_auto) : (opts.end === undefined || Number(opts.end) >= 9999),
+        anim_in_type: opts.anim_in_type || 'elastic_pop',
+        anim_in_duration: opts.anim_in_duration ?? 0.45,
+        anim_out_type: opts.anim_out_type || 'fade',
+        anim_out_duration: opts.anim_out_duration ?? 0.25,
+        cta_loop_anim: opts.cta_loop_anim || 'sway_bell',
+        transition_preset: opts.transition_preset || 'none',
+        intro_keep_visible: Boolean(opts.intro_keep_visible),
+        _xmasComboTag: opts._xmasComboTag || undefined,
+    };
+}
+
 // ═══════════════════════════════════════════════════════
 // 2. Overlay Renderer
 // ═══════════════════════════════════════════════════════
@@ -2414,6 +2450,8 @@ function drawOverlay(ctx, origOv, currentTime = 0, canvasW = 1920, canvasH = 108
             _drawDecorOverlay(ctx, ov, x, y, w, h, currentTime, canvasW, canvasH);
         } else if (ov.type === 'intro_countdown') {
             _drawIntroCountdownOverlay(ctx, ov, x, y, w, h, currentTime, canvasW, canvasH);
+        } else if (ov.type === 'sticker') {
+            _drawStickerOverlay(ctx, ov, x, y, w, h, currentTime);
         } else if (ov.type === 'video') {
             _drawVideoOverlay(ctx, ov, x, y, w, h, currentTime);
         }
@@ -2526,11 +2564,93 @@ function _applyOverlayInOutAnim(ctx, ov, currentTime, start, end, centerX, cente
         } else if (loopType === 'float') {
             const dy = Math.sin(elapsedAfterIn * Math.PI * 1.6) * 8;
             ctx.translate(0, dy);
+        } else if (loopType === 'sway_bell') {
+            const swayAngle = Math.sin(elapsedAfterIn * Math.PI * 1.7) * (6.5 * Math.PI / 180);
+            ctx.translate(centerX, centerY - 24);
+            ctx.rotate(swayAngle);
+            ctx.translate(-centerX, -(centerY - 24));
+        } else if (loopType === 'twinkle') {
+            const twScale = 1 + 0.055 * Math.sin(elapsedAfterIn * Math.PI * 2.8);
+            ctx.translate(centerX, centerY);
+            ctx.scale(twScale, twScale);
+            ctx.translate(-centerX, -centerY);
         }
     }
 
     ctx.globalAlpha *= animOpFactor;
     return animOpFactor;
+}
+
+/**
+ * 渲染独立圣诞/节日小图标贴纸覆层 (`type: 'sticker'`)。
+ */
+function _drawStickerOverlay(ctx, ov, x, y, w, h, currentTime = 0) {
+    if (!ctx || !ov || w <= 0 || h <= 0) return;
+    ov._renderedX = x;
+    ov._renderedY = y;
+    ov._renderedW = w;
+    ov._renderedH = h;
+    const cx = x + w / 2;
+    const cy = y + h / 2;
+    const drawDiameter = Math.max(12, Math.min(w, h) * 0.92);
+    const kind = String(ov.sticker_kind || ov.kind || 'jingle_bell').trim() || 'jingle_bell';
+
+    ctx.save();
+    if (ov.sticker_shadow !== false) {
+        ctx.shadowColor = 'rgba(0, 0, 0, 0.38)';
+        ctx.shadowBlur = Math.max(4, drawDiameter * 0.08);
+        ctx.shadowOffsetX = 0;
+        ctx.shadowOffsetY = Math.max(2, drawDiameter * 0.03);
+    }
+
+    const drawHolidayFn = (typeof drawHolidayStickerIcon === 'function')
+        ? drawHolidayStickerIcon
+        : (typeof window !== 'undefined' && typeof window.drawHolidayStickerIcon === 'function' ? window.drawHolidayStickerIcon : null);
+    let drawn = false;
+    if (drawHolidayFn) {
+        drawn = Boolean(drawHolidayFn(ctx, kind, cx, cy, drawDiameter, { time: currentTime }));
+    }
+    if (!drawn) {
+        const naId = kind.startsWith('na_') ? kind : `na_${kind}`;
+        if (typeof _drawNaEmblemArtwork === 'function' && _drawNaEmblemArtwork(ctx, naId, cx, cy, drawDiameter * 0.44, { time: currentTime })) {
+            drawn = true;
+        }
+    }
+    if (!drawn && typeof _drawXmasGoldenBellOrnament === 'function') {
+        _drawXmasGoldenBellOrnament(ctx, cx, cy, drawDiameter / 48, 0, '#F59E0B', '#DC2626');
+    }
+
+    if (ov.cta_loop_anim === 'twinkle' || ov.sticker_sparkles) {
+        const t = Number(currentTime) || 0;
+        ctx.shadowColor = 'transparent';
+        ctx.shadowBlur = 0;
+        const pts = [
+            [-0.40, -0.34, 0.0],
+            [0.42, -0.28, 1.3],
+            [-0.36, 0.36, 2.4],
+            [0.38, 0.34, 3.8],
+        ];
+        for (const [rx, ry, phase] of pts) {
+            const tw = Math.max(0, Math.sin(t * 4.5 + phase));
+            if (tw <= 0.1) continue;
+            const sx = cx + rx * drawDiameter;
+            const sy = cy + ry * drawDiameter;
+            const sr = drawDiameter * 0.075 * tw;
+            ctx.fillStyle = `rgba(254, 240, 138, ${(0.9 * tw).toFixed(2)})`;
+            ctx.beginPath();
+            ctx.moveTo(sx, sy - sr);
+            ctx.lineTo(sx + sr * 0.28, sy - sr * 0.28);
+            ctx.lineTo(sx + sr, sy);
+            ctx.lineTo(sx + sr * 0.28, sy + sr * 0.28);
+            ctx.lineTo(sx, sy + sr);
+            ctx.lineTo(sx - sr * 0.28, sy + sr * 0.28);
+            ctx.lineTo(sx - sr, sy);
+            ctx.lineTo(sx - sr * 0.28, sy - sr * 0.28);
+            ctx.closePath();
+            ctx.fill();
+        }
+    }
+    ctx.restore();
 }
 
 /**
@@ -15882,6 +16002,7 @@ const ReelsOverlay = {
     DECOR_OVERLAY_STYLES,
     createIntroCountdownOverlay,
     applyIntroCountdownPreset,
+    createStickerOverlay,
     computeIntroDaysRemaining,
     getActiveIntroCountdownOverlay,
     getIntroDelaySec,

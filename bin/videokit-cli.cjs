@@ -845,7 +845,7 @@ function resolveTaskEngine(task, subConfig = {}, overlays = [], cliArgs = {}, ta
                 break;
             }
             const ovType = String(ov.type || '').toLowerCase();
-            if (ovType === 'scroll' || ovType === 'flipper' || ovType === 'textcard') {
+            if (ovType === 'scroll' || ovType === 'flipper' || ovType === 'textcard' || ovType === 'sticker') {
                 wysiwygReasons.push(`overlay_type=${ovType}`);
                 break;
             }

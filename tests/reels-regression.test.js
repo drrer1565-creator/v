@@ -11353,3 +11353,142 @@ test('Christian devotional creative card presets (ov-16..ov-35) & Muse template 
     assert.equal(museConverted[1].body_font_family, 'Libre Baskerville');
     assert.equal(museConverted[1].auto_color_rules[0].keywords[0], 'GOD');
 });
+
+test('Christmas sticker icons (32 shaded vector icons), draggable sticker overlays, and Christmas subtitle combos (sub-245..sub-250)', () => {
+    const sandbox = {
+        console,
+        Math,
+        JSON,
+        Date,
+        Number,
+        String,
+        Boolean,
+        Array,
+        Object,
+        Set,
+        Map,
+        Path2D: class MockPath2D { constructor(d) { this.d = d; } },
+        Image: class MockImage {},
+        window: {},
+    };
+    sandbox.window = sandbox;
+    sandbox.globalThis = sandbox;
+    loadBrowserScript('src/reels-anim-engine.js', sandbox);
+    loadBrowserScript('src/reels-style-engine.js', sandbox);
+    loadBrowserScript('src/reels-presets-init.js', sandbox);
+    loadBrowserScript('src/reels-canvas-renderer.js', sandbox);
+    loadBrowserScript('src/reels-overlay.js', sandbox);
+
+    const catalog = sandbox.window.HOLIDAY_ICON_CATALOG;
+    assert.ok(Array.isArray(catalog) && catalog.length >= 32, `Expected >=32 holiday icons, got ${catalog?.length}`);
+    const ids = new Set(catalog.map((i) => i.id));
+    assert.equal(ids.size, catalog.length, 'Every Christmas icon ID must be unique');
+
+    let drawCalls = 0;
+    let rotateCalls = 0;
+    const makeSpyCtx = () => ({
+        lineCap: 'butt',
+        lineJoin: 'miter',
+        lineWidth: 1,
+        globalAlpha: 1,
+        shadowColor: '',
+        shadowBlur: 0,
+        shadowOffsetX: 0,
+        shadowOffsetY: 0,
+        fillStyle: '#000',
+        strokeStyle: '#000',
+        save() {},
+        restore() {},
+        translate() {},
+        rotate(a) { if (Math.abs(a) > 1e-6) rotateCalls++; },
+        scale() {},
+        beginPath() {},
+        closePath() {},
+        moveTo() {},
+        lineTo() {},
+        quadraticCurveTo() {},
+        bezierCurveTo() {},
+        arc() {},
+        ellipse() {},
+        rect() {},
+        roundRect() {},
+        setLineDash() {},
+        fill() { drawCalls++; },
+        stroke() { drawCalls++; },
+        fillRect() { drawCalls++; },
+        createLinearGradient: () => ({ addColorStop() {} }),
+        createRadialGradient: () => ({ addColorStop() {} }),
+    });
+
+    // 1. Every holiday icon renders cleanly both as a centered sticker AND as a subtitle companion tip
+    for (const item of catalog) {
+        assert.equal(sandbox.window.isImageOrVectorWritingTip(item.id), true, `Icon ${item.id} must register as writing tip`);
+        const ctx1 = makeSpyCtx();
+        const before1 = drawCalls;
+        const ok1 = sandbox.window.drawHolidayStickerIcon(ctx1, item.id, 100, 100, 180, { time: 0.8 });
+        assert.equal(ok1, true, `drawHolidayStickerIcon should draw ${item.id}`);
+        assert.ok(drawCalls > before1, `${item.id} should issue canvas draw operations`);
+
+        const ctx2 = makeSpyCtx();
+        const before2 = drawCalls;
+        sandbox.window.drawSpeechWritingTip(ctx2, item.id, 10, 40, 32, 0);
+        assert.ok(drawCalls > before2, `drawSpeechWritingTip should draw ${item.id}`);
+    }
+
+    // 2. Draggable sticker overlays render, update hitTest boxes, and sway cleanly
+    const RO = sandbox.window.ReelsOverlay;
+    assert.equal(typeof RO.createStickerOverlay, 'function');
+    const bellOv = RO.createStickerOverlay({
+        sticker_kind: 'jingle_bell',
+        cta_loop_anim: 'sway_bell',
+        x: 410, y: 220, w: 260, h: 260,
+        anim_in_type: 'elastic_pop', anim_in_duration: 0.4,
+    });
+    assert.equal(bellOv.type, 'sticker');
+    assert.equal(bellOv.sticker_kind, 'jingle_bell');
+    bellOv._exporting = true;
+
+    rotateCalls = 0;
+    const mgr = new RO.OverlayManager();
+    mgr.addOverlay(bellOv);
+    const spy = makeSpyCtx();
+    mgr.renderAll(spy, 1.35, 1080, 1920);
+    assert.ok(rotateCalls > 0, 'sway_bell loop animation should rotate during playback/export');
+    assert.equal(bellOv._renderedX, 410);
+    assert.equal(bellOv._renderedY, 220);
+    assert.equal(bellOv._renderedW, 260);
+    assert.equal(bellOv._renderedH, 260);
+    assert.equal(mgr.hitTest(540, 350, 1.35)?.id, bellOv.id, 'Sticker should be draggable via hitTest inside box');
+    assert.equal(mgr.hitTest(50, 50, 1.35), null, 'Sticker hitTest outside box should miss');
+
+    // Twinkle mode with sparkles
+    const globeOv = RO.createStickerOverlay({
+        sticker_kind: 'xmas_snow_globe',
+        cta_loop_anim: 'twinkle',
+        sticker_sparkles: true,
+        x: 100, y: 200, w: 200, h: 200,
+    });
+    globeOv._exporting = true;
+    const beforeSpark = drawCalls;
+    RO.drawOverlay(makeSpyCtx(), globeOv, 0.35, 1080, 1920);
+    assert.ok(drawCalls > beforeSpark);
+
+    // 3. New Christmas subtitle presets (sub-245..sub-250) & UI wiring
+    const idMap = sandbox.window.REELS_PRESET_ID_MAP;
+    const presets = sandbox.window.REELS_BUILTIN_PRESETS;
+    for (const code of ['sub-245', 'sub-246', 'sub-247', 'sub-248', 'sub-249', 'sub-250']) {
+        const name = idMap[code];
+        assert.ok(name && presets[name], `${code} Christmas subtitle preset should exist`);
+    }
+    const emeraldStyle = presets[idMap['sub-245']];
+    assert.equal(emeraldStyle.color_bg, '#129E4D');
+    assert.equal(emeraldStyle.box_connected, true);
+    assert.equal(emeraldStyle.color_text, '#FFFFFF');
+
+    const panelSrc = fs.readFileSync(path.join(ROOT, 'src/reels-overlay-panel.js'), 'utf8');
+    const htmlSrc = fs.readFileSync(path.join(ROOT, 'src/index.html'), 'utf8');
+    assert.match(panelSrc, /rop-add-sticker/);
+    assert.match(panelSrc, /'sticker'/);
+    assert.match(htmlSrc, /reels-xmas-subtitle-icon-grid/);
+    assert.match(htmlSrc, /reelsApplyChristmasComboPreset\('xmas_combo_tree_bells'\)/);
+});

@@ -3994,6 +3994,27 @@ window.reelsApplyTextBackingPreset = function(styleId) {
             color_bg: '#0EA5E9', opacity_bg: 245, box_padding_x: 18, box_padding_y: 8, box_radius: 8,
             box_connected: false
         },
+        xmas_emerald_pill: {
+            font_family: 'Montserrat', font_weight: 800, bold: true, italic: false,
+            color_text: '#FFFFFF', color_high: '#FEF08A', highlight_enabled: true, karaoke_highlight: true,
+            use_stroke: false, border_width: 0,
+            box_brush_style: 'none', color_bg: '#129E4D', opacity_bg: 255,
+            box_padding_x: 30, box_padding_y: 12, box_radius: 26, box_connected: true
+        },
+        xmas_crimson_pill: {
+            font_family: 'Montserrat', font_weight: 800, bold: true, italic: false,
+            color_text: '#FFFFFF', color_high: '#FDE047', highlight_enabled: true, karaoke_highlight: true,
+            use_stroke: true, color_outline: '#7F1D1D', border_width: 2.0, opacity_outline: 220,
+            box_brush_style: 'none', color_bg: '#C81E2B', opacity_bg: 255,
+            box_padding_x: 30, box_padding_y: 12, box_radius: 26, box_connected: true
+        },
+        xmas_snow_cream_pill: {
+            font_family: 'Montserrat', font_weight: 800, bold: true, italic: false,
+            color_text: '#14532D', color_high: '#DC2626', highlight_enabled: true, karaoke_highlight: true,
+            use_stroke: false, border_width: 0,
+            box_brush_style: 'none', color_bg: '#FFF9EC', opacity_bg: 255,
+            box_padding_x: 28, box_padding_y: 12, box_radius: 24, box_connected: true
+        },
         vet_stars_stripes_ribbon: {
             font_family: 'Playfair Display', bold: true, italic: true,
             color_text: '#FFFDF5', color_high: '#FBBF24', highlight_enabled: true, karaoke_highlight: true,
@@ -4034,6 +4055,9 @@ window.reelsApplyTextBackingPreset = function(styleId) {
         xmas_pine_snow: 'christmas_tree',
         xmas_gingerbread_tag: 'holly_berry',
         xmas_frost_ice: 'snowflake_wand',
+        xmas_emerald_pill: 'jingle_bell',
+        xmas_crimson_pill: 'xmas_velvet_bow',
+        xmas_snow_cream_pill: 'xmas_advent_candle',
         newspaper_cutout: 'quill',
         newspaper_sepia: 'fountain_pen',
         torn_cream_paper: 'quill',
@@ -4112,6 +4136,228 @@ window.reelsApplySubtitlePresetByName = function(presetName) {
         }
     }
 };
+
+window.XMAS_ICON_SUBTITLE_COMBOS = [
+    {
+        id: 'xmas_combo_tree_bells',
+        label: '🔔 树顶金铃铛 + 翡翠绿胶囊 (爆款同款)',
+        stickerKind: 'jingle_bell',
+        loopAnim: 'sway_bell',
+        x: 410, y: 220, w: 260, h: 260,
+        subtitlePreset: '🔔 圣诞翡翠绿胶囊_图1爆款双行白字',
+        cursorKind: 'jingle_bell',
+    },
+    {
+        id: 'xmas_combo_snow_globe',
+        label: '🔮 水晶雪球 + 冰雪星尘字幕',
+        stickerKind: 'xmas_snow_globe',
+        loopAnim: 'twinkle',
+        x: 415, y: 230, w: 250, h: 250,
+        subtitlePreset: '❄️ 圣夜水晶雪球_冰蓝星尘字',
+        cursorKind: 'snowflake_wand',
+    },
+    {
+        id: 'xmas_combo_bethlehem',
+        label: '🌟 伯利恒圣星 + 红丝绒金字',
+        stickerKind: 'xmas_bethlehem_star',
+        loopAnim: 'twinkle',
+        x: 410, y: 200, w: 260, h: 260,
+        subtitlePreset: '🌟 伯利恒晨星_圣夜金箔祷告字',
+        cursorKind: 'xmas_bethlehem_star',
+    },
+    {
+        id: 'xmas_combo_snowman',
+        label: '⛄ 围巾雪人 + 圣诞奶油胶囊',
+        stickerKind: 'xmas_snowman_scarf',
+        loopAnim: 'float',
+        x: 420, y: 240, w: 240, h: 240,
+        subtitlePreset: '⛄ 暖冬雪人_红白糖果胶囊',
+        cursorKind: 'xmas_snowman_scarf',
+    },
+    {
+        id: 'xmas_combo_crimson_bell',
+        label: '🎅 圣诞红绒帽 + 正红胶囊跟读字',
+        stickerKind: 'santa_feather',
+        loopAnim: 'sway_bell',
+        x: 420, y: 225, w: 245, h: 245,
+        subtitlePreset: '🎄 圣诞正红胶囊_鎏金双铃跟读字',
+        cursorKind: 'santa_feather',
+    },
+    {
+        id: 'xmas_combo_reindeer',
+        label: '🦌 红鼻驯鹿 + 姜饼糖霜字幕',
+        stickerKind: 'xmas_reindeer_rudolph',
+        loopAnim: 'float',
+        x: 420, y: 230, w: 245, h: 245,
+        subtitlePreset: '🦌 驯鹿鲁道夫_圣诞姜饼暖心带',
+        cursorKind: 'xmas_reindeer_rudolph',
+    },
+    {
+        id: 'xmas_combo_gingerbread',
+        label: '🍪 糖霜姜饼人 + 拐杖糖斜纹字',
+        stickerKind: 'xmas_gingerbread',
+        loopAnim: 'pulse',
+        x: 420, y: 240, w: 240, h: 240,
+        subtitlePreset: '🍬 圣诞拐杖糖斜纹带_手写笔出字',
+        cursorKind: 'candy_cane',
+    },
+    {
+        id: 'xmas_combo_angel',
+        label: '👼 金翼天使 + 松林覆雪金字',
+        stickerKind: 'xmas_angel_trumpet',
+        loopAnim: 'float',
+        x: 415, y: 220, w: 250, h: 250,
+        subtitlePreset: '❄️ 圣诞松林覆雪带_暖金发光字',
+        cursorKind: 'xmas_angel_trumpet',
+    },
+];
+
+window.reelsAddChristmasStickerIcon = function(kind = 'jingle_bell', options = {}) {
+    const ReelsOverlay = window.ReelsOverlay;
+    if (!ReelsOverlay || typeof ReelsOverlay.createStickerOverlay !== 'function') return null;
+
+    const mgr = _reelsState?.overlayProxy?.overlayMgr;
+    const task = typeof _getSelectedTask === 'function' ? _getSelectedTask() : null;
+    const targetList = mgr?.overlays || (task && (task.overlays = task.overlays || [])) || null;
+    if (!targetList) return null;
+
+    if (options.replaceComboOnly) {
+        for (let i = targetList.length - 1; i >= 0; i--) {
+            if (targetList[i] && targetList[i]._xmasComboTag) {
+                targetList.splice(i, 1);
+            }
+        }
+    }
+
+    const offsetIdx = targetList.filter((o) => o && o.type === 'sticker' && !o._xmasComboTag).length;
+    const ov = ReelsOverlay.createStickerOverlay({
+        sticker_kind: kind,
+        cta_loop_anim: options.loopAnim || (kind === 'jingle_bell' || kind === 'santa_feather' || kind === 'xmas_velvet_bow' ? 'sway_bell' : 'float'),
+        x: options.x !== undefined ? options.x : (410 + (offsetIdx % 3) * 40 - (offsetIdx > 0 ? 40 : 0)),
+        y: options.y !== undefined ? options.y : (230 + Math.floor(offsetIdx / 3) * 60),
+        w: options.w !== undefined ? options.w : 250,
+        h: options.h !== undefined ? options.h : 250,
+        _xmasComboTag: Boolean(options.isCombo),
+    });
+
+    if (mgr && typeof mgr.addOverlay === 'function') {
+        mgr.addOverlay(ov);
+    } else {
+        targetList.push(ov);
+    }
+
+    if (task && mgr) {
+        task.overlays = [...mgr.overlays];
+    }
+
+    const panel = _reelsState?.overlayPanel;
+    if (panel) {
+        if (typeof panel.selectOverlay === 'function') panel.selectOverlay(ov);
+        else if (typeof panel._refreshList === 'function') panel._refreshList();
+    }
+    if (typeof window._syncOverlayStackToScopeTasks === 'function') {
+        window._syncOverlayStackToScopeTasks();
+    } else if (panel && typeof panel._syncAllOverlaysToScopeTasks === 'function') {
+        panel._syncAllOverlaysToScopeTasks();
+    }
+    if (typeof _saveCurrentTaskToStore === 'function') _saveCurrentTaskToStore();
+    if (typeof window.reelsSaveHistory === 'function') window.reelsSaveHistory();
+    if (typeof reelsUpdatePreview === 'function') reelsUpdatePreview(true);
+    return ov;
+};
+
+window.reelsApplyChristmasComboPreset = function(comboId) {
+    const combo = (window.XMAS_ICON_SUBTITLE_COMBOS || []).find((c) => c.id === comboId)
+        || (window.XMAS_ICON_SUBTITLE_COMBOS || [])[0];
+    if (!combo) return false;
+
+    window.reelsAddChristmasStickerIcon(combo.stickerKind, {
+        loopAnim: combo.loopAnim,
+        x: combo.x,
+        y: combo.y,
+        w: combo.w,
+        h: combo.h,
+        replaceComboOnly: true,
+        isCombo: true,
+    });
+
+    if (combo.subtitlePreset && typeof window.reelsApplySubtitlePresetByName === 'function') {
+        window.reelsApplySubtitlePresetByName(combo.subtitlePreset);
+    }
+    return true;
+};
+
+window.reelsInitChristmasIconPickers = function() {
+    if (typeof document === 'undefined') return;
+    const catalog = Array.isArray(window.HOLIDAY_ICON_CATALOG) ? window.HOLIDAY_ICON_CATALOG : [];
+    if (catalog.length === 0) return;
+
+    const twSelect = document.getElementById('reels-fullpage-typewriter-cursor-kind');
+    if (twSelect && typeof twSelect.querySelector === 'function') {
+        const imgOpt = twSelect.querySelector('option[value="image"]');
+        for (const item of catalog) {
+            if (!twSelect.querySelector(`option[value="${item.id}"]`)) {
+                const opt = document.createElement('option');
+                opt.value = item.id;
+                opt.textContent = `${item.emoji} ${item.label}`;
+                if (imgOpt) twSelect.insertBefore(opt, imgOpt);
+                else twSelect.appendChild(opt);
+            }
+        }
+    }
+
+    const grid = document.getElementById('reels-xmas-subtitle-icon-grid');
+    if (grid && !grid.dataset.populated) {
+        grid.dataset.populated = '1';
+        grid.innerHTML = catalog.map((item) => {
+            const safeId = String(item.id).replace(/[^a-zA-Z0-9_-]/g, '');
+            const esc = (s) => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+            return `<button type="button" class="reels-xmas-sub-icon-chip" data-kind="${safeId}" title="${esc(item.emoji + ' ' + item.label + ' (' + item.category + ')')}" style="display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;padding:4px 3px;border-radius:6px;border:1px solid rgba(255,255,255,0.12);background:rgba(255,255,255,0.04);color:#f1f5f9;cursor:pointer;">
+                <canvas class="reels-xmas-sub-icon-cvs" data-kind="${safeId}" width="38" height="38" style="width:30px;height:30px;display:block;"></canvas>
+                <span style="font-size:9.5px;line-height:1.15;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(item.label)}</span>
+            </button>`;
+        }).join('');
+
+        if (typeof window.drawHolidayStickerIcon === 'function') {
+            grid.querySelectorAll('.reels-xmas-sub-icon-cvs').forEach((cvs) => {
+                const c = cvs.getContext && cvs.getContext('2d');
+                if (!c) return;
+                c.clearRect(0, 0, cvs.width, cvs.height);
+                window.drawHolidayStickerIcon(c, cvs.dataset.kind, 19, 19, 32, { time: 0 });
+            });
+        }
+
+        grid.addEventListener('click', (e) => {
+            const chip = e.target.closest('.reels-xmas-sub-icon-chip');
+            if (!chip) return;
+            const kind = chip.dataset.kind;
+            if (!kind) return;
+            const modeEl = document.querySelector('input[name="reels-xmas-icon-mode"]:checked');
+            const mode = modeEl ? modeEl.value : 'sticker';
+            if (mode === 'cursor') {
+                if (typeof window.reelsSetSpeechWritingTip === 'function') {
+                    window.reelsSetSpeechWritingTip(kind, true);
+                }
+            } else {
+                if (typeof window.reelsAddChristmasStickerIcon === 'function') {
+                    window.reelsAddChristmasStickerIcon(kind);
+                }
+            }
+        });
+    }
+};
+
+if (typeof document !== 'undefined' && typeof document.addEventListener === 'function') {
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', () => {
+            try { window.reelsInitChristmasIconPickers(); } catch (_) {}
+        });
+    } else {
+        setTimeout(() => {
+            try { window.reelsInitChristmasIconPickers(); } catch (_) {}
+        }, 0);
+    }
+}
 
 // ═══════════════════════════════════════════════════════
 // Preview rendering loop (with RAF coalescing to prevent UI freeze)

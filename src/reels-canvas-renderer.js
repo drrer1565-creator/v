@@ -135,18 +135,998 @@ function getSpeechWritingTokens(seg, text, syncSpeech) {
     return tokens;
 }
 
+const HOLIDAY_ICON_CATALOG = [
+    { id: 'jingle_bell', emoji: '🔔', label: '鎏金双铃结', category: '圣诞经典', accent: '#F59E0B' },
+    { id: 'christmas_tree', emoji: '🎄', label: '金星圣诞树', category: '圣诞经典', accent: '#16A34A' },
+    { id: 'holly_berry', emoji: '🍒', label: '冬青红果叶', category: '圣诞经典', accent: '#DC2626' },
+    { id: 'candy_cane', emoji: '🍬', label: '红白拐杖糖', category: '圣诞经典', accent: '#EF4444' },
+    { id: 'snowflake_wand', emoji: '❄️', label: '钻光大雪花', category: '圣诞经典', accent: '#38BDF8' },
+    { id: 'xmas_wreath_gold', emoji: '🪩', label: '冬青门环花环', category: '圣诞经典', accent: '#15803D' },
+    { id: 'xmas_gift_red_gold', emoji: '🎁', label: '红金圣诞礼盒', category: '圣诞经典', accent: '#DC2626' },
+    { id: 'xmas_stocking_plush', emoji: '🧦', label: '壁炉毛绒袜', category: '圣诞经典', accent: '#B91C1C' },
+    { id: 'xmas_ornament_red', emoji: '🔴', label: '琉璃红金彩球', category: '圣诞经典', accent: '#DC2626' },
+    { id: 'xmas_ornament_pine', emoji: '🟢', label: '祖母绿金纹球', category: '圣诞经典', accent: '#059669' },
+    { id: 'xmas_pinecone_frost', emoji: '🌰', label: '覆雪冬青松果', category: '圣诞经典', accent: '#78350F' },
+    { id: 'xmas_poinsettia', emoji: '🌺', label: '圣诞一品红花', category: '圣诞经典', accent: '#DC2626' },
+    { id: 'xmas_velvet_bow', emoji: '🎀', label: '红丝绒大结', category: '圣诞经典', accent: '#B91C1C' },
+    { id: 'xmas_fairy_lights', emoji: '💡', label: '暖金圣诞彩灯', category: '圣诞经典', accent: '#FBBF24' },
+    { id: 'santa_feather', emoji: '🎅', label: '红丝绒圣诞帽', category: '萌物人物', accent: '#DC2626' },
+    { id: 'xmas_reindeer_rudolph', emoji: '🦌', label: '红鼻驯鹿鲁道夫', category: '萌物人物', accent: '#92400E' },
+    { id: 'xmas_snowman_scarf', emoji: '⛄', label: '红围巾雪人', category: '萌物人物', accent: '#38BDF8' },
+    { id: 'xmas_sleigh_gold', emoji: '🛷', label: '金饰圣诞雪橇', category: '萌物人物', accent: '#DC2626' },
+    { id: 'xmas_mitten_knit', emoji: '🧤', label: '雪花针织手套', category: '萌物人物', accent: '#DC2626' },
+    { id: 'xmas_robin_winter', emoji: '🐦', label: '红胸知更鸟', category: '萌物人物', accent: '#EA580C' },
+    { id: 'xmas_bethlehem_star', emoji: '🌟', label: '伯利恒圣星', category: '圣夜信仰', accent: '#FDE047' },
+    { id: 'xmas_advent_candle', emoji: '🕯️', label: '将临期平安烛', category: '圣夜信仰', accent: '#F59E0B' },
+    { id: 'xmas_angel_trumpet', emoji: '👼', label: '报喜金翼天使', category: '圣夜信仰', accent: '#FACC15' },
+    { id: 'xmas_nativity_manger', emoji: '⛪', label: '伯利恒马槽光', category: '圣夜信仰', accent: '#D97706' },
+    { id: 'xmas_church_steeple', emoji: '🕍', label: '雪顶圣诞钟楼', category: '圣夜信仰', accent: '#F59E0B' },
+    { id: 'xmas_carol_music', emoji: '🎼', label: '平安夜圣诗音符', category: '圣夜信仰', accent: '#F59E0B' },
+    { id: 'xmas_peace_dove_holly', emoji: '🕊️', label: '冬青和平白鸽', category: '圣夜信仰', accent: '#22C55E' },
+    { id: 'xmas_gingerbread', emoji: '🍪', label: '糖霜姜饼人', category: '冬日美食', accent: '#B45309' },
+    { id: 'xmas_snow_globe', emoji: '🔮', label: '雪景水晶球', category: '冬日美食', accent: '#38BDF8' },
+    { id: 'xmas_hot_cocoa', emoji: '☕', label: '棉花糖热可可', category: '冬日美食', accent: '#991B1B' },
+    { id: 'xmas_north_pole_sign', emoji: '🪧', label: '北极糖果路牌', category: '冬日美食', accent: '#DC2626' },
+    { id: 'xmas_cookie_star', emoji: '⭐', label: '糖霜星形饼干', category: '冬日美食', accent: '#D97706' },
+];
+const HOLIDAY_ICON_SET = new Set(HOLIDAY_ICON_CATALOG.map((item) => item.id));
+const HOLIDAY_ICON_MAP = Object.fromEntries(HOLIDAY_ICON_CATALOG.map((item) => [item.id, item]));
+
 const BUILTIN_WRITING_TIP_KINDS = new Set([
     'quill', 'rose', 'fountain_pen', 'brush', 'pencil', 'sparkle_wand',
     'butterfly', 'candle_flame', 'dove', 'heart', 'leaf', 'sakura',
     'crown', 'music_note', 'cross_light', 'feather_gold',
-    'candy_cane', 'christmas_tree', 'holly_berry', 'snowflake_wand', 'santa_feather', 'jingle_bell',
     'us_flag_shield', 'purple_heart_medal', 'bald_eagle_crest', 'veteran_poppy', 'military_dog_tag',
-    'maple_leaf', 'wheat_stalk', 'acorn', 'minimal_pumpkin', 'warm_mug', 'olive_branch'
+    'maple_leaf', 'wheat_stalk', 'acorn', 'minimal_pumpkin', 'warm_mug', 'olive_branch',
+    ...HOLIDAY_ICON_CATALOG.map((item) => item.id),
 ]);
 function isImageOrVectorWritingTip(kind) {
     return kind === 'image' || BUILTIN_WRITING_TIP_KINDS.has(kind);
 }
+function _holidayLinGrad(ctx, x0, y0, x1, y1, stops, fallback) {
+    try {
+        if (typeof ctx.createLinearGradient === 'function') {
+            const g = ctx.createLinearGradient(x0, y0, x1, y1);
+            if (g && typeof g.addColorStop === 'function') {
+                for (const [offset, color] of stops) g.addColorStop(offset, color);
+                return g;
+            }
+        }
+    } catch (_) {}
+    return fallback;
+}
+function _holidayRadGrad(ctx, x0, y0, r0, x1, y1, r1, stops, fallback) {
+    try {
+        if (typeof ctx.createRadialGradient === 'function') {
+            const g = ctx.createRadialGradient(x0, y0, r0, x1, y1, r1);
+            if (g && typeof g.addColorStop === 'function') {
+                for (const [offset, color] of stops) g.addColorStop(offset, color);
+                return g;
+            }
+        }
+    } catch (_) {}
+    return fallback;
+}
+function _holidayPineSprig(ctx, cx, cy, angleRad, len = 0.24) {
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.rotate(angleRad);
+    ctx.strokeStyle = '#0f3d23';
+    ctx.lineWidth = 0.024;
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.lineTo(0, -len);
+    ctx.stroke();
+    const steps = 6;
+    for (let i = 1; i <= steps; i++) {
+        const y = -(len * i) / steps;
+        const w = (0.095 - i * 0.008);
+        ctx.strokeStyle = i % 2 === 0 ? '#15803d' : '#166534';
+        ctx.lineWidth = 0.017;
+        ctx.beginPath();
+        ctx.moveTo(0, y);
+        ctx.lineTo(-w, y - 0.036);
+        ctx.moveTo(0, y);
+        ctx.lineTo(w, y - 0.036);
+        ctx.stroke();
+    }
+    ctx.strokeStyle = 'rgba(236, 253, 245, 0.72)';
+    ctx.lineWidth = 0.011;
+    ctx.beginPath();
+    ctx.moveTo(-0.045, -len * 0.75);
+    ctx.lineTo(0.038, -len * 0.92);
+    ctx.stroke();
+    ctx.restore();
+}
+function _holidayGlossyBerry(ctx, x, y, r = 0.045) {
+    ctx.fillStyle = _holidayRadGrad(ctx, x - r * 0.3, y - r * 0.35, r * 0.1, x, y, r, [
+        [0, '#fca5a5'], [0.35, '#dc2626'], [1, '#7f1d1d'],
+    ], '#dc2626');
+    ctx.beginPath();
+    ctx.arc(x, y, r, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,0.85)';
+    ctx.beginPath();
+    ctx.arc(x - r * 0.32, y - r * 0.32, r * 0.28, 0, Math.PI * 2);
+    ctx.fill();
+}
+function _holidayVelvetBow(ctx, cx, cy, scale = 1.0) {
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.scale(scale, scale);
+    ctx.fillStyle = _holidayLinGrad(ctx, -0.18, 0, 0.18, 0.24, [
+        [0, '#b91c1c'], [0.5, '#dc2626'], [1, '#7f1d1d'],
+    ], '#b91c1c');
+    // Hanging ribbon tails
+    ctx.beginPath();
+    ctx.moveTo(-0.03, 0.02);
+    ctx.quadraticCurveTo(-0.14, 0.12, -0.22, 0.24);
+    ctx.lineTo(-0.14, 0.26);
+    ctx.quadraticCurveTo(-0.07, 0.15, -0.01, 0.05);
+    ctx.closePath();
+    ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(0.03, 0.02);
+    ctx.quadraticCurveTo(0.14, 0.12, 0.22, 0.24);
+    ctx.lineTo(0.14, 0.26);
+    ctx.quadraticCurveTo(0.07, 0.15, 0.01, 0.05);
+    ctx.closePath();
+    ctx.fill();
+    // Side velvet loops with gold piping
+    for (const dir of [-1, 1]) {
+        ctx.fillStyle = _holidayLinGrad(ctx, 0, -0.14, dir * 0.28, 0.08, [
+            [0, '#ef4444'], [0.55, '#b91c1c'], [1, '#7f1d1d'],
+        ], '#b91c1c');
+        ctx.strokeStyle = '#7f1d1d';
+        ctx.lineWidth = 0.014;
+        ctx.beginPath();
+        ctx.moveTo(0, 0);
+        ctx.bezierCurveTo(dir * 0.12, -0.19, dir * 0.31, -0.13, dir * 0.26, 0.04);
+        ctx.bezierCurveTo(dir * 0.21, 0.13, dir * 0.08, 0.07, 0, 0.02);
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+        // Inner velvet fold shadow
+        ctx.strokeStyle = 'rgba(254, 202, 202, 0.45)';
+        ctx.lineWidth = 0.01;
+        ctx.beginPath();
+        ctx.moveTo(dir * 0.05, -0.02);
+        ctx.quadraticCurveTo(dir * 0.17, -0.07, dir * 0.21, 0.01);
+        ctx.stroke();
+    }
+    // Center velvet knot
+    ctx.fillStyle = _holidayRadGrad(ctx, -0.015, -0.02, 0.01, 0, 0, 0.06, [
+        [0, '#fca5a5'], [0.45, '#dc2626'], [1, '#7f1d1d'],
+    ], '#dc2626');
+    ctx.beginPath();
+    ctx.ellipse(0, 0, 0.055, 0.048, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+}
+function _holidayGoldBellBody(ctx, cx, cy, scale = 1.0, rotRad = 0) {
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.rotate(rotRad);
+    ctx.scale(scale, scale);
+    // Clapper pearl under bell
+    ctx.fillStyle = _holidayRadGrad(ctx, -0.01, 0.20, 0.01, 0, 0.22, 0.055, [
+        [0, '#fef9c3'], [0.4, '#d97706'], [1, '#78350f'],
+    ], '#b45309');
+    ctx.beginPath();
+    ctx.arc(0, 0.21, 0.05, 0, Math.PI * 2);
+    ctx.fill();
+    // Bell cavity rim underside
+    ctx.fillStyle = '#78350f';
+    ctx.beginPath();
+    ctx.ellipse(0, 0.175, 0.21, 0.048, 0, 0, Math.PI * 2);
+    ctx.fill();
+    // Metallic brushed-gold bell dome
+    ctx.fillStyle = _holidayLinGrad(ctx, -0.22, -0.18, 0.22, 0.18, [
+        [0, '#92400e'], [0.22, '#f59e0b'], [0.42, '#fef9c3'], [0.65, '#facc15'], [0.85, '#d97706'], [1, '#78350f'],
+    ], '#f59e0b');
+    ctx.strokeStyle = '#92400e';
+    ctx.lineWidth = 0.016;
+    ctx.beginPath();
+    ctx.moveTo(-0.11, -0.14);
+    ctx.bezierCurveTo(-0.13, 0.02, -0.18, 0.11, -0.22, 0.165);
+    ctx.quadraticCurveTo(0, 0.225, 0.22, 0.165);
+    ctx.bezierCurveTo(0.18, 0.11, 0.13, 0.02, 0.11, -0.14);
+    ctx.arc(0, -0.14, 0.11, 0, Math.PI, true);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+    // Specular metallic highlight ridge
+    ctx.strokeStyle = 'rgba(255, 253, 240, 0.78)';
+    ctx.lineWidth = 0.024;
+    ctx.beginPath();
+    ctx.moveTo(-0.045, -0.17);
+    ctx.quadraticCurveTo(-0.065, 0.02, -0.11, 0.14);
+    ctx.stroke();
+    // Rim highlight ring
+    ctx.strokeStyle = '#fef08a';
+    ctx.lineWidth = 0.012;
+    ctx.beginPath();
+    ctx.moveTo(-0.19, 0.15);
+    ctx.quadraticCurveTo(0, 0.20, 0.19, 0.15);
+    ctx.stroke();
+    ctx.restore();
+}
+function _holidayStarPolygon(ctx, cx, cy, points, outerR, innerR, rot = -Math.PI / 2) {
+    ctx.beginPath();
+    for (let i = 0; i < points * 2; i++) {
+        const rad = rot + (i * Math.PI) / points;
+        const r = i % 2 === 0 ? outerR : innerR;
+        const px = cx + Math.cos(rad) * r;
+        const py = cy + Math.sin(rad) * r;
+        if (i === 0) ctx.moveTo(px, py);
+        else ctx.lineTo(px, py);
+    }
+    ctx.closePath();
+}
+function _holidayHollyLeaf(ctx, cx, cy, angle, scale = 1.0, dark = false) {
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.rotate(angle);
+    ctx.scale(scale, scale);
+    ctx.fillStyle = _holidayLinGrad(ctx, -0.1, 0, 0.1, -0.26, [
+        [0, dark ? '#14532d' : '#166534'],
+        [0.55, dark ? '#15803d' : '#16a34a'],
+        [1, dark ? '#22c55e' : '#4ade80'],
+    ], '#15803d');
+    ctx.strokeStyle = '#052e16';
+    ctx.lineWidth = 0.015;
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.quadraticCurveTo(-0.12, -0.05, -0.08, -0.11);
+    ctx.quadraticCurveTo(-0.13, -0.16, -0.06, -0.20);
+    ctx.quadraticCurveTo(-0.08, -0.26, 0, -0.30);
+    ctx.quadraticCurveTo(0.08, -0.26, 0.06, -0.20);
+    ctx.quadraticCurveTo(0.13, -0.16, 0.08, -0.11);
+    ctx.quadraticCurveTo(0.12, -0.05, 0, 0);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+    ctx.strokeStyle = 'rgba(187, 247, 208, 0.65)';
+    ctx.lineWidth = 0.012;
+    ctx.beginPath();
+    ctx.moveTo(0, -0.02);
+    ctx.lineTo(0, -0.25);
+    ctx.stroke();
+    ctx.restore();
+}
+
+/**
+ * Draw any of the 32 high-craft shaded Christmas/Holiday icons centered around (cx, cy).
+ * Used cleanly by both standalone draggable sticker overlays AND subtitle companion/thumb badges.
+ */
+function drawHolidayStickerIcon(ctx, rawKind, cx, cy, size = 120, opts = {}) {
+    if (!ctx || !rawKind || size <= 0) return false;
+    const kind = String(rawKind).trim();
+    if (!HOLIDAY_ICON_SET.has(kind)) return false;
+
+    const t = Number(opts.time) || 0;
+    const angleDeg = Number(opts.angleDeg) || 0;
+    ctx.save();
+    ctx.translate(cx, cy);
+    if (angleDeg) ctx.rotate((angleDeg * Math.PI) / 180);
+    ctx.scale(size, size);
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+
+    const circle = (x, y, r, fill, stroke, lw = 0.015) => {
+        ctx.beginPath();
+        ctx.arc(x, y, r, 0, Math.PI * 2);
+        if (fill) { ctx.fillStyle = fill; ctx.fill(); }
+        if (stroke) { ctx.strokeStyle = stroke; ctx.lineWidth = lw; ctx.stroke(); }
+    };
+    const roundBox = (x, y, w, h, r = 0, fill = null, stroke = null, lw = 0.015) => {
+        const rr = Array.isArray(r) ? r : [r, r, r, r];
+        const [rtl = 0, rtr = 0, rbr = 0, rbl = 0] = rr;
+        ctx.beginPath();
+        ctx.moveTo(x + rtl, y);
+        ctx.lineTo(x + w - rtr, y);
+        ctx.quadraticCurveTo(x + w, y, x + w, y + rtr);
+        ctx.lineTo(x + w, y + h - rbr);
+        ctx.quadraticCurveTo(x + w, y + h, x + w - rbr, y + h);
+        ctx.lineTo(x + rbl, y + h);
+        ctx.quadraticCurveTo(x, y + h, x, y + h - rbl);
+        ctx.lineTo(x, y + rtl);
+        ctx.quadraticCurveTo(x, y, x + rtl, y);
+        ctx.closePath();
+        if (fill) { ctx.fillStyle = fill; ctx.fill(); }
+        if (stroke) { ctx.strokeStyle = stroke; ctx.lineWidth = lw; ctx.stroke(); }
+    };
+
+    switch (kind) {
+        case 'jingle_bell': {
+            // Rockefeller Twin Golden Bells with frosted spruce sprigs, crimson velvet bow & berries
+            _holidayPineSprig(ctx, -0.05, -0.16, -0.95, 0.30);
+            _holidayPineSprig(ctx, 0.05, -0.16, 0.95, 0.30);
+            _holidayPineSprig(ctx, 0, -0.18, 0, 0.25);
+            _holidayHollyLeaf(ctx, -0.12, -0.14, -1.05, 0.85, false);
+            _holidayHollyLeaf(ctx, 0.12, -0.14, 1.05, 0.85, true);
+            _holidayGoldBellBody(ctx, -0.145, 0.09, 0.92, 0.24);
+            _holidayGoldBellBody(ctx, 0.145, 0.09, 0.92, -0.24);
+            _holidayVelvetBow(ctx, 0, -0.16, 0.98);
+            _holidayGlossyBerry(ctx, -0.06, -0.10, 0.036);
+            _holidayGlossyBerry(ctx, 0.06, -0.10, 0.036);
+            _holidayGlossyBerry(ctx, 0, -0.145, 0.038);
+            break;
+        }
+        case 'christmas_tree': {
+            ctx.fillStyle = '#78350f';
+            ctx.fillRect(-0.07, 0.28, 0.14, 0.14);
+            roundBox(-0.10, 0.34, 0.20, 0.10, 0.02, '#dc2626');
+            const tiers = [
+                [-0.36, 0.28, 0.36, 0.28, 0, -0.04],
+                [-0.29, 0.09, 0.29, 0.09, 0, -0.20],
+                [-0.22, -0.09, 0.22, -0.09, 0, -0.34],
+            ];
+            for (const [x1, y1, x2, y2, tx, ty] of tiers) {
+                ctx.fillStyle = _holidayLinGrad(ctx, 0, ty, 0, y1, [
+                    [0, '#22c55e'], [0.55, '#15803d'], [1, '#052e16'],
+                ], '#15803d');
+                ctx.strokeStyle = '#052e16';
+                ctx.lineWidth = 0.015;
+                ctx.beginPath();
+                ctx.moveTo(tx, ty);
+                ctx.lineTo(x1, y1);
+                ctx.quadraticCurveTo(0, y1 + 0.04, x2, y2);
+                ctx.closePath();
+                ctx.fill();
+                ctx.stroke();
+            }
+            // Golden garlands
+            ctx.strokeStyle = '#fde047';
+            ctx.lineWidth = 0.016;
+            ctx.beginPath();
+            ctx.moveTo(-0.14, -0.14);
+            ctx.quadraticCurveTo(0, -0.05, 0.19, -0.06);
+            ctx.moveTo(-0.22, 0.06);
+            ctx.quadraticCurveTo(0, 0.16, 0.29, 0.15);
+            ctx.stroke();
+            // Baubles & fairy glow
+            circle(-0.10, 0.01, 0.032, '#ef4444', '#7f1d1d', 0.01);
+            circle(0.11, 0.20, 0.035, '#ef4444', '#7f1d1d', 0.01);
+            circle(0.08, -0.01, 0.028, '#38bdf8', '#0284c7', 0.01);
+            circle(-0.15, 0.20, 0.030, '#facc15', '#a16207', 0.01);
+            circle(0.01, 0.10, 0.028, '#fef08a', '#ca8a04', 0.01);
+            // Glowing topper star
+            circle(0, -0.36, 0.11, 'rgba(253, 224, 71, 0.28)');
+            ctx.fillStyle = _holidayRadGrad(ctx, -0.01, -0.37, 0.01, 0, -0.36, 0.09, [
+                [0, '#ffffff'], [0.4, '#fde047'], [1, '#d97706'],
+            ], '#facc15');
+            _holidayStarPolygon(ctx, 0, -0.36, 5, 0.095, 0.042);
+            ctx.fill();
+            break;
+        }
+        case 'holly_berry': {
+            _holidayHollyLeaf(ctx, 0, -0.02, -0.68, 1.35, false);
+            _holidayHollyLeaf(ctx, 0, -0.02, 0.68, 1.35, true);
+            _holidayHollyLeaf(ctx, 0, 0.02, 3.05, 1.15, false);
+            _holidayGlossyBerry(ctx, -0.06, -0.02, 0.065);
+            _holidayGlossyBerry(ctx, 0.065, -0.01, 0.065);
+            _holidayGlossyBerry(ctx, 0, -0.095, 0.070);
+            break;
+        }
+        case 'candy_cane': {
+            const pathStr = 'M -0.07 0.36 L -0.07 -0.14 C -0.07 -0.36 0.22 -0.36 0.22 -0.14 C 0.22 -0.06 0.18 -0.02 0.14 -0.02';
+            const p = typeof Path2D !== 'undefined' ? new Path2D(pathStr) : null;
+            if (p) {
+                ctx.strokeStyle = '#7f1d1d';
+                ctx.lineWidth = 0.145;
+                ctx.stroke(p);
+                ctx.strokeStyle = '#fffdf8';
+                ctx.lineWidth = 0.115;
+                ctx.stroke(p);
+                ctx.save();
+                ctx.strokeStyle = '#dc2626';
+                ctx.lineWidth = 0.115;
+                ctx.setLineDash([0.07, 0.075]);
+                ctx.stroke(p);
+                ctx.restore();
+            }
+            _holidayHollyLeaf(ctx, -0.08, 0.04, -0.9, 0.65, false);
+            _holidayVelvetBow(ctx, -0.07, 0.06, 0.72);
+            break;
+        }
+        case 'snowflake_wand': {
+            circle(0, 0, 0.44, _holidayRadGrad(ctx, 0, 0, 0.02, 0, 0, 0.44, [
+                [0, 'rgba(186, 230, 253, 0.42)'], [1, 'rgba(56, 189, 248, 0)'],
+            ], 'rgba(186, 230, 253, 0.2)'));
+            for (let k = 0; k < 6; k++) {
+                ctx.save();
+                ctx.rotate((k * Math.PI) / 3);
+                ctx.strokeStyle = '#0ea5e9';
+                ctx.lineWidth = 0.044;
+                ctx.beginPath();
+                ctx.moveTo(0, 0); ctx.lineTo(0, -0.38);
+                ctx.moveTo(0, -0.18); ctx.lineTo(-0.09, -0.26);
+                ctx.moveTo(0, -0.18); ctx.lineTo(0.09, -0.26);
+                ctx.moveTo(0, -0.29); ctx.lineTo(-0.06, -0.34);
+                ctx.moveTo(0, -0.29); ctx.lineTo(0.06, -0.34);
+                ctx.stroke();
+                ctx.strokeStyle = '#f8fafc';
+                ctx.lineWidth = 0.022;
+                ctx.beginPath();
+                ctx.moveTo(0, 0); ctx.lineTo(0, -0.38);
+                ctx.moveTo(0, -0.18); ctx.lineTo(-0.09, -0.26);
+                ctx.moveTo(0, -0.18); ctx.lineTo(0.09, -0.26);
+                ctx.stroke();
+                ctx.restore();
+            }
+            circle(0, 0, 0.065, '#ffffff', '#38bdf8', 0.018);
+            break;
+        }
+        case 'santa_feather': {
+            // Plush scarlet Santa hat with white fur band and pom-pom
+            ctx.fillStyle = _holidayLinGrad(ctx, -0.25, -0.35, 0.30, 0.25, [
+                [0, '#ef4444'], [0.55, '#dc2626'], [1, '#7f1d1d'],
+            ], '#dc2626');
+            ctx.strokeStyle = '#7f1d1d';
+            ctx.lineWidth = 0.015;
+            ctx.beginPath();
+            ctx.moveTo(-0.28, 0.16);
+            ctx.bezierCurveTo(-0.20, -0.22, 0.02, -0.38, 0.24, -0.26);
+            ctx.bezierCurveTo(0.32, -0.20, 0.34, -0.05, 0.28, 0.02);
+            ctx.quadraticCurveTo(0.18, -0.06, 0.14, 0.16);
+            ctx.closePath();
+            ctx.fill();
+            ctx.stroke();
+            // White faux-fur scalloped brim
+            roundBox(-0.34, 0.12, 0.56, 0.17, 0.085, _holidayLinGrad(ctx, 0, 0.10, 0, 0.30, [
+                [0, '#ffffff'], [1, '#e2e8f0'],
+            ], '#ffffff'), '#cbd5e1', 0.015);
+            // Fluffy pom-pom
+            circle(0.30, 0.02, 0.095, '#ffffff', '#cbd5e1', 0.015);
+            break;
+        }
+        case 'xmas_wreath_gold': {
+            circle(0, 0, 0.31, null, '#064e3b', 0.17);
+            circle(0, 0, 0.31, null, '#15803d', 0.12);
+            ctx.save();
+            ctx.strokeStyle = '#22c55e';
+            ctx.lineWidth = 0.055;
+            ctx.setLineDash([0.04, 0.06]);
+            ctx.beginPath();
+            ctx.arc(0, 0, 0.31, 0, Math.PI * 2);
+            ctx.stroke();
+            ctx.restore();
+            // Gold ornament beads around wreath
+            for (let k = 0; k < 8; k++) {
+                const rad = (k * Math.PI) / 4;
+                circle(Math.cos(rad) * 0.30, Math.sin(rad) * 0.30, 0.032, '#fde047', '#a16207', 0.01);
+            }
+            _holidayGlossyBerry(ctx, -0.22, -0.18, 0.036);
+            _holidayGlossyBerry(ctx, 0.24, -0.16, 0.036);
+            _holidayGlossyBerry(ctx, -0.26, 0.14, 0.036);
+            _holidayVelvetBow(ctx, 0, 0.28, 0.92);
+            break;
+        }
+        case 'xmas_bethlehem_star': {
+            circle(0, 0, 0.44, _holidayRadGrad(ctx, 0, 0, 0.02, 0, 0, 0.44, [
+                [0, 'rgba(253, 224, 71, 0.65)'], [0.55, 'rgba(251, 191, 36, 0.20)'], [1, 'rgba(251, 191, 36, 0)'],
+            ], 'rgba(253, 224, 71, 0.3)'));
+            // Tall cross rays
+            ctx.fillStyle = '#fef9c3';
+            _holidayStarPolygon(ctx, 0, 0.02, 4, 0.42, 0.065);
+            ctx.fill();
+            // Diagonal rays
+            ctx.fillStyle = _holidayRadGrad(ctx, 0, 0, 0.02, 0, 0, 0.28, [
+                [0, '#ffffff'], [0.45, '#fde047'], [1, '#d97706'],
+            ], '#facc15');
+            _holidayStarPolygon(ctx, 0, 0, 4, 0.24, 0.055, -Math.PI / 4);
+            ctx.fill();
+            circle(0, 0, 0.075, '#ffffff');
+            break;
+        }
+        case 'xmas_advent_candle': {
+            _holidayPineSprig(ctx, -0.14, 0.32, -1.1, 0.22);
+            _holidayPineSprig(ctx, 0.14, 0.32, 1.1, 0.22);
+            // Brass saucer
+            ctx.fillStyle = _holidayLinGrad(ctx, -0.26, 0.30, 0.26, 0.38, [
+                [0, '#92400e'], [0.5, '#facc15'], [1, '#92400e'],
+            ], '#d97706');
+            ctx.beginPath();
+            ctx.ellipse(0, 0.33, 0.26, 0.065, 0, 0, Math.PI * 2);
+            ctx.fill();
+            // Pillar candle
+            roundBox(-0.11, -0.02, 0.22, 0.35, 0.03, _holidayLinGrad(ctx, -0.11, 0, 0.11, 0, [
+                [0, '#cbd5e1'], [0.35, '#fffdf5'], [1, '#fef3c7'],
+            ], '#fef3c7'));
+            // Flickering glow & teardrop flame
+            const pulse = 1 + 0.06 * Math.sin(t * 7);
+            circle(0, -0.22, 0.22 * pulse, _holidayRadGrad(ctx, 0, -0.22, 0.01, 0, -0.22, 0.22, [
+                [0, 'rgba(253, 224, 71, 0.65)'], [1, 'rgba(249, 115, 22, 0)'],
+            ], 'rgba(251, 191, 36, 0.3)'));
+            ctx.strokeStyle = '#78350f';
+            ctx.lineWidth = 0.016;
+            ctx.beginPath(); ctx.moveTo(0, -0.02); ctx.lineTo(0, -0.08); ctx.stroke();
+            ctx.fillStyle = '#f97316';
+            ctx.beginPath();
+            ctx.moveTo(0, -0.34);
+            ctx.bezierCurveTo(0.09, -0.20, 0.08, -0.07, 0, -0.07);
+            ctx.bezierCurveTo(-0.08, -0.07, -0.09, -0.20, 0, -0.34);
+            ctx.fill();
+            ctx.fillStyle = '#fef08a';
+            ctx.beginPath();
+            ctx.ellipse(0, -0.16, 0.036, 0.075, 0, 0, Math.PI * 2);
+            ctx.fill();
+            _holidayGlossyBerry(ctx, -0.11, 0.34, 0.035);
+            _holidayGlossyBerry(ctx, 0.11, 0.34, 0.035);
+            break;
+        }
+        case 'xmas_gift_red_gold': {
+            roundBox(-0.26, -0.06, 0.52, 0.42, 0.04, _holidayLinGrad(ctx, -0.28, -0.08, 0.28, 0.34, [
+                [0, '#ef4444'], [0.6, '#dc2626'], [1, '#7f1d1d'],
+            ], '#dc2626'), '#7f1d1d', 0.015);
+            // Lid
+            roundBox(-0.29, -0.15, 0.58, 0.12, 0.03, _holidayLinGrad(ctx, -0.30, -0.14, 0.30, -0.02, [
+                [0, '#f87171'], [0.5, '#dc2626'], [1, '#991b1b'],
+            ], '#b91c1c'), '#7f1d1d', 0.015);
+            // Gold cross ribbons
+            ctx.fillStyle = '#facc15';
+            ctx.fillRect(-0.055, -0.15, 0.11, 0.51);
+            ctx.fillRect(-0.26, 0.11, 0.52, 0.095);
+            // Gold bow on top
+            for (const dir of [-1, 1]) {
+                ctx.fillStyle = '#fde047';
+                ctx.strokeStyle = '#b45309';
+                ctx.lineWidth = 0.015;
+                ctx.beginPath();
+                ctx.moveTo(0, -0.15);
+                ctx.bezierCurveTo(dir * 0.12, -0.36, dir * 0.28, -0.26, dir * 0.18, -0.14);
+                ctx.closePath();
+                ctx.fill();
+                ctx.stroke();
+            }
+            circle(0, -0.15, 0.05, '#fde047', '#b45309', 0.014);
+            break;
+        }
+        case 'xmas_stocking_plush': {
+            ctx.fillStyle = _holidayLinGrad(ctx, -0.18, -0.20, 0.22, 0.38, [
+                [0, '#ef4444'], [0.6, '#b91c1c'], [1, '#7f1d1d'],
+            ], '#dc2626');
+            ctx.strokeStyle = '#7f1d1d';
+            ctx.lineWidth = 0.016;
+            ctx.beginPath();
+            ctx.moveTo(-0.14, -0.18);
+            ctx.lineTo(0.18, -0.18);
+            ctx.lineTo(0.18, 0.14);
+            ctx.bezierCurveTo(0.20, 0.38, -0.02, 0.42, -0.20, 0.38);
+            ctx.bezierCurveTo(-0.34, 0.34, -0.34, 0.16, -0.14, 0.12);
+            ctx.closePath();
+            ctx.fill();
+            ctx.stroke();
+            // Cream sheepskin cuff
+            roundBox(-0.18, -0.28, 0.40, 0.15, 0.065, '#fffdf7', '#cbd5e1', 0.016);
+            // Mini candy cane peeking
+            ctx.strokeStyle = '#dc2626';
+            ctx.lineWidth = 0.045;
+            ctx.beginPath(); ctx.moveTo(0.08, -0.28); ctx.arc(0.14, -0.32, 0.06, Math.PI, 0, false); ctx.stroke();
+            _holidayHollyLeaf(ctx, -0.10, -0.20, -0.5, 0.55, false);
+            _holidayGlossyBerry(ctx, -0.06, -0.16, 0.032);
+            break;
+        }
+        case 'xmas_gingerbread': {
+            ctx.fillStyle = _holidayRadGrad(ctx, -0.04, -0.04, 0.04, 0, 0, 0.40, [
+                [0, '#d97706'], [0.65, '#b45309'], [1, '#78350f'],
+            ], '#b45309');
+            ctx.strokeStyle = '#451a03';
+            ctx.lineWidth = 0.015;
+            const gingerGrad = _holidayLinGrad(ctx, -0.15, -0.25, 0.15, 0.35, [
+                [0, '#d97706'], [0.65, '#b45309'], [1, '#78350f'],
+            ], '#b45309');
+            // Head
+            circle(0, -0.22, 0.14, gingerGrad, '#451a03', 0.015);
+            // Body & limbs
+            roundBox(-0.28, -0.09, 0.56, 0.12, 0.06, gingerGrad, '#451a03', 0.015);
+            roundBox(-0.14, 0.15, 0.12, 0.23, 0.055, gingerGrad, '#451a03', 0.015);
+            roundBox(0.02, 0.15, 0.12, 0.23, 0.055, gingerGrad, '#451a03', 0.015);
+            roundBox(-0.13, -0.09, 0.26, 0.30, 0.06, gingerGrad, '#451a03', 0.015);
+            // White icing squiggles & smile
+            circle(-0.05, -0.24, 0.022, '#fffdf5');
+            circle(0.05, -0.24, 0.022, '#fffdf5');
+            ctx.strokeStyle = '#fffdf5';
+            ctx.lineWidth = 0.018;
+            ctx.beginPath();
+            ctx.arc(0, -0.19, 0.055, 0.15 * Math.PI, 0.85 * Math.PI);
+            ctx.moveTo(-0.23, -0.08); ctx.lineTo(-0.23, 0.02);
+            ctx.moveTo(0.23, -0.08); ctx.lineTo(0.23, 0.02);
+            ctx.stroke();
+            circle(0, 0.02, 0.032, '#ef4444', '#7f1d1d', 0.008);
+            circle(0, 0.11, 0.032, '#22c55e', '#14532d', 0.008);
+            break;
+        }
+        case 'xmas_reindeer_rudolph': {
+            // Antlers
+            ctx.strokeStyle = '#d97706';
+            ctx.lineWidth = 0.035;
+            ctx.beginPath();
+            ctx.moveTo(-0.10, -0.14); ctx.lineTo(-0.25, -0.38);
+            ctx.moveTo(-0.18, -0.27); ctx.lineTo(-0.28, -0.27);
+            ctx.moveTo(-0.16, -0.24); ctx.lineTo(-0.14, -0.36);
+            ctx.moveTo(0.10, -0.14); ctx.lineTo(0.25, -0.38);
+            ctx.moveTo(0.18, -0.27); ctx.lineTo(0.28, -0.27);
+            ctx.moveTo(0.16, -0.24); ctx.lineTo(0.14, -0.36);
+            ctx.stroke();
+            // Ears
+            for (const d of [-1, 1]) {
+                ctx.fillStyle = '#92400e';
+                ctx.beginPath(); ctx.ellipse(d * 0.21, -0.09, 0.085, 0.045, d * -0.4, 0, Math.PI * 2); ctx.fill();
+            }
+            // Head & muzzle
+            ctx.fillStyle = _holidayLinGrad(ctx, 0, -0.18, 0, 0.28, [
+                [0, '#b45309'], [1, '#78350f'],
+            ], '#92400e');
+            ctx.beginPath(); ctx.ellipse(0, 0.06, 0.21, 0.23, 0, 0, Math.PI * 2); ctx.fill();
+            ctx.fillStyle = '#fde68a';
+            ctx.beginPath(); ctx.ellipse(0, 0.14, 0.15, 0.11, 0, 0, Math.PI * 2); ctx.fill();
+            // Eyes & glossy cherry red nose
+            circle(-0.08, 0, 0.026, '#0f172a');
+            circle(0.08, 0, 0.026, '#0f172a');
+            _holidayGlossyBerry(ctx, 0, 0.11, 0.068);
+            // Green collar with gold bell
+            ctx.strokeStyle = '#16a34a'; ctx.lineWidth = 0.055;
+            ctx.beginPath(); ctx.moveTo(-0.14, 0.27); ctx.quadraticCurveTo(0, 0.34, 0.14, 0.27); ctx.stroke();
+            circle(0, 0.33, 0.048, '#facc15', '#854d0e', 0.012);
+            break;
+        }
+        case 'xmas_snowman_scarf': {
+            // Shaded bottom & head snowballs
+            circle(0, 0.19, 0.21, _holidayRadGrad(ctx, -0.06, 0.13, 0.02, 0, 0.19, 0.21, [
+                [0, '#ffffff'], [0.7, '#f1f5f9'], [1, '#cbd5e1'],
+            ], '#f8fafc'), '#94a3b8', 0.014);
+            circle(0, -0.09, 0.15, _holidayRadGrad(ctx, -0.05, -0.14, 0.02, 0, -0.09, 0.15, [
+                [0, '#ffffff'], [0.75, '#f1f5f9'], [1, '#cbd5e1'],
+            ], '#f8fafc'), '#94a3b8', 0.014);
+            // Top hat with crimson band
+            roundBox(-0.18, -0.24, 0.36, 0.045, 0.02, '#1e293b');
+            roundBox(-0.11, -0.40, 0.22, 0.17, 0.025, '#1e293b');
+            ctx.fillStyle = '#dc2626'; ctx.fillRect(-0.11, -0.28, 0.22, 0.045);
+            // Eyes & carrot nose
+            circle(-0.05, -0.13, 0.02, '#0f172a');
+            circle(0.05, -0.13, 0.02, '#0f172a');
+            ctx.fillStyle = '#f97316';
+            ctx.beginPath(); ctx.moveTo(0, -0.10); ctx.lineTo(0.14, -0.065); ctx.lineTo(0, -0.04); ctx.closePath(); ctx.fill();
+            // Red knit scarf
+            roundBox(-0.14, 0.01, 0.28, 0.07, 0.035, '#dc2626');
+            roundBox(0.03, 0.04, 0.08, 0.18, 0.03, '#dc2626');
+            circle(0, 0.17, 0.022, '#0f172a');
+            circle(0, 0.26, 0.022, '#0f172a');
+            break;
+        }
+        case 'xmas_sleigh_gold': {
+            ctx.strokeStyle = '#facc15';
+            ctx.lineWidth = 0.036;
+            ctx.beginPath();
+            ctx.moveTo(-0.32, 0.26); ctx.lineTo(0.24, 0.26);
+            ctx.bezierCurveTo(0.36, 0.26, 0.40, 0.14, 0.30, 0.08);
+            ctx.moveTo(-0.16, 0.15); ctx.lineTo(-0.16, 0.26);
+            ctx.moveTo(0.14, 0.15); ctx.lineTo(0.14, 0.26);
+            ctx.stroke();
+            // Gifts inside sleigh
+            ctx.fillStyle = '#16a34a'; ctx.fillRect(-0.18, -0.18, 0.16, 0.16);
+            ctx.fillStyle = '#facc15'; ctx.fillRect(-0.12, -0.18, 0.04, 0.16);
+            circle(-0.01, -0.14, 0.09, '#92400e');
+            // Scarlet sleigh carriage
+            ctx.fillStyle = _holidayLinGrad(ctx, -0.32, -0.12, 0.28, 0.20, [
+                [0, '#ef4444'], [0.6, '#b91c1c'], [1, '#7f1d1d'],
+            ], '#dc2626');
+            ctx.strokeStyle = '#fde047';
+            ctx.lineWidth = 0.02;
+            ctx.beginPath();
+            ctx.moveTo(-0.34, -0.12);
+            ctx.bezierCurveTo(-0.24, -0.02, -0.04, 0.02, 0.12, -0.02);
+            ctx.quadraticCurveTo(0.24, -0.06, 0.30, 0.02);
+            ctx.lineTo(0.24, 0.17);
+            ctx.lineTo(-0.26, 0.17);
+            ctx.closePath();
+            ctx.fill();
+            ctx.stroke();
+            break;
+        }
+        case 'xmas_ornament_red':
+        case 'xmas_ornament_pine': {
+            const isPine = kind === 'xmas_ornament_pine';
+            ctx.strokeStyle = '#fde047';
+            ctx.lineWidth = 0.022;
+            ctx.beginPath(); ctx.arc(0, -0.34, 0.055, 0, Math.PI * 2); ctx.stroke();
+            roundBox(-0.075, -0.29, 0.15, 0.08, 0.02, '#f59e0b');
+            circle(0, 0.07, 0.30, _holidayRadGrad(ctx, -0.11, -0.05, 0.03, 0, 0.07, 0.31,
+                isPine
+                    ? [[0, '#6ee7b7'], [0.4, '#059669'], [1, '#064e3b']]
+                    : [[0, '#fca5a5'], [0.4, '#dc2626'], [1, '#7f1d1d']],
+                isPine ? '#059669' : '#dc2626'
+            ), isPine ? '#064e3b' : '#7f1d1d', 0.015);
+            // Gold decorative band or etched star
+            ctx.strokeStyle = '#fde047';
+            ctx.lineWidth = 0.022;
+            ctx.beginPath();
+            ctx.moveTo(-0.27, 0.06);
+            ctx.quadraticCurveTo(0, 0.16, 0.27, 0.06);
+            ctx.stroke();
+            circle(-0.11, -0.05, 0.05, 'rgba(255,255,255,0.65)');
+            break;
+        }
+        case 'xmas_angel_trumpet': {
+            // Halo
+            ctx.strokeStyle = '#fde047';
+            ctx.lineWidth = 0.03;
+            ctx.beginPath(); ctx.ellipse(0, -0.33, 0.12, 0.035, 0, 0, Math.PI * 2); ctx.stroke();
+            // Feathered wings
+            for (const dir of [-1, 1]) {
+                ctx.fillStyle = '#fffdf5';
+                ctx.strokeStyle = '#cbd5e1';
+                ctx.lineWidth = 0.014;
+                ctx.beginPath();
+                ctx.moveTo(0, -0.04);
+                ctx.bezierCurveTo(dir * 0.22, -0.24, dir * 0.42, -0.10, dir * 0.32, 0.14);
+                ctx.bezierCurveTo(dir * 0.20, 0.18, dir * 0.08, 0.10, 0, 0.04);
+                ctx.closePath();
+                ctx.fill();
+                ctx.stroke();
+            }
+            // Gown
+            ctx.fillStyle = _holidayLinGrad(ctx, 0, -0.10, 0, 0.36, [
+                [0, '#ffffff'], [1, '#fde68a'],
+            ], '#fef3c7');
+            ctx.beginPath();
+            ctx.moveTo(-0.07, -0.06); ctx.lineTo(-0.18, 0.36); ctx.lineTo(0.18, 0.36); ctx.lineTo(0.07, -0.06);
+            ctx.closePath(); ctx.fill();
+            // Head
+            circle(0, -0.16, 0.095, '#fde68a', '#d97706', 0.012);
+            // Golden trumpet
+            ctx.fillStyle = '#f59e0b';
+            ctx.beginPath();
+            ctx.moveTo(0.06, -0.12); ctx.lineTo(0.32, -0.20); ctx.lineTo(0.32, -0.08); ctx.closePath(); ctx.fill();
+            break;
+        }
+        case 'xmas_nativity_manger': {
+            circle(0, 0.02, 0.38, _holidayRadGrad(ctx, 0, -0.04, 0.02, 0, 0.02, 0.38, [
+                [0, 'rgba(253, 224, 71, 0.48)'], [1, 'rgba(30, 58, 138, 0.12)'],
+            ], 'rgba(253,224,71,0.2)'));
+            ctx.strokeStyle = '#92400e';
+            ctx.lineWidth = 0.048;
+            ctx.beginPath();
+            ctx.moveTo(-0.30, 0.32); ctx.lineTo(-0.30, -0.04);
+            ctx.lineTo(0, -0.26); ctx.lineTo(0.30, -0.04); ctx.lineTo(0.30, 0.32);
+            ctx.stroke();
+            ctx.fillStyle = '#fde047';
+            _holidayStarPolygon(ctx, 0, -0.34, 4, 0.12, 0.032);
+            ctx.fill();
+            ctx.fillStyle = '#d97706';
+            ctx.beginPath(); ctx.moveTo(-0.12, 0.32); ctx.lineTo(-0.08, 0.18); ctx.lineTo(0.08, 0.18); ctx.lineTo(0.12, 0.32); ctx.closePath(); ctx.fill();
+            circle(0, 0.15, 0.065, '#fffbeb', '#f59e0b', 0.015);
+            break;
+        }
+        case 'xmas_snow_globe': {
+            // Mahogany wood base
+            roundBox(-0.22, 0.20, 0.44, 0.16, 0.05, _holidayLinGrad(ctx, -0.24, 0.22, 0.24, 0.38, [
+                [0, '#b45309'], [0.5, '#78350f'], [1, '#451a03'],
+            ], '#78350f'));
+            // Glass sphere
+            circle(0, -0.04, 0.31, _holidayRadGrad(ctx, -0.08, -0.14, 0.04, 0, -0.04, 0.31, [
+                [0, '#e0f2fe'], [0.65, '#38bdf8'], [1, '#0369a1'],
+            ], '#7dd3fc'), '#bae6fd', 0.018);
+            // Tiny snowy pine inside dome
+            ctx.fillStyle = '#15803d';
+            ctx.beginPath(); ctx.moveTo(0, -0.22); ctx.lineTo(-0.14, 0.12); ctx.lineTo(0.14, 0.12); ctx.closePath(); ctx.fill();
+            ctx.fillStyle = '#ffffff';
+            ctx.beginPath(); ctx.ellipse(0, 0.14, 0.22, 0.07, 0, 0, Math.PI * 2); ctx.fill();
+            for (const [sx, sy] of [[-0.14, -0.10], [0.15, -0.06], [-0.08, 0.04], [0.12, 0.06]]) {
+                circle(sx, sy, 0.018, '#ffffff');
+            }
+            ctx.strokeStyle = 'rgba(255,255,255,0.65)';
+            ctx.lineWidth = 0.022;
+            ctx.beginPath(); ctx.arc(0, -0.04, 0.25, Math.PI * 1.12, Math.PI * 1.42); ctx.stroke();
+            break;
+        }
+        case 'xmas_hot_cocoa': {
+            // Candy cane stirrer
+            ctx.strokeStyle = '#dc2626';
+            ctx.lineWidth = 0.055;
+            ctx.beginPath(); ctx.moveTo(0.12, -0.08); ctx.lineTo(0.22, -0.28); ctx.arc(0.26, -0.28, 0.045, Math.PI, 0, false); ctx.stroke();
+            // Mug handle & body
+            ctx.strokeStyle = '#dc2626'; ctx.lineWidth = 0.055;
+            ctx.beginPath(); ctx.arc(0.24, 0.12, 0.11, -Math.PI / 2, Math.PI / 2); ctx.stroke();
+            roundBox(-0.24, -0.08, 0.46, 0.42, [0.03, 0.03, 0.12, 0.12], _holidayLinGrad(ctx, -0.24, -0.06, 0.22, 0.36, [
+                [0, '#ef4444'], [0.7, '#b91c1c'], [1, '#7f1d1d'],
+            ], '#dc2626'));
+            // Cocoa rim & marshmallow puffs
+            ctx.fillStyle = '#451a03';
+            ctx.beginPath(); ctx.ellipse(-0.01, -0.08, 0.21, 0.06, 0, 0, Math.PI * 2); ctx.fill();
+            for (const [mx, my] of [[-0.08, -0.10], [0.02, -0.12], [0.09, -0.08]]) {
+                circle(mx, my, 0.052, '#fffdf5', '#e2e8f0', 0.01);
+            }
+            circle(-0.01, 0.14, 0.065, 'rgba(255,255,255,0.28)');
+            break;
+        }
+        case 'xmas_pinecone_frost': {
+            _holidayPineSprig(ctx, 0, -0.10, -0.8, 0.28);
+            _holidayPineSprig(ctx, 0, -0.10, 0.8, 0.28);
+            const rows = [
+                [0, -0.16, 0.10], [-0.08, -0.06, 0.11], [0.08, -0.06, 0.11],
+                [-0.10, 0.06, 0.12], [0.10, 0.06, 0.12], [0, 0.04, 0.12],
+                [-0.07, 0.18, 0.11], [0.07, 0.18, 0.11], [0, 0.24, 0.10],
+            ];
+            for (const [rx, ry, rr] of rows) {
+                circle(rx, ry, rr, '#78350f', '#451a03', 0.012);
+                ctx.fillStyle = 'rgba(248, 250, 252, 0.80)';
+                ctx.beginPath(); ctx.arc(rx, ry - rr * 0.35, rr * 0.55, Math.PI, 0); ctx.fill();
+            }
+            break;
+        }
+        case 'xmas_poinsettia': {
+            for (let k = 0; k < 5; k++) {
+                const ang = (k * Math.PI * 2) / 5 + 0.3;
+                _holidayHollyLeaf(ctx, 0, 0, ang, 1.15, true);
+            }
+            for (let k = 0; k < 6; k++) {
+                ctx.save();
+                ctx.rotate((k * Math.PI) / 3);
+                ctx.fillStyle = _holidayLinGrad(ctx, 0, 0, 0, -0.34, [
+                    [0, '#991b1b'], [0.6, '#dc2626'], [1, '#f87171'],
+                ], '#dc2626');
+                ctx.beginPath();
+                ctx.moveTo(0, 0);
+                ctx.quadraticCurveTo(-0.12, -0.14, 0, -0.35);
+                ctx.quadraticCurveTo(0.12, -0.14, 0, 0);
+                ctx.fill();
+                ctx.restore();
+            }
+            for (const [gx, gy] of [[-0.04, 0], [0.04, 0], [0, -0.04], [0, 0.04]]) {
+                circle(gx, gy, 0.032, '#fde047', '#b45309', 0.008);
+            }
+            break;
+        }
+        case 'xmas_velvet_bow': {
+            _holidayPineSprig(ctx, 0, 0, -0.9, 0.24);
+            _holidayPineSprig(ctx, 0, 0, 0.9, 0.24);
+            _holidayVelvetBow(ctx, 0, -0.04, 1.38);
+            _holidayGlossyBerry(ctx, -0.06, 0.04, 0.035);
+            _holidayGlossyBerry(ctx, 0.06, 0.04, 0.035);
+            break;
+        }
+        case 'xmas_mitten_knit': {
+            const mittenGrad = _holidayLinGrad(ctx, -0.22, -0.28, 0.22, 0.30, [
+                [0, '#ef4444'], [0.6, '#dc2626'], [1, '#991b1b'],
+            ], '#dc2626');
+            roundBox(-0.16, -0.32, 0.28, 0.50, 0.14, mittenGrad, '#7f1d1d', 0.015);
+            roundBox(0.06, -0.06, 0.19, 0.12, 0.06, mittenGrad, '#7f1d1d', 0.015);
+            roundBox(-0.19, 0.14, 0.34, 0.14, 0.05, '#fffdf7', '#cbd5e1', 0.015);
+            // White snowflake pattern on mitten
+            ctx.strokeStyle = '#fef2f2'; ctx.lineWidth = 0.018;
+            for (let k = 0; k < 3; k++) {
+                ctx.save(); ctx.translate(-0.02, -0.10); ctx.rotate((k * Math.PI) / 3);
+                ctx.beginPath(); ctx.moveTo(-0.07, 0); ctx.lineTo(0.07, 0); ctx.stroke();
+                ctx.restore();
+            }
+            break;
+        }
+        case 'xmas_robin_winter': {
+            _holidayPineSprig(ctx, -0.26, 0.24, 1.38, 0.52);
+            // Robin wings & back
+            ctx.fillStyle = '#78350f';
+            ctx.beginPath(); ctx.ellipse(-0.02, 0.02, 0.22, 0.16, -0.22, 0, Math.PI * 2); ctx.fill();
+            ctx.beginPath(); ctx.moveTo(-0.18, 0.06); ctx.lineTo(-0.34, 0.16); ctx.lineTo(-0.28, 0.04); ctx.closePath(); ctx.fill();
+            // Red breast
+            circle(0.08, 0.04, 0.125, '#ea580c');
+            // Head & beak
+            circle(0.11, -0.11, 0.095, '#78350f');
+            circle(0.14, -0.13, 0.02, '#0f172a');
+            ctx.fillStyle = '#f59e0b';
+            ctx.beginPath(); ctx.moveTo(0.19, -0.12); ctx.lineTo(0.30, -0.09); ctx.lineTo(0.19, -0.06); ctx.closePath(); ctx.fill();
+            _holidayGlossyBerry(ctx, 0.18, 0.22, 0.036);
+            _holidayGlossyBerry(ctx, 0.25, 0.20, 0.032);
+            break;
+        }
+        case 'xmas_church_steeple': {
+            ctx.strokeStyle = '#fde047'; ctx.lineWidth = 0.024;
+            ctx.beginPath(); ctx.moveTo(0, -0.40); ctx.lineTo(0, -0.28); ctx.moveTo(-0.05, -0.35); ctx.lineTo(0.05, -0.35); ctx.stroke();
+            ctx.fillStyle = '#b91c1c';
+            ctx.beginPath(); ctx.moveTo(0, -0.28); ctx.lineTo(-0.12, -0.04); ctx.lineTo(0.12, -0.04); ctx.closePath(); ctx.fill();
+            roundBox(-0.22, -0.04, 0.44, 0.36, 0.03, '#f8fafc');
+            ctx.fillStyle = '#15803d';
+            ctx.beginPath(); ctx.moveTo(-0.26, -0.04); ctx.lineTo(0, -0.18); ctx.lineTo(0.26, -0.04); ctx.closePath(); ctx.fill();
+            // Glowing stained arch window
+            ctx.fillStyle = _holidayRadGrad(ctx, 0, 0.14, 0.01, 0, 0.14, 0.12, [
+                [0, '#fef9c3'], [0.6, '#f59e0b'], [1, '#b45309'],
+            ], '#f59e0b');
+            ctx.beginPath(); ctx.arc(0, 0.10, 0.075, Math.PI, 0); ctx.lineTo(0.075, 0.32); ctx.lineTo(-0.075, 0.32); ctx.closePath(); ctx.fill();
+            break;
+        }
+        case 'xmas_north_pole_sign': {
+            ctx.fillStyle = '#fffdf7'; ctx.fillRect(-0.045, -0.22, 0.09, 0.56);
+            ctx.fillStyle = '#dc2626';
+            for (let y = -0.18; y < 0.30; y += 0.12) ctx.fillRect(-0.045, y, 0.09, 0.055);
+            circle(0, -0.26, 0.085, '#dc2626', '#fffdf7', 0.025);
+            ctx.fillStyle = '#b45309';
+            ctx.beginPath();
+            ctx.moveTo(-0.26, -0.12); ctx.lineTo(0.20, -0.12); ctx.lineTo(0.32, -0.04); ctx.lineTo(0.20, 0.04); ctx.lineTo(-0.26, 0.04);
+            ctx.closePath(); ctx.fill();
+            ctx.strokeStyle = '#fde68a'; ctx.lineWidth = 0.015; ctx.stroke();
+            break;
+        }
+        case 'xmas_carol_music': {
+            circle(-0.14, 0.18, 0.085, '#facc15', '#92400e', 0.015);
+            circle(0.14, 0.10, 0.085, '#facc15', '#92400e', 0.015);
+            ctx.strokeStyle = '#facc15';
+            ctx.lineWidth = 0.045;
+            ctx.beginPath();
+            ctx.moveTo(-0.07, 0.16); ctx.lineTo(-0.07, -0.20);
+            ctx.lineTo(0.21, -0.28); ctx.lineTo(0.21, 0.08);
+            ctx.stroke();
+            _holidayVelvetBow(ctx, 0.06, -0.22, 0.72);
+            _holidayHollyLeaf(ctx, -0.16, -0.20, -0.6, 0.65, false);
+            break;
+        }
+        case 'xmas_cookie_star': {
+            ctx.fillStyle = _holidayLinGrad(ctx, -0.25, -0.25, 0.25, 0.25, [
+                [0, '#f59e0b'], [0.6, '#d97706'], [1, '#92400e'],
+            ], '#d97706');
+            _holidayStarPolygon(ctx, 0, 0, 5, 0.36, 0.16);
+            ctx.fill();
+            ctx.strokeStyle = '#fffdf7';
+            ctx.lineWidth = 0.032;
+            _holidayStarPolygon(ctx, 0, 0, 5, 0.26, 0.11);
+            ctx.stroke();
+            circle(0, -0.08, 0.025, '#ef4444');
+            circle(-0.08, 0.04, 0.025, '#22c55e');
+            circle(0.08, 0.04, 0.025, '#38bdf8');
+            break;
+        }
+        case 'xmas_peace_dove_holly': {
+            ctx.fillStyle = _holidayLinGrad(ctx, -0.25, -0.25, 0.20, 0.20, [
+                [0, '#ffffff'], [1, '#e2e8f0'],
+            ], '#ffffff');
+            ctx.strokeStyle = '#64748b';
+            ctx.lineWidth = 0.014;
+            ctx.beginPath();
+            ctx.moveTo(-0.18, 0.02);
+            ctx.bezierCurveTo(-0.24, -0.26, 0.06, -0.34, 0.20, -0.16);
+            ctx.bezierCurveTo(0.14, -0.02, 0.24, 0.08, 0.32, 0.06);
+            ctx.bezierCurveTo(0.16, 0.24, -0.12, 0.24, -0.28, 0.14);
+            ctx.closePath();
+            ctx.fill();
+            ctx.stroke();
+            ctx.fillStyle = '#f59e0b';
+            ctx.beginPath(); ctx.moveTo(0.20, -0.14); ctx.lineTo(0.30, -0.12); ctx.lineTo(0.20, -0.08); ctx.closePath(); ctx.fill();
+            _holidayPineSprig(ctx, 0.28, -0.10, 0.65, 0.20);
+            _holidayGlossyBerry(ctx, 0.28, -0.08, 0.030);
+            break;
+        }
+        case 'xmas_fairy_lights': {
+            ctx.strokeStyle = '#14532d';
+            ctx.lineWidth = 0.032;
+            ctx.beginPath();
+            ctx.moveTo(-0.38, -0.14);
+            ctx.bezierCurveTo(-0.16, 0.06, 0.16, -0.18, 0.38, -0.04);
+            ctx.stroke();
+            const bulbs = [
+                [-0.26, -0.03, '#ef4444', 'rgba(239,68,68,0.45)'],
+                [-0.08, -0.02, '#fde047', 'rgba(253,224,71,0.52)'],
+                [0.10, -0.08, '#22c55e', 'rgba(34,197,94,0.45)'],
+                [0.27, -0.04, '#38bdf8', 'rgba(56,189,248,0.45)'],
+            ];
+            for (const [bx, by, cFill, cGlow] of bulbs) {
+                circle(bx, by + 0.11, 0.14, cGlow);
+                ctx.fillStyle = '#1e293b'; ctx.fillRect(bx - 0.03, by - 0.01, 0.06, 0.05);
+                ctx.fillStyle = cFill;
+                ctx.beginPath(); ctx.ellipse(bx, by + 0.12, 0.065, 0.095, 0, 0, Math.PI * 2); ctx.fill();
+                circle(bx - 0.02, by + 0.09, 0.02, 'rgba(255,255,255,0.8)');
+            }
+            break;
+        }
+    }
+    ctx.restore();
+    return true;
+}
 if (typeof window !== 'undefined') {
+    window.HOLIDAY_ICON_CATALOG = HOLIDAY_ICON_CATALOG;
+    window.HOLIDAY_ICON_SET = HOLIDAY_ICON_SET;
+    window.HOLIDAY_ICON_MAP = HOLIDAY_ICON_MAP;
+    window.drawHolidayStickerIcon = drawHolidayStickerIcon;
     window.isImageOrVectorWritingTip = isImageOrVectorWritingTip;
 }
 
@@ -341,19 +1321,8 @@ function drawSpeechWritingTip(ctx, kind, x, y, size, angle) {
         // 顶部雪白绒球
         shape('M.64-1.10 A.095 .095 0 1 1 .83-1.10 A.095 .095 0 1 1 .64-1.10 Z', '#ffffff', '#cbd5e1', .018);
     } else if (kind === 'jingle_bell') {
-        // 🔔 圣诞金铃铛 (金尖 + 圣诞红蝴蝶结 + 双金铃铛 + 翠绿冬青)
-        shape('M0 0 L.16-.18', null, '#b45309', .035);
-        // 翠绿冬青衬叶
-        shape('M.22-.44 C.08-.58 .12-.76 .28-.78 C.34-.64 .30-.50 .22-.44 Z M.44-.42 C.62-.52 .68-.34 .54-.24 C.46-.28 .44-.36 .44-.42 Z', '#16a34a', '#14532d', .016);
-        // 双金铃铛主体
-        shape('M.12-.28 A.16 .16 0 1 1 .44-.28 A.16 .16 0 1 1 .12-.28 Z', '#facc15', '#854d0e', .02);
-        shape('M.34-.42 A.15 .15 0 1 1 .64-.42 A.15 .15 0 1 1 .34-.42 Z', '#eab308', '#854d0e', .02);
-        // 铃铛十字音孔
-        shape('M.24-.22 A.03 .03 0 1 1 .30-.22 Z M.48-.36 A.03 .03 0 1 1 .54-.36 Z', '#713f12', null);
-        shape('M.16-.30 L.38-.20 M.38-.44 L.60-.34', null, '#fef08a', .022);
-        // 顶部圣诞红蝴蝶结
-        shape('M.36-.54 C.18-.72 .14-.46 .34-.48 Z M.40-.54 C.62-.46 .58-.72 .38-.48 Z', '#dc2626', '#7f1d1d', .018);
-        shape('M.33-.52 A.045 .045 0 1 1 .42-.52 A.045 .045 0 1 1 .33-.52 Z', '#fde047', '#92400e', .014);
+        // 🔔 圣诞金铃铛 (3D渐变双金铃铛 + 红丝绒蝴蝶结 + 霜雪冬青红果)
+        drawHolidayStickerIcon(ctx, 'jingle_bell', 0.44, -0.46, 0.96, { angleDeg: 0, time: 0 });
     } else if (kind === 'us_flag_shield') {
         // 🇺🇸 美国星条旗荣耀盾徽笔 (金尖 + 红白竖纹盾底 + 海军蓝星区 + 璀璨五角金星顶)
         shape('M0 0 L.09-.20 L.20-.09 Z', '#fbbf24', '#92400e', .016);
@@ -472,6 +1441,8 @@ function drawSpeechWritingTip(ctx, kind, x, y, size, angle) {
         for (const ld of leaves) {
             shape(ld, '#8a9a86', '#4f5e4a', .014);
         }
+    } else if (HOLIDAY_ICON_SET.has(kind)) {
+        drawHolidayStickerIcon(ctx, kind, 0.44, -0.46, 0.94, { angleDeg: 0, time: 0 });
     } else {
         // 🪶 默认复古羽毛笔 (quill)
         shape('M.05-.07 C.2-.48 .23-.87 .54-1.15 C.66-1.32 .82-1.4 .97-1.44 C1.04-1.02 .81-.55 .43-.3 Z', '#eee8d9', '#7e7264', .018);

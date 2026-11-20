@@ -1,33 +1,30 @@
-# VideoKit 4.6.4-beta (测试版)
+# VideoKit 4.6.5-beta (测试版)
 
-> 🧪 **测试版说明**：面向内测、创作者反馈与云端部署提前验证发布，包含最新创意卡片、倒计时开场、自动着色修复与云服务器热更新能力。
+> 🧪 **测试版说明**：在 `4.6.4-beta` 基础上重磅新增 **32 款立体渐变圣诞小图标库 + 可拖拽圣诞贴纸 + 圣诞字幕一键搭配**，并开放顶部直达快捷入口。
 
-## 本次 4.6.4-beta 核心更新
+## 本次 4.6.5-beta 核心更新
 
-### 1. ☁️ 云服务器与无头 CLI 全面兼容升级
-- **无头 CLI 自更新命令 (`videokit-cli update`)**：支持 `--check`、`--beta`、`--stash`、`--json`、`--branch`，可通过 GitHub Releases API / Git 标签检查版本、安全拉取更新、按需安装依赖并重建 `dist/`。
-- **Linux/macOS 云端一键更新脚本**：新增 `scripts/cloud-update.sh`，方便云端助手或运维脚本一键更新与体检（`--check` / `--stash` / `--skip-build`）。
-- **Web 服务端智能防过期**：`bin/videokit-web-server.cjs` 自动检测 `src/` 修改时间（或 `VIDEOKIT_WEB_USE_SRC=1`），源码比 `dist/` 新时自动热切换到 `src/`；`/api/health` 新增 `commit`、`ui_source`、`platform`、`arch` 并正确报告 `4.6.4-beta` 版本号；`isolatedWysiwygExport` 补全转发封面卡片文本与延迟/音量参数。
-- **无头渲染容器稳定性**：Linux 无头 Electron 自动附加 `--disable-dev-shm-usage` 防 Docker `/dev/shm` 崩溃；无头 CLI 全面支持 `intro_countdown` 延后时长、ASS 字幕平移与纯 FFmpeg 人声 `adelay`。
+### 1. 🎄 新增 32 款立体圣诞/冬日小图标库（贴纸 & 字幕跟读通用）
+- **质感重绘升级**：告别扁平表情感，将金色双铃铛（`jingle_bell`）、圣诞树、冬青红果、拐杖糖、雪花、圣诞帽等升级并扩充至 **32 款渐变高光+立体投影小图标**（覆盖 **🔔 圣诞经典**、**⛄ 萌物人物**、**🌟 圣夜信仰**、**🍪 冬日美食** 4 大分类）。
+- **独立可拖拽贴纸图层 (`sticker`)**：
+  - 在 **🖼️ 覆层** 顶部新增 **`+ 🎄 圣诞小图标`**，且在 **T 字幕** 顶部栏新增无需展开折叠的 **`+ 🎄 放上方小图标(32款)`** 直达入口。
+  - 默认可放在画面树顶/上方居中，支持画布自由拖拽、拉角放大缩小、旋转、设时间段，自带 **`🔔 铃铛轻柔摇摆 (sway_bell)`**、**`🫧 轻盈上下漂浮`**、**`✨ 四角星芒闪烁`** 等循环动效与树顶/四角对齐快捷键。
+- **字幕跟读小图标同步扩展**：32 款图标全部加入 T 字幕与滚动字幕的跟读笔尖/伴随图标库，可切换随文字出字显现。
 
-### 2. ⏳ 节日/圣诞倒计时圆环开场（`intro_countdown`）
-- 新增可叠加在原素材前段的倒计时圆环开场动画，支持自由调节开场秒数、日期格式（如 `12.25`、`12月25日`、倒计时 35 天等）与字号自适应。
-- 支持纯开场模式，以及与正文朗读/滚动字幕/逐句字幕的全链路时间轴、人声延迟（`adelay`）及画布预览同步。
+### 2. 💬 全新圣诞字幕预设 & 8 套「小图标 + 圣诞字幕」黄金组合
+- 新增 **`sub-245`～`sub-250`** 圣诞全样式预设与快速底衬：
+  - **`sub-245`（圣诞翡翠绿胶囊_图1爆款双行白字）**：高饱和翡翠绿连体圆角胶囊（`#129E4D`）+ 粗白无衬线体。
+  - 另含圣诞正红胶囊、冰蓝水晶雪球字、伯利恒星红丝绒烫金、雪人奶油糖果胶囊、驯鹿姜饼暖心带。
+- 提供 **8 套一键搭配方案**，一点同时在视频上方添加配套圣诞小图标并应用圣诞字幕样式；无头 CLI 自动识别 `sticker` 图层路由 WYSIWYG 渲染。
 
-### 3. 🎴 创意 Prayer Card 卡片预设与 Muse 模板导入
-- 新增 20 款高辨识度、差异化设计的北美祷告/灵修主题创意卡片预设（`ov-16`～`ov-35`），支持 `inline-full` 等宽通栏条带渲染。
-- 支持自动识别并吸收网络 Muse 模板 `text-layout-settings.json` 卡片布局进入 VideoKit 覆层预设。
-- 精简滚动字幕重复预设，保留精选高质感滚动卡片模板（共 65 款高区分度滚动预设）。
-
-### 4. 🔧 核心语音与字幕问题修复
-- **ElevenLabs TTS 首句提取与排序**：保留文案首句提取与序列编号逻辑，确保批量生成音频排序准确不乱序。
-- **自动着色关键词重叠修复**：修复 `ctx.textBaseline = 'top'` 场景下多行富文本关键词高亮换行时第二行叠压第一行的问题。
+### 3. ☁️ 延续 `4.6.4-beta` 全部新能力
+- 云服务器 `videokit-cli update` 自更新、`scripts/cloud-update.sh`、`bin/videokit-web-server.cjs` 防旧 `dist/` 自动热切、`intro_countdown` 倒计时圆环开场、`ov-16`~`ov-35` 创意祈祷卡片与 Muse 导入、自动着色多行修复等全部包含。
 
 ---
 
 ### 安装包说明
-- Windows 安装版: `VideoKit-Setup-4.6.4-beta.exe`（自动检测覆盖升级并保留全部本地设置与工程数据）
-- Windows 压缩包: `VideoKit-Setup-4.6.4-beta.zip`
-- macOS Apple Silicon (M系列): `VideoKit-4.6.4-beta-macOS-arm64.dmg`
-- macOS Intel (x64): `VideoKit-4.6.4-beta-macOS-x64.dmg`
-- Linux AppImage: `VideoKit-4.6.4-beta-Linux-x86_64.AppImage`
+- Windows 安装版: `VideoKit-Setup-4.6.5-beta.exe`（自动检测覆盖升级并保留全部本地设置与工程数据）
+- Windows 压缩包: `VideoKit-Setup-4.6.5-beta.zip`
+- macOS Apple Silicon (M系列): `VideoKit-4.6.5-beta-macOS-arm64.dmg`
+- macOS Intel (x64): `VideoKit-4.6.5-beta-macOS-x64.dmg`
+- Linux AppImage: `VideoKit-4.6.5-beta-Linux-x86_64.AppImage`

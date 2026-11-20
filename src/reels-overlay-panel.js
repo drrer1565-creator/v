@@ -260,6 +260,7 @@ class ReelsOverlayPanel {
                         <button class="btn btn-secondary rop-btn" id="rop-add-scroll" title="添加滚动字幕" style="background:#FF6B35;color:#fff;">+ 滚动字幕</button>
                         <button class="btn btn-secondary rop-btn" id="rop-add-intro" title="在原视频开头叠加光环倒计时开场动画（可调秒数并自动延后朗读与字幕）" style="background:linear-gradient(135deg,#b45309,#d97706);color:#fff;font-weight:700;border:1px solid #fde68a;">+ 🎬 开场</button>
                         <button class="btn btn-secondary rop-btn" id="rop-add-decor" title="添加边缘点缀 / 圣诞装饰 / 发光星星 / 复古画框图层" style="background:linear-gradient(135deg,#dc2626,#d97706);color:#fff;font-weight:700;border:1px solid #fde68a;">+ ✨ 点缀图层</button>
+                        <button class="btn btn-secondary rop-btn" id="rop-add-sticker" title="添加可自由拖拽、缩放与摇摆动效的 32 款圣诞小图标贴纸（双金铃铛/圣诞树/雪人/水晶球等）" style="background:linear-gradient(135deg,#15803d,#dc2626);color:#fff;font-weight:700;border:1px solid #fde68a;">+ 🎄 圣诞小图标</button>
                     </div>
                 </div>
                 <label style="display:flex;align-items:center;gap:6px;margin:6px 0;font-size:11px;cursor:pointer;color:var(--text-secondary);flex-wrap:wrap;" title="关闭后，动态字幕会显示在所有覆层上方">
@@ -785,6 +786,62 @@ class ReelsOverlayPanel {
                     </div>
                     <div id="rop-flipper-duration-info" style="font-size:11px;color:var(--text-secondary);margin-top:6px;line-height:1.4;background:rgba(123,139,239,0.1);padding:4px 6px;border-radius:4px;">
                         💡 翻转完毕需: -- 秒 (总行数: --)
+                    </div>
+                </div>
+
+                <!-- 🎄 圣诞/节日小图标贴纸属性 (sticker覆层独有) -->
+                <div id="rop-sticker-props" class="rop-group" style="display:none; background:linear-gradient(180deg, rgba(22,163,74,0.10), rgba(15,23,42,0.55)); border:1px solid rgba(250,204,21,0.38); border-radius:8px; padding:10px;">
+                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;gap:6px;flex-wrap:wrap;">
+                        <div class="rop-group-title" style="margin:0;color:#fde68a;">🎄 圣诞小图标贴纸库 (32款 · 可直接画布拖拽缩放)</div>
+                        <button type="button" class="btn btn-secondary rop-btn" id="rop-sticker-add-more" style="padding:2px 8px;font-size:11px;background:rgba(22,163,74,0.28);color:#dcfce7;border:1px solid #4ade80;" title="保留当前小图标，再多放一个">+ 再放一个</button>
+                    </div>
+
+                    <div id="rop-sticker-category-tabs" style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:6px;">
+                        <button type="button" class="rop-btn rop-sticker-cat-tab active" data-cat="all" style="padding:2px 8px;font-size:10.5px;border-radius:999px;">全部 (32)</button>
+                        <button type="button" class="rop-btn rop-sticker-cat-tab" data-cat="圣诞经典" style="padding:2px 8px;font-size:10.5px;border-radius:999px;">🔔 圣诞经典</button>
+                        <button type="button" class="rop-btn rop-sticker-cat-tab" data-cat="萌物人物" style="padding:2px 8px;font-size:10.5px;border-radius:999px;">⛄ 萌物人物</button>
+                        <button type="button" class="rop-btn rop-sticker-cat-tab" data-cat="圣夜信仰" style="padding:2px 8px;font-size:10.5px;border-radius:999px;">🌟 圣夜信仰</button>
+                        <button type="button" class="rop-btn rop-sticker-cat-tab" data-cat="冬日美食" style="padding:2px 8px;font-size:10.5px;border-radius:999px;">🍪 冬日美食</button>
+                    </div>
+
+                    <div id="rop-sticker-catalog-grid" style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:5px;max-height:228px;overflow-y:auto;padding:4px;border-radius:6px;background:rgba(0,0,0,0.22);border:1px solid rgba(255,255,255,0.08);margin-bottom:8px;"></div>
+
+                    <div class="rop-grid" style="gap:6px;margin-bottom:6px;">
+                        <label>持续动效</label>
+                        <select id="rop-sticker-loop-anim" class="rop-select">
+                            <option value="sway_bell">🔔 铃铛轻柔摇摆 (推荐树顶)</option>
+                            <option value="float">🫧 轻盈上下漂浮</option>
+                            <option value="twinkle">✨ 四角星芒闪烁</option>
+                            <option value="pulse">💓 温柔呼吸放大</option>
+                            <option value="ring">📳 欢快摇铃震动</option>
+                            <option value="none">⭐ 静止不动</option>
+                        </select>
+                        <label>图标尺寸</label>
+                        <div class="rop-slider-combo"><input type="range" id="rop-sticker-size" class="rop-range" min="60" max="680" step="10" value="260"><input type="number" id="rop-sticker-size-num" class="rop-num-readout" min="48" max="900" step="10" value="260"></div>
+                        <label>立体投影</label>
+                        <div style="display:flex;align-items:center;gap:12px;">
+                            <label style="display:flex;align-items:center;gap:4px;font-size:11px;cursor:pointer;margin:0;"><input type="checkbox" id="rop-sticker-shadow" checked>开启立体投影</label>
+                            <label style="display:flex;align-items:center;gap:4px;font-size:11px;cursor:pointer;margin:0;"><input type="checkbox" id="rop-sticker-sparkles">闪烁金星芒</label>
+                        </div>
+                    </div>
+
+                    <div style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:8px;">
+                        <button type="button" class="rop-btn rop-sticker-align-btn" data-pos="tree-top" style="padding:2px 7px;font-size:10.5px;">🌲 树顶/上方居中</button>
+                        <button type="button" class="rop-btn rop-sticker-align-btn" data-pos="top-left" style="padding:2px 7px;font-size:10.5px;">↖ 左上角</button>
+                        <button type="button" class="rop-btn rop-sticker-align-btn" data-pos="top-right" style="padding:2px 7px;font-size:10.5px;">↗ 右上方</button>
+                        <button type="button" class="rop-btn rop-sticker-align-btn" data-pos="center" style="padding:2px 7px;font-size:10.5px;">🎯 画面中心</button>
+                        <button type="button" class="rop-btn rop-sticker-align-btn" data-pos="above-sub" style="padding:2px 7px;font-size:10.5px;">💬 字幕上方</button>
+                    </div>
+
+                    <div style="padding-top:6px;border-top:1px dashed rgba(250,204,21,0.28);">
+                        <div style="font-size:11px;color:#a7f3d0;font-weight:700;margin-bottom:4px;">🎬 一键搭配配套【圣诞字幕】(爆款绿/正红胶囊/冰雪/烫金):</div>
+                        <div id="rop-sticker-combo-strip" style="display:flex;flex-wrap:wrap;gap:4px;">
+                            <button type="button" class="rop-btn rop-sticker-sub-pair" data-sub="🔔 圣诞翡翠绿胶囊_图1爆款双行白字" style="padding:2px 7px;font-size:10.5px;background:#129E4D;color:#fff;font-weight:700;">🌲 翡翠绿胶囊字(图1同款)</button>
+                            <button type="button" class="rop-btn rop-sticker-sub-pair" data-sub="🎄 圣诞正红胶囊_鎏金双铃跟读字" style="padding:2px 7px;font-size:10.5px;background:#C81E2B;color:#fff;font-weight:700;">🎅 正红胶囊跟读字</button>
+                            <button type="button" class="rop-btn rop-sticker-sub-pair" data-sub="⛄ 暖冬雪人_红白糖果胶囊" style="padding:2px 7px;font-size:10.5px;background:#FFF9EC;color:#14532D;font-weight:700;">⛄ 奶油糖果胶囊字</button>
+                            <button type="button" class="rop-btn rop-sticker-sub-pair" data-sub="❄️ 圣夜水晶雪球_冰蓝星尘字" style="padding:2px 7px;font-size:10.5px;background:#0284C7;color:#fff;font-weight:700;">❄️ 冰蓝星尘字</button>
+                            <button type="button" class="rop-btn rop-sticker-sub-pair" data-sub="🌟 伯利恒晨星_圣夜金箔祷告字" style="padding:2px 7px;font-size:10.5px;background:#7A111A;color:#FDE047;border:1px solid #FACC15;font-weight:700;">🌟 红丝绒烫金字</button>
+                        </div>
                     </div>
                 </div>
 
@@ -2804,11 +2861,14 @@ class ReelsOverlayPanel {
         this.container.querySelector('#rop-add-scroll').addEventListener('click', () => this._addScrollOverlay());
         this.container.querySelector('#rop-add-intro')?.addEventListener('click', () => this._addIntroCountdownOverlay());
         this.container.querySelector('#rop-add-decor')?.addEventListener('click', () => this._addDecorOverlay());
+        this.container.querySelector('#rop-add-sticker')?.addEventListener('click', () => this._addStickerOverlay());
         this.container.querySelector('#rop-duplicate').addEventListener('click', () => this._duplicateOverlay());
         this.container.querySelector('#rop-delete').addEventListener('click', () => this._deleteOverlay());
 
         // 📞 邀约电话快捷面板事件绑定
         this._bindPhoneCtaEvents();
+        // 🎄 圣诞小图标贴纸面板事件绑定
+        this._bindStickerEvents();
 
         // "显示终点" toggle
         const showEndBtn = this.container.querySelector('#rop-scroll-show-end');
@@ -3166,11 +3226,14 @@ class ReelsOverlayPanel {
         if (scrollTwCursorKindEl) {
             scrollTwCursorKindEl.addEventListener('change', () => this._syncScrollTypewriterCursorImageUI());
         }
-        this.container.querySelectorAll('.rop-scroll-tw-icon-chip').forEach(chip => {
-            chip.addEventListener('click', (e) => {
+        const scrollTwGridEl = this.container.querySelector('#rop-scroll-tw-icon-grid');
+        if (scrollTwGridEl) {
+            scrollTwGridEl.addEventListener('click', (e) => {
+                const chip = e.target.closest('.rop-scroll-tw-icon-chip');
+                if (!chip) return;
                 e.preventDefault();
                 const kind = chip.dataset.kind || 'quill';
-                const angle = parseFloat(chip.dataset.angle ?? '-8');
+                const angle = parseFloat(chip.dataset.angle ?? '0');
                 this._val('rop-scroll-tw-enabled', true);
                 this._val('rop-scroll-tw-cursor-enabled', true);
                 this._val('rop-scroll-tw-cursor-kind', kind);
@@ -3180,7 +3243,7 @@ class ReelsOverlayPanel {
                 this._syncScrollTypewriterCursorImageUI();
                 this._syncToOverlay();
             });
-        });
+        }
         const scrollTwHideUnreadEl = this.container.querySelector('#rop-scroll-tw-hide-unread');
         if (scrollTwHideUnreadEl) {
             scrollTwHideUnreadEl.addEventListener('change', () => {
@@ -4924,6 +4987,179 @@ class ReelsOverlayPanel {
         this.selectOverlay(ov);
     }
 
+    _addStickerOverlay(kind = 'jingle_bell', options = {}) {
+        const ReelsOverlay = window.ReelsOverlay;
+        if (!ReelsOverlay || typeof ReelsOverlay.createStickerOverlay !== 'function') return null;
+        const existingStickers = (this.videoCanvas?.overlayMgr?.overlays || []).filter(o => o && o.type === 'sticker');
+        const idx = existingStickers.length;
+        const ov = ReelsOverlay.createStickerOverlay({
+            sticker_kind: kind,
+            x: options.x !== undefined ? options.x : (410 + (idx % 3) * 44 - (idx > 0 ? 44 : 0)),
+            y: options.y !== undefined ? options.y : (230 + Math.floor(idx / 3) * 56),
+            w: options.w || 260,
+            h: options.h || 260,
+        });
+        if (this.videoCanvas) this.videoCanvas.addOverlay(ov);
+        this._refreshList();
+        this.selectOverlay(ov);
+        if (typeof this.videoCanvas?.onOverlayChange === 'function') this.videoCanvas.onOverlayChange(ov);
+        if (typeof this.videoCanvas?.render === 'function') this.videoCanvas.render();
+        return ov;
+    }
+
+    _renderStickerCatalogGrid(filterCat = 'all', activeKind = 'jingle_bell') {
+        const grid = this.container?.querySelector('#rop-sticker-catalog-grid');
+        if (!grid) return;
+        const catalog = (typeof window !== 'undefined' && Array.isArray(window.HOLIDAY_ICON_CATALOG))
+            ? window.HOLIDAY_ICON_CATALOG
+            : [];
+        const list = filterCat === 'all' ? catalog : catalog.filter((item) => item.category === filterCat);
+        grid.innerHTML = list.map((item) => {
+            const isSel = item.id === activeKind;
+            const safeId = this._esc(item.id);
+            const safeLabel = this._esc(item.label);
+            return `<button type="button" class="rop-sticker-catalog-chip" data-kind="${safeId}" title="${this._esc(item.emoji + ' ' + item.label + ' · ' + item.category)}" style="display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;padding:5px 3px;border-radius:6px;cursor:pointer;border:1px solid ${isSel ? '#facc15' : 'rgba(255,255,255,0.10)'};background:${isSel ? 'rgba(250,204,21,0.18)' : 'rgba(255,255,255,0.03)'};color:${isSel ? '#fef08a' : '#e2e8f0'};">
+                <canvas class="rop-sticker-thumb-cvs" data-kind="${safeId}" width="40" height="40" style="width:34px;height:34px;display:block;"></canvas>
+                <span style="font-size:9.5px;line-height:1.15;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${safeLabel}</span>
+            </button>`;
+        }).join('');
+
+        const drawHolidayFn = (typeof window !== 'undefined' && typeof window.drawHolidayStickerIcon === 'function')
+            ? window.drawHolidayStickerIcon
+            : null;
+        grid.querySelectorAll('.rop-sticker-thumb-cvs').forEach((cvs) => {
+            const c = cvs.getContext && cvs.getContext('2d');
+            if (!c) return;
+            c.clearRect(0, 0, cvs.width, cvs.height);
+            if (drawHolidayFn) {
+                drawHolidayFn(c, cvs.dataset.kind, 20, 20, 34, { time: 0 });
+            }
+        });
+    }
+
+    _syncStickerPropsUI(ov) {
+        if (!ov || ov.type !== 'sticker' || !this.container) return;
+        const kind = ov.sticker_kind || 'jingle_bell';
+        this._renderStickerCatalogGrid(this._stickerCatFilter || 'all', kind);
+        this._val('rop-sticker-loop-anim', ov.cta_loop_anim || 'sway_bell');
+        const sz = Math.round(Number(ov.w || 260));
+        this._val('rop-sticker-size', sz);
+        this._val('rop-sticker-size-num', sz);
+        this._val('rop-sticker-shadow', ov.sticker_shadow !== false);
+        this._val('rop-sticker-sparkles', Boolean(ov.sticker_sparkles));
+    }
+
+    _bindStickerEvents() {
+        const panel = this.container?.querySelector('#rop-sticker-props');
+        if (!panel) return;
+        this._stickerCatFilter = 'all';
+
+        const commitSticker = (ov, refreshList = false) => {
+            if (!ov) return;
+            if (refreshList) this._refreshList();
+            if (typeof this.videoCanvas?.render === 'function') this.videoCanvas.render();
+            if (typeof this.videoCanvas?.onOverlayChange === 'function') this.videoCanvas.onOverlayChange(ov);
+        };
+
+        panel.querySelectorAll('.rop-sticker-cat-tab').forEach((btn) => {
+            btn.addEventListener('click', () => {
+                this._stickerCatFilter = btn.dataset.cat || 'all';
+                panel.querySelectorAll('.rop-sticker-cat-tab').forEach((b) => {
+                    const act = b === btn;
+                    b.classList.toggle('active', act);
+                    b.style.background = act ? 'rgba(250,204,21,0.22)' : '';
+                    b.style.color = act ? '#fef08a' : '';
+                    b.style.borderColor = act ? '#facc15' : '';
+                });
+                const ov = this._selectedOv;
+                this._renderStickerCatalogGrid(this._stickerCatFilter, ov?.sticker_kind || 'jingle_bell');
+            });
+        });
+
+        const grid = panel.querySelector('#rop-sticker-catalog-grid');
+        grid?.addEventListener('click', (e) => {
+            const chip = e.target.closest('.rop-sticker-catalog-chip');
+            if (!chip) return;
+            const ov = this._selectedOv;
+            if (!ov || ov.type !== 'sticker') return;
+            const kind = chip.dataset.kind;
+            const meta = window.HOLIDAY_ICON_MAP?.[kind];
+            ov.sticker_kind = kind;
+            if (meta) ov.name = `${meta.emoji} ${meta.label}`;
+            this._renderStickerCatalogGrid(this._stickerCatFilter || 'all', kind);
+            commitSticker(ov, true);
+        });
+
+        panel.querySelector('#rop-sticker-add-more')?.addEventListener('click', () => {
+            const curKind = this._selectedOv?.sticker_kind || 'christmas_tree';
+            this._addStickerOverlay(curKind);
+        });
+
+        panel.querySelector('#rop-sticker-loop-anim')?.addEventListener('change', (e) => {
+            const ov = this._selectedOv;
+            if (!ov || ov.type !== 'sticker') return;
+            ov.cta_loop_anim = e.target.value || 'sway_bell';
+            commitSticker(ov);
+        });
+
+        const updateStickerSize = (val) => {
+            const ov = this._selectedOv;
+            if (!ov || ov.type !== 'sticker') return;
+            const sz = Math.max(48, Math.min(900, Math.round(Number(val) || 260)));
+            const oldCx = (ov.x || 0) + (ov.w || 260) / 2;
+            const oldCy = (ov.y || 0) + (ov.h || 260) / 2;
+            ov.w = sz;
+            ov.h = sz;
+            ov.x = Math.round(oldCx - sz / 2);
+            ov.y = Math.round(oldCy - sz / 2);
+            this._val('rop-sticker-size', sz);
+            this._val('rop-sticker-size-num', sz);
+            this._syncFromOverlay(ov);
+            commitSticker(ov);
+        };
+        panel.querySelector('#rop-sticker-size')?.addEventListener('input', (e) => updateStickerSize(e.target.value));
+        panel.querySelector('#rop-sticker-size-num')?.addEventListener('input', (e) => updateStickerSize(e.target.value));
+
+        panel.querySelector('#rop-sticker-shadow')?.addEventListener('change', (e) => {
+            const ov = this._selectedOv;
+            if (!ov || ov.type !== 'sticker') return;
+            ov.sticker_shadow = Boolean(e.target.checked);
+            commitSticker(ov);
+        });
+        panel.querySelector('#rop-sticker-sparkles')?.addEventListener('change', (e) => {
+            const ov = this._selectedOv;
+            if (!ov || ov.type !== 'sticker') return;
+            ov.sticker_sparkles = Boolean(e.target.checked);
+            commitSticker(ov);
+        });
+
+        panel.querySelectorAll('.rop-sticker-align-btn').forEach((btn) => {
+            btn.addEventListener('click', () => {
+                const ov = this._selectedOv;
+                if (!ov || ov.type !== 'sticker') return;
+                const w = Number(ov.w) || 260;
+                const h = Number(ov.h) || 260;
+                const pos = btn.dataset.pos;
+                if (pos === 'tree-top') { ov.x = Math.round(540 - w / 2); ov.y = 220; }
+                else if (pos === 'top-left') { ov.x = 70; ov.y = 190; }
+                else if (pos === 'top-right') { ov.x = Math.round(1010 - w); ov.y = 190; }
+                else if (pos === 'center') { ov.x = Math.round(540 - w / 2); ov.y = Math.round(960 - h / 2); }
+                else if (pos === 'above-sub') { ov.x = Math.round(540 - w / 2); ov.y = Math.round(1080 - h); }
+                this._syncFromOverlay(ov);
+                commitSticker(ov);
+            });
+        });
+
+        panel.querySelectorAll('.rop-sticker-sub-pair').forEach((btn) => {
+            btn.addEventListener('click', () => {
+                const subPreset = btn.dataset.sub;
+                if (subPreset && typeof window.reelsApplySubtitlePresetByName === 'function') {
+                    window.reelsApplySubtitlePresetByName(subPreset);
+                }
+            });
+        });
+    }
+
     _addDecorOverlay() {
         const ReelsOverlay = window.ReelsOverlay;
         if (!ReelsOverlay || typeof ReelsOverlay.createDecorOverlay !== 'function') return;
@@ -5775,11 +6011,12 @@ class ReelsOverlayPanel {
 
         list.innerHTML = overlays.slice().reverse().map(ov => {
             const isSelected = this._selectedOv?.id === ov.id;
-            const icon = ov.is_phone_cta ? '📞' : (ov.type === 'text' ? '📝' : (ov.type === 'textcard' ? '📋' : (ov.type === 'scroll' ? '🔄' : (ov.type === 'solid_mask' ? '🔳' : (ov.type === 'decor' ? '✨' : '🖼️')))));
+            const icon = ov.is_phone_cta ? '📞' : (ov.type === 'sticker' ? '🎄' : (ov.type === 'text' ? '📝' : (ov.type === 'textcard' ? '📋' : (ov.type === 'scroll' ? '🔄' : (ov.type === 'solid_mask' ? '🔳' : (ov.type === 'decor' ? '✨' : '🖼️'))))));
             const lockIcon = ov.fixed_text ? '🔒' : '';
             let label = ov.name;
             if (!label) {
                 if (ov.is_phone_cta) label = '邀约电话: ' + (ov.body_text || ov.title_text || '').slice(0, 14);
+                else if (ov.type === 'sticker') label = window.HOLIDAY_ICON_MAP?.[ov.sticker_kind]?.label || '圣诞小图标';
                 else if (ov.type === 'textcard') label = (ov.title_text || '').slice(0, 15) || '文字卡片';
                 else if (ov.type === 'solid_mask') label = '纯色蒙版';
                 else if (ov.type === 'scroll') label = '滚动: ' + (ov.content || '').split('\n')[0].slice(0, 12);
@@ -5986,6 +6223,8 @@ class ReelsOverlayPanel {
         this.container.querySelector('#rop-scroll-props').style.display = ov.type === 'scroll' ? 'block' : 'none';
         const decorPropsEl = this.container.querySelector('#rop-decor-props');
         if (decorPropsEl) decorPropsEl.style.display = ov.type === 'decor' ? 'block' : 'none';
+        const stickerPropsEl = this.container.querySelector('#rop-sticker-props');
+        if (stickerPropsEl) stickerPropsEl.style.display = ov.type === 'sticker' ? 'block' : 'none';
         this.container.querySelector('#rop-textcard-debug-props').style.display = ov.type === 'textcard' ? 'block' : 'none';
         
         const innerTextLayout = this.container.querySelector('#rop-textcard-only-text-layout-inner');
@@ -6486,6 +6725,10 @@ class ReelsOverlayPanel {
             this._val('rop-decor-color1', ov.decor_color1 || preset.color1 || '#FFD700');
             this._val('rop-decor-color2', ov.decor_color2 || preset.color2 || '#FFFDF5');
             this._updateOverlayDecorAccordionBadges(ov);
+        }
+
+        if (ov.type === 'sticker') {
+            this._syncStickerPropsUI(ov);
         }
 
         if (ov.type === 'image' || ov.type === 'video') {
@@ -7881,7 +8124,42 @@ class ReelsOverlayPanel {
         }
         const kind = this._get('rop-scroll-tw-cursor-kind') || ov?.scroll_tw_cursor_kind || 'quill';
 
-        // 1. 首次绘制 16 款内置笔尖小图标的 Canvas 预览
+        // 0. 动态补充 32 款圣诞/节日矢量小图标到滚动笔尖网格与下拉框（不重复追加）
+        const holidayCat = (typeof window !== 'undefined' && Array.isArray(window.HOLIDAY_ICON_CATALOG)) ? window.HOLIDAY_ICON_CATALOG : [];
+        const scrollTwGrid = this.container?.querySelector('#rop-scroll-tw-icon-grid');
+        const scrollTwSelect = this.container?.querySelector('#rop-scroll-tw-cursor-kind');
+        if (holidayCat.length > 0 && scrollTwGrid && !scrollTwGrid.dataset.xmasHydrated) {
+            scrollTwGrid.dataset.xmasHydrated = '1';
+            for (const item of holidayCat) {
+                if (!scrollTwGrid.querySelector(`.rop-scroll-tw-icon-chip[data-kind="${item.id}"]`)) {
+                    const chip = document.createElement('button');
+                    chip.type = 'button';
+                    chip.className = 'rop-scroll-tw-icon-chip';
+                    chip.dataset.kind = item.id;
+                    chip.dataset.angle = '0';
+                    chip.style.cssText = 'display:flex;align-items:center;gap:4px;padding:3px 5px;font-size:10px;border-radius:4px;border:1px solid rgba(255,255,255,0.12);background:rgba(255,255,255,0.04);color:#eee;cursor:pointer;';
+                    const cvs = document.createElement('canvas');
+                    cvs.className = 'rop-tw-icon-canvas';
+                    cvs.dataset.kind = item.id;
+                    cvs.width = 20;
+                    cvs.height = 20;
+                    cvs.style.cssText = 'width:18px;height:18px;flex-shrink:0;';
+                    const sp = document.createElement('span');
+                    sp.textContent = item.label.slice(0, 4);
+                    chip.appendChild(cvs);
+                    chip.appendChild(sp);
+                    scrollTwGrid.appendChild(chip);
+                }
+                if (scrollTwSelect && !scrollTwSelect.querySelector(`option[value="${item.id}"]`)) {
+                    const opt = document.createElement('option');
+                    opt.value = item.id;
+                    opt.textContent = `${item.emoji} ${item.label}`;
+                    scrollTwSelect.appendChild(opt);
+                }
+            }
+        }
+
+        // 1. 首次绘制所有内置笔尖小图标的 Canvas 预览
         const drawTipFn = (typeof drawSpeechWritingTip === 'function')
             ? drawSpeechWritingTip
             : window.drawSpeechWritingTip;
@@ -12589,7 +12867,7 @@ class ReelsOverlayPanel {
                 return;
             }
         }
-        const validTypes = new Set(['text', 'textcard', 'scroll', 'image', 'video', 'solid_mask', 'decor', 'pip', 'intro_countdown']);
+        const validTypes = new Set(['text', 'textcard', 'scroll', 'image', 'video', 'solid_mask', 'decor', 'pip', 'intro_countdown', 'sticker']);
         const isValidPresetEntry = (val) => {
             const list = Array.isArray(val) ? val : (Array.isArray(val?.layers) ? val.layers : (Array.isArray(val?.overlays) ? val.overlays : null));
             return Array.isArray(list) && list.length > 0 && list.every(item => item && typeof item === 'object' && !Array.isArray(item.tasks) && validTypes.has(item.type));
