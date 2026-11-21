@@ -7049,7 +7049,7 @@ function reelsGetBackgroundPoster(path) {
     return entry?.image?.complete && entry.image.naturalWidth>0 ? entry.image : null;
 }
 function reelsLoadBackgroundPoster(path) {
-    const key=String(path||'');if(!key)return Promise.resolve(null);
+    const key=String(path||'');if(!key || !_reelsFileExists(key))return Promise.resolve(null);
     const old=_reelsBackgroundPosters.get(key);if(old)return old.promise;
     const entry={image:null,promise:null};
     entry.promise=Promise.resolve().then(()=>window._rbtResolveStaticVideoThumbnail?.(key,window.electronAPI?.toFileUrl?.(key)||key)).then(url=>new Promise(resolve=>{
@@ -7069,9 +7069,13 @@ function reelsPrimeBackgroundVideo(video,path,onReady) {
         if(frame===null && typeof video.requestVideoFrameCallback==='function')frame=video.requestVideoFrameCallback(()=>{frame=null;if(live)onReady();});
     };
     const failed=()=>{
-        if(!live||nativeFallback||!(video.currentSrc||video.src).includes('reelsPreview='))return;
-        const native=window.electronAPI?.toFileUrl?.(path);if(!native)return;
-        nativeFallback=true;video.src=native;video.load();
+        if (!live) return;
+        // Preserve the existing single native-url fallback, then stop retrying.
+        if (!nativeFallback && (video.currentSrc || video.src).includes('reelsPreview=')) {
+            const native = window.electronAPI?.toFileUrl?.(path);
+            if (native) { nativeFallback = true; video.src = native; video.load(); return; }
+        }
+        window.ReelsMediaAvailability?.markFailed(path, 'decode-error');
     };
     for(const name of ['loadeddata','canplay','seeked'])video.addEventListener(name,refresh);
     video.addEventListener('error',failed);
