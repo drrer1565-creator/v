@@ -7086,8 +7086,30 @@ window.reelsGetBackgroundPoster=reelsGetBackgroundPoster;
 window.reelsLoadBackgroundPoster=reelsLoadBackgroundPoster;
 window.reelsPrimeBackgroundVideo=reelsPrimeBackgroundVideo;
 
+
+// Media checks may complete after the task was drawn. Refresh only the still
+// selected task, and coalesce multiple missing paths into a single update.
+let _reelsMediaStatusRefreshTimer = null;
+window.addEventListener('reels-media-availability-changed', event => {
+    const state = window._reelsState;
+    const task = state?.tasks?.[state.selectedIdx];
+    const p = event?.detail?.path;
+    if (!task || !p) return;
+    const paths = task.bgMode === 'multi' ? task.bgClipPool : [task.bgPath || task.videoPath];
+    if (!Array.isArray(paths) || !paths.includes(p)) return;
+    if (_reelsMediaStatusRefreshTimer) clearTimeout(_reelsMediaStatusRefreshTimer);
+    _reelsMediaStatusRefreshTimer = setTimeout(() => {
+        _reelsMediaStatusRefreshTimer = null;
+        if (window._reelsState?.tasks?.[window._reelsState?.selectedIdx] !== task) return;
+        reelsSelectTask(window._reelsState.selectedIdx, { preserveScroll: true });
+    }, 80);
+});
+
 function _reelsFileExists(filePath) {
     if (!filePath || typeof filePath !== 'string') return false;
+    // A renderer fs.existsSync on every preview frame can block on dead network
+    // paths. The status layer probes once asynchronously and caches failures.
+    if (window.ReelsMediaAvailability?.isUsable) return window.ReelsMediaAvailability.isUsable(filePath);
     if (/^(blob:|data:|https?:)/i.test(filePath)) return true;
     if (window.electronAPI && typeof window.electronAPI.fileExists === 'function') {
         return window.electronAPI.fileExists(filePath);
@@ -7192,10 +7214,11 @@ function _resolvePreviewBackgroundPath(task) {
     const activePool = _getEffectiveBgClipPool(task);
     const isMulti = task.bgMode === 'multi' && activePool.length > 0;
     if (isMulti) {
-        const previewPath = activePool.find(p => p && _reelsFileExists(p)) || activePool[0] || '';
+        const previewPath = activePool.find(p => p && _reelsFileExists(p)) || '';
         return { path: previewPath, isMulti: true };
     }
-    return { path: task.bgPath || task.videoPath || '', isMulti: false };
+    const singlePath = task.bgPath || task.videoPath || '';
+    return { path: _reelsFileExists(singlePath) ? singlePath : '', isMulti: false };
 }
 
 function _getEffectiveBgClipPool(task) {
@@ -7272,7 +7295,9 @@ function _calculatePreviewSegments(task) {
     const pool = _getPreviewMultiClipPool(task);
     if (pool.length === 0) return [];
 
-    const bgDurFactor = (task && task.bgDurScale ? task.bgDurScale : 100) / 100;
+    const bgDurFactor = Number(task && task.bgDurScale ? task.bgDurScale : 100) / 100;
+    if (!Number.isFinite(bgDurFactor) || bgDurFactor <= 0) return [];
+    const MAX_PREVIEW_BG_SEGMENTS = 5000;
     const videoEl = document.getElementById('reels-preview-video');
 
     const poolClips = pool.map(path => {
@@ -7304,8 +7329,9 @@ function _calculatePreviewSegments(task) {
         };
     });
 
+    if (poolClips.some(c => !Number.isFinite(c.baseDuration) || c.baseDuration <= 0)) return [];
     const isCardingMode = task.bgClipOrder === 'random_align' || task.bgClipOrder === 'sequence_align';
-    const segments = task.segments || [];
+    const segments = Array.isArray(task.segments) ? task.segments : [];
 
     const audioEl = document.getElementById('reels-preview-audio');
     let totalDur = 15;
@@ -7318,14 +7344,17 @@ function _calculatePreviewSegments(task) {
     if (audioEl && audioEl.src && audioDurScale !== 1.0) {
         totalDur = totalDur * audioDurScale;
     }
+    // Old templates may contain Infinity, excessive duration scales or broken
+    // clip metadata. Never enter a duration-driven loop with such values.
+    if (!Number.isFinite(totalDur) || totalDur <= 0 || totalDur > 8 * 3600) return [];
 
     const result = [];
     if (isCardingMode && segments.length > 0) {
         const cutPoints = [0];
         const candidates = [];
         const preSwitchOffset = 0.2;
-        const bgMinClipDur = task.bgMinClipDur !== undefined ? task.bgMinClipDur : 5;
-        const bgMaxClipDur = task.bgMaxClipDur !== undefined ? task.bgMaxClipDur : 7;
+        const bgMinClipDur = Number.isFinite(Number(task.bgMinClipDur)) && Number(task.bgMinClipDur) > 0 ? Number(task.bgMinClipDur) : 5;
+        const bgMaxClipDur = Number.isFinite(Number(task.bgMaxClipDur)) && Number(task.bgMaxClipDur) > 0 ? Number(task.bgMaxClipDur) : 7;
 
         for (const seg of segments) {
             const endVal = parseFloat(seg.end);
@@ -7457,7 +7486,7 @@ function _calculatePreviewSegments(task) {
         let lastCut = 0;
         let candIdx = 0;
 
-        while (candIdx < sortedAllCands.length) {
+        while (candIdx < sortedAllCands.length && cutPoints.length < MAX_PREVIEW_BG_SEGMENTS) {
             const remainingAll = sortedAllCands.filter(pt => pt > lastCut + 0.01);
             if (remainingAll.length === 0) break;
 
@@ -7544,8 +7573,9 @@ function _calculatePreviewSegments(task) {
         }
 
         if (bgMaxClipDur > 0) {
-            while ((totalDur - lastCut) > bgMaxClipDur) {
+            while ((totalDur - lastCut) > bgMaxClipDur && cutPoints.length < MAX_PREVIEW_BG_SEGMENTS) {
                 const nextForcedCut = lastCut + preferredSplit;
+                if (!Number.isFinite(nextForcedCut) || nextForcedCut <= lastCut) break;
                 cutPoints.push(nextForcedCut);
                 lastCut = nextForcedCut;
             }
@@ -7558,7 +7588,7 @@ function _calculatePreviewSegments(task) {
             cutPoints[cutPoints.length - 1] = totalDur;
         }
 
-        for (let idx = 0; idx < cutPoints.length - 1; idx++) {
+        for (let idx = 0; idx < cutPoints.length - 1 && idx < MAX_PREVIEW_BG_SEGMENTS; idx++) {
             const start = cutPoints[idx];
             const end = cutPoints[idx + 1];
             const dur = end - start;
@@ -7576,7 +7606,7 @@ function _calculatePreviewSegments(task) {
         }
     } else {
         let cursor = 0;
-        for (let i = 0; i < poolClips.length * 10; i++) {
+        for (let i = 0; i < Math.min(poolClips.length * 10, MAX_PREVIEW_BG_SEGMENTS); i++) {
             const clip = poolClips[i % poolClips.length];
             const start = cursor;
             const end = cursor + clip.baseDuration;
@@ -7608,7 +7638,8 @@ async function _preFetchMultiBgDurations(task) {
     if (!_reelsState._multiBgDurations) _reelsState._multiBgDurations = {};
     const pool = _getPreviewMultiClipPool(task);
     for (const path of pool) {
-        if (_isImageFile(path)) continue;
+        if (_getSelectedTask() !== task) return;
+        if (!_reelsFileExists(path) || _isImageFile(path)) continue;
         if (_reelsState._multiBgDurations[path] > 0) continue;
         if (window.electronAPI && typeof window.electronAPI.getMediaDuration === 'function') {
             try {
@@ -7622,7 +7653,7 @@ async function _preFetchMultiBgDurations(task) {
             }
         }
     }
-    if (typeof reelsUpdatePreview === 'function') reelsUpdatePreview();
+    if (_getSelectedTask() === task && typeof reelsUpdatePreview === 'function') reelsUpdatePreview();
 }
 
 function _getPreviewMultiClipDuration(path, videoEl, task) {
@@ -11528,6 +11559,8 @@ async function _preFetchTaskMediaDurations(task) {
     if (paths.length === 0) return;
     if (window.electronAPI && typeof window.electronAPI.getMediaDuration === 'function') {
         for (const p of paths) {
+            if (_getSelectedTask() !== task) return;
+            if (!_reelsFileExists(p)) continue;
             try {
                 const dur = await window.electronAPI.getMediaDuration(p);
                 if (dur > 0) {
@@ -11571,6 +11604,9 @@ function reelsSelectTask(idx, options = {}) {
     _renderTaskList({ preserveScroll: options.preserveScroll === true });
     const task = _reelsState.tasks[idx];
     if (!task) return;
+    // This is runtime-only: original file paths, ordering and crop settings stay
+    // in task data even if the preview cannot currently use those files.
+    window.ReelsMediaAvailability?.preflightTask(task).catch(error => console.warn('[Preview] media check:', error?.message));
     if (task._batchTabId && typeof window.reelsSyncActiveBatchTabFromId === 'function') {
         window.reelsSyncActiveBatchTabFromId(task._batchTabId);
     } else {
@@ -11758,6 +11794,8 @@ function reelsSelectTask(idx, options = {}) {
             placeholder.textContent = '当前任务没有背景素材，预览将显示纯色底。';
         }
     }
+
+    window.ReelsMediaAvailability?.updateWarning(task);
 
     // ── 加载 Hook 视频 ──
     // 与导出一致：task.hookFile 优先，回退到全局前置路径
