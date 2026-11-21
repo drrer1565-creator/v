@@ -21346,6 +21346,18 @@ window.reelsClearPersistedBatchTasks = reelsClearPersistedBatchTasks;
 
 /** 自动恢复 */
 function _batchAutoRestore() {
+    const markerKey = 'vk_reels_restore_in_progress_v468';
+    const restoreStarted = Date.now();
+    try {
+        const previousStart = Number(localStorage.getItem(markerKey)) || 0;
+        if (previousStart > 0 && restoreStarted - previousStart < 24 * 3600 * 1000) {
+            // A previous renderer stopped before its post-restore heartbeat.
+            // Restore text and overlays, but do not touch any media until asked.
+            window._reelsSafeRestoreNoMedia = true;
+            console.warn('[WorkspaceRestore] previous recovery did not reach ready state; media disabled');
+        }
+        localStorage.setItem(markerKey, String(restoreStarted));
+    } catch (_) {}
     try {
         let raw = '';
         try { raw = localStorage.getItem(BATCH_CONFIG_KEY) || ''; } catch (_) { }
@@ -21531,6 +21543,67 @@ function _batchAutoRestore() {
         }
     } catch (e) {
         console.warn('[BatchTable] Auto-restore failed:', e.message);
+    } finally {
+        // This main-loop heartbeat is intentionally delayed. If a restored
+        // preview blocks the renderer, the marker survives until next startup.
+        setTimeout(() => {
+            if (!window._reelsSafeRestoreNoMedia) {
+                try { localStorage.removeItem(markerKey); } catch (_) {}
+                return;
+            }
+            if (document.getElementById('vk-safe-recovery-banner')) return;
+            const notice = document.createElement('div');
+            notice.id = 'vk-safe-recovery-banner';
+            notice.style.cssText = 'position:fixed;top:48px;left:50%;transform:translateX(-50%);z-index:99999;max-width:90vw;background:#322719;color:#fff;padding:12px 18px;border:1px solid #be8d52;border-radius:8px;box-shadow:0 4px 16px #0008;font-size:13px;';
+            const intro = document.createElement('div');
+            intro.textContent = '检测到上次工程恢复可能中断。当前已安全恢复文字和布局，暂不加载媒体。';
+            notice.appendChild(intro);
+            const retry = document.createElement('button');
+            retry.type = 'button';
+            retry.textContent = '重新启用媒体预览';
+            retry.style.margin = '8px 8px 0 0';
+            retry.onclick = () => {
+                window._reelsSafeRestoreNoMedia = false;
+                try { localStorage.removeItem(markerKey); } catch (_) {}
+                window.ReelsMediaAvailability?.invalidate();
+                notice.remove();
+                const idx = window._reelsState?.selectedIdx >= 0 ? window._reelsState.selectedIdx : 0;
+                if (window._reelsState?.tasks?.[idx]) reelsSelectTask(idx, { preserveScroll: true });
+            };
+            notice.appendChild(retry);
+            const blank = document.createElement('button');
+            blank.type = 'button';
+            blank.textContent = '打开空白工作区（先备份）';
+            blank.onclick = () => {
+                const backupKey = BATCH_CONFIG_KEY + '_before_safe_blank';
+                const backup = window.electronAPI?.readBatchWorkspace?.() || localStorage.getItem(BATCH_CONFIG_KEY) || '';
+                try {
+                    if (!backup) throw new Error('找不到可备份的工程快照');
+                    localStorage.setItem(backupKey, backup);
+                    if (localStorage.getItem(backupKey) !== backup) throw new Error('备份验证失败');
+                } catch (error) {
+                    showToast?.('无法保证原工程备份，已取消打开空白工作区：' + error.message, 'warning', 5000);
+                    return;
+                }
+                window._reelsSafeRestoreNoMedia = false;
+                try { localStorage.removeItem(markerKey); } catch (_) {}
+                window._reelsState.tasks = [];
+                window._reelsState.selectedIdx = -1;
+                _batchTableState.tabs = [{ id: 'tab_safe_' + Date.now(), name: '空白工作区', group: '', tasks: [], hidden: false, materialDir: '' }];
+                _batchTableState.activeTabId = _batchTableState.tabs[0].id;
+                _batchTableState.appliedTabIds = [];
+                _skipNextApply = true;
+                _normalizeBatchTabState();
+                if (typeof _renderTaskList === 'function') _renderTaskList();
+                if (_batchTableState.visible) _renderBatchTable();
+                _batchAutoSave({ skipSync: true, forceFullSerialize: true });
+                notice.remove();
+                showToast?.('已进入空白工作区；原恢复快照保留在本地备份中。', 'warning', 6000);
+            };
+            blank.style.marginTop = '8px';
+            notice.appendChild(blank);
+            document.body.appendChild(notice);
+        }, 1600);
     }
 }
 
