@@ -1,0 +1,55 @@
+'use strict';
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const path = require('node:path');
+const { ReelsMediaAvailability, classifyMediaPath } = require('../electron/services/reels-media-availability');
+
+test('file URLs, Chinese names and Windows paths are classified without destructive decoding', () => {
+    const url = classifyMediaPath('file:///tmp/%E5%86%9C%E5%9C%BA%20(1).mp4');
+    assert.equal(url.localPath, '/tmp/农场 (1).mp4');
+    assert.equal(classifyMediaPath('C:\\Video\\farm.mp4').localPath, 'C:\\Video\\farm.mp4');
+    assert.equal(classifyMediaPath('blob:stale').status, 'unavailable');
+    assert.equal(classifyMediaPath('https://example.org/video.mp4').status, 'available');
+    assert.equal(classifyMediaPath({}).status, 'missing');
+});
+
+test('missing files return missing, access errors are not mislabeled as deletion', async () => {
+    const fake = new ReelsMediaAvailability({ stat: async path => {
+        if (path === '/deleted.mp4') throw Object.assign(new Error('missing'), { code: 'ENOENT' });
+        if (path === '/locked.mp4') throw Object.assign(new Error('access'), { code: 'EACCES' });
+        return { isFile: () => true, size: 10 };
+    } });
+    assert.equal((await fake.check('/deleted.mp4')).status, 'missing');
+    assert.equal((await fake.check('/locked.mp4')).status, 'unavailable');
+    assert.equal((await fake.check('/good.mp4')).status, 'available');
+});
+
+test('inflight duplicate checks are merged, caches apply, forced retry rechecks', async () => {
+    let calls = 0;
+    const fake = new ReelsMediaAvailability({ stat: async () => {
+        calls++;
+        await new Promise(resolve => setTimeout(resolve, 10));
+        throw Object.assign(new Error('gone'), { code: 'ENOENT' });
+    } });
+    const statuses = await Promise.all(Array.from({ length: 10 }, () => fake.check('/same.mp4')));
+    assert.ok(statuses.every(s => s.status === 'missing'));
+    assert.equal(calls, 1);
+    await fake.check('/same.mp4');
+    assert.equal(calls, 1);
+    await fake.check('/same.mp4', { force: true });
+    assert.equal(calls, 2);
+});
+
+test('hung checks time out, no more than maxConcurrent underlying operations', async () => {
+    let started = 0;
+    const fake = new ReelsMediaAvailability({ stat: () => { started++; return new Promise(() => {}); },
+        maxConcurrent: 2, maxQueued: 3, timeoutMs: 12 });
+    const results = await Promise.all(['/1.mp4','/2.mp4'].map(path => fake.check(path)));
+    assert.ok(results.every(s => s.status === 'unavailable' && s.reason === 'timeout'));
+    assert.equal(started, 2);
+    assert.equal(fake.active, 2);
+    assert.deepEqual(await fake.check('/6.mp4'), await new Promise(resolve => {
+        // A saturated executor must remain bounded; third request is queued, never starts.
+        setTimeout(() => resolve({ status: 'queued' }), 5);
+    }).then(() => ({ status: 'unavailable', reason: 'busy' })));
+});
