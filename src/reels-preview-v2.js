@@ -2373,13 +2373,14 @@
     function getEffectiveBgClipPool(task) {
         if (!task) return [];
         if (typeof window._getEffectiveBgClipPool === 'function') {
-            return window._getEffectiveBgClipPool(task) || [];
+            const original = window._getEffectiveBgClipPool(task) || [];
+            return original.filter(p => window.ReelsMediaAvailability?.isUsable(p) !== false);
         }
         const pool = Array.isArray(task.bgClipPool) ? task.bgClipPool.filter(Boolean) : [];
         const active = Array.isArray(task.bgClipActivePool)
             ? task.bgClipActivePool.filter(path => path && pool.includes(path))
             : [];
-        return active.length > 0 ? active : pool;
+        return (active.length > 0 ? active : pool).filter(p => window.ReelsMediaAvailability?.isUsable(p) !== false);
     }
 
     function isMultiBackgroundTask(task) {
@@ -2455,6 +2456,7 @@
     function calculateMultiBackgroundSegments(task) {
         const pool = getPreviewMultiClipPool(task);
         if (!pool.length) return [];
+        const MAX_PREVIEW_BG_SEGMENTS = 5000;
         const factor = Math.max(0.01, numberOr(task && task.bgDurScale, 100) / 100);
         const clips = pool.map(path => {
             const settings = task && task.bgClipSettings && task.bgClipSettings[path];
@@ -2494,6 +2496,8 @@
             ? Math.max(audioDurRaw * audioScale, 0.5)
             : Math.max(subDur || 0, poolDur, 5);
         const result = [];
+        if (!Number.isFinite(totalDur) || totalDur <= 0 || totalDur > 8 * 3600 ||
+            clips.some(c => !Number.isFinite(c.baseDuration) || c.baseDuration <= 0)) return [];
 
         if (isAlign && segments.length > 0) {
             const cutPoints = [0];
@@ -2608,7 +2612,7 @@
             let lastCut = 0;
             let candIdx = 0;
 
-            while (candIdx < sortedAllCands.length) {
+            while (candIdx < sortedAllCands.length && cutPoints.length < MAX_PREVIEW_BG_SEGMENTS) {
                 const remainingAll = sortedAllCands.filter(pt => pt > lastCut + 0.01);
                 if (remainingAll.length === 0) break;
 
@@ -2674,8 +2678,9 @@
             }
 
             if (bgMaxClipDur > 0) {
-                while ((totalDur - lastCut) > bgMaxClipDur) {
+                while ((totalDur - lastCut) > bgMaxClipDur && cutPoints.length < MAX_PREVIEW_BG_SEGMENTS) {
                     const nextForcedCut = lastCut + preferredSplit;
+                    if (!Number.isFinite(nextForcedCut) || nextForcedCut <= lastCut) break;
                     cutPoints.push(nextForcedCut);
                     lastCut = nextForcedCut;
                 }
@@ -2688,7 +2693,7 @@
                 cutPoints[cutPoints.length - 1] = totalDur;
             }
 
-            for (let i = 0; i < cutPoints.length - 1; i++) {
+            for (let i = 0; i < cutPoints.length - 1 && i < MAX_PREVIEW_BG_SEGMENTS; i++) {
                 const clip = clips[i % clips.length];
                 result.push({
                     ...clip,
@@ -2701,7 +2706,7 @@
         }
 
         let cursor = 0;
-        for (let i = 0; i < clips.length * 20 && cursor < totalDur; i++) {
+        for (let i = 0; i < Math.min(clips.length * 20, MAX_PREVIEW_BG_SEGMENTS) && cursor < totalDur; i++) {
             const clip = clips[i % clips.length];
             const start = cursor;
             const end = Math.min(totalDur, start + clip.baseDuration);

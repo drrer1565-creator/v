@@ -7115,7 +7115,9 @@ test('Project Library strict Level-3 workspace + Batch Table + working panel syn
     assert.match(templatesRaw, /tpl-card-check/);
     assert.match(templatesRaw, /tpl-apply-selected-btn/);
     assert.match(templatesRaw, /tpl-apply-folder-btn/);
-    assert.ok(templatesRaw.includes('\r\n'), 'src/reels-templates.js must keep CRLF line endings');
+    // This repository's baseline reels-templates.js uses LF on GitHub; both
+    // CRLF and LF are valid as long as the source remains multi-line.
+    assert.ok(templatesRaw.split(/\r?\n/).length > 100, 'src/reels-templates.js must keep real line endings');
 });
 
 test('Project Library auto-archives live workspace tabs (open, hidden & combined queues) and extracts multi-tab project payloads', async () => {

@@ -1,0 +1,61 @@
+name: Template media safety checks
+
+on:
+  pull_request:
+    paths:
+      - 'electron/services/reels-media-availability.js'
+      - 'electron/services/close-save-guard.js'
+      - 'electron/services/ffmpeg.js'
+      - 'electron/main.js'
+      - 'electron/preload.js'
+      - 'src/reels-media-availability.js'
+      - 'src/batch-reels.js'
+      - 'src/reels-preview-v2.js'
+      - 'src/reels-batch-table.js'
+      - 'src/reels-templates.js'
+      - 'src/index.html'
+      - 'tests/reels-media-availability.test.js'
+      - 'tests/close-save-guard.test.js'
+      - 'tests/template-preview-segments.test.js'
+      - '.github/workflows/template-media-tests.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  unit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22'
+      - name: JavaScript syntax checks
+        run: |
+          node --check electron/main.js
+          node --check electron/preload.js
+          node --check electron/services/ffmpeg.js
+          node --check electron/services/reels-media-availability.js
+          node --check electron/services/close-save-guard.js
+          node --check src/batch-reels.js
+          node --check src/reels-batch-table.js
+          node --check src/reels-templates.js
+          node --check src/reels-preview-v2.js
+          node --check src/reels-media-availability.js
+      - name: Focused regression tests
+        run: node --test tests/reels-media-availability.test.js tests/close-save-guard.test.js tests/template-preview-segments.test.js
+      - name: Ensure FFmpeg and FFprobe are available for media regression tests
+        run: |
+          if ! command -v ffmpeg >/dev/null 2>&1 || ! command -v ffprobe >/dev/null 2>&1; then
+            sudo apt-get update
+            sudo apt-get install -y ffmpeg
+          fi
+          command -v ffmpeg
+          command -v ffprobe
+      - name: Install application dependencies (including Electron)
+        run: npm ci
+      - name: Existing project regression suite
+        run: npm test
+      - name: Build frontend assets
+        run: npm run build

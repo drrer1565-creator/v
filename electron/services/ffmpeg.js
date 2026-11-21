@@ -171,8 +171,13 @@ async function getDuration(filePath) {
     }
     filePath = cleanPath;
 
-    // 路径自动修复：如果不是绝对路径或文件不存在，尝试搜索
-    if (filePath && (!path.isAbsolute(filePath) || !fs.existsSync(filePath))) {
+    // A deleted absolute source is not a request to recursively search the
+    // user's Downloads/Desktop/Documents folders. That synchronous search
+    // can block Electron's main process on every restored background clip.
+    const absoluteMediaPath = path.isAbsolute(filePath) || /^[a-zA-Z]:[\\/]/.test(filePath);
+    if (absoluteMediaPath && !fs.existsSync(filePath)) return null;
+    // Keep legacy relative-name recovery only for explicitly relative paths.
+    if (filePath && !absoluteMediaPath && !fs.existsSync(filePath)) {
         const bareFileName = path.basename(filePath);
         const searchDirs = [
             path.join(os.homedir(), 'Downloads'),

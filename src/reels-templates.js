@@ -2207,21 +2207,33 @@ async function _openTemplateInWindow(templateId, templateName) {
 
 async function _loadTemplateInCurrentWindow(templateId, options = {}) {
     const st = _getLibState('template');
+    const loadId = (window._reelsTemplateLoadGeneration || 0) + 1;
+    window._reelsTemplateLoadGeneration = loadId;
+    const started = performance.now();
     try {
         const tplData = await _libApiRequest(st, 'get', { id: templateId });
+        if (loadId !== window._reelsTemplateLoadGeneration) return;
         if (!tplData || !tplData.projectData) throw new Error('模板缺少工程数据');
+        console.info('[TemplateLoad]', loadId, 'read', Math.round(performance.now() - started), 'ms');
+        // First task only: do not block the editor on every media file in a big template.
+        const firstProblems = await window.ReelsMediaAvailability?.preflightProject(tplData.projectData) || [];
+        if (loadId !== window._reelsTemplateLoadGeneration) return;
+        if (firstProblems.length) console.warn('[TemplateLoad]', loadId, 'background issues:', firstProblems.length);
+
 
         if (typeof window.reelsApplySealedTemplate === 'function' && !window.location?.hash?.startsWith('#template=')) {
             const ok = await window.reelsApplySealedTemplate(tplData, {
                 loadMode: options.append ? 'append' : 'replace',
                 confirmSwitch: options.confirmSwitch !== false,
+                loadId,
             });
-            if (!ok) return;
+            if (!ok || loadId !== window._reelsTemplateLoadGeneration) return;
             _setCurrentTemplateContext(tplData.id || templateId, tplData.name || '');
             const modal = document.getElementById(st.cfg.modalId);
             if (modal) modal.style.display = 'none';
             if (typeof openPanelByName === 'function') openPanelByName('batch-reels');
             showToast?.(`🔒 已载入模板「${tplData.name}」副本到工作区（修改副本不会影响原模板）`, 'success', 4000);
+            console.info('[TemplateLoad]', loadId, 'editor-ready', Math.round(performance.now() - started), 'ms');
             return;
         }
 

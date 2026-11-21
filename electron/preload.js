@@ -720,6 +720,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     createReelsFramePipeline: (...args) => _reelsFrameBridge.api.createReelsFramePipeline(...args),
     sendReelsFramePipeline: (...args) => _reelsFrameBridge.api.sendReelsFramePipeline(...args),
     closeReelsFramePipeline: (...args) => _reelsFrameBridge.api.closeReelsFramePipeline(...args),
+    checkReelsMediaStatus: (filePath, force = false) =>
+        ipcRenderer.invoke('reels-check-media-status', filePath, { force: force === true }),
     getMediaDuration: (filePath) => {
         if (!filePath || typeof filePath !== 'string') return 0;
         const cleanPath = localMediaUrlToPath(filePath);
