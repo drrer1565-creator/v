@@ -2,11 +2,14 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const path = require('node:path');
+const os = require('node:os');
+const { pathToFileURL } = require('node:url');
 const { ReelsMediaAvailability, classifyMediaPath } = require('../electron/services/reels-media-availability');
 
 test('file URLs, Chinese names and Windows paths are classified without destructive decoding', () => {
-    const url = classifyMediaPath('file:///tmp/%E5%86%9C%E5%9C%BA%20(1).mp4');
-    assert.equal(url.localPath, '/tmp/农场 (1).mp4');
+    const nativePath = path.join(os.tmpdir(), '农场 (1).mp4');
+    const url = classifyMediaPath(pathToFileURL(nativePath).href);
+    assert.equal(url.localPath, nativePath);
     assert.equal(classifyMediaPath('C:\\Video\\farm.mp4').localPath, 'C:\\Video\\farm.mp4');
     assert.equal(classifyMediaPath('blob:stale').status, 'unavailable');
     assert.equal(classifyMediaPath('https://example.org/video.mp4').status, 'available');
