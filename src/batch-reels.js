@@ -15646,6 +15646,39 @@ async function _reelsStartExportImpl(options = {}) {
         }
     } catch (error) { alert(error.message); return; }
     const workMode = _getWorkMode();
+    // Export is the final safety boundary. A missing pool member may still be
+    // referenced by the export plan even though preview filtered it out.
+    // Never silently produce a success with a substituted solid background.
+    const mediaHealth = window.ReelsMediaAvailability;
+    if (selectedForExport.length && mediaHealth?.check) {
+        const affected = [];
+        // Bound concurrent checks; keep task identity and original paths intact.
+        for (const task of selectedForExport) {
+            const mediaPaths = task.bgMode === 'multi' && Array.isArray(task.bgClipPool)
+                ? task.bgClipPool.filter(p => typeof p === 'string' && p.trim())
+                : [task.bgPath || task.videoPath || ''].filter(Boolean);
+            if (!mediaPaths.length) continue; // Existing validation handles truly empty backgrounds.
+            const results = await Promise.all([...new Set(mediaPaths)].map(path => mediaHealth.check(path)));
+            const bad = results.filter(result => result.status !== 'available');
+            if (bad.length) affected.push({ task, count: bad.length });
+        }
+        if (affected.length) {
+            const names = affected.slice(0, 8).map(({ task, count }) =>
+                `${task.fileName || task.baseName || taskRowLabel(task)}（${count} 个背景异常）`).join('\n');
+            const more = affected.length > 8 ? `\n另外还有 ${affected.length - 8} 个任务` : '';
+            const proceed = confirm(
+                `检测到 ${affected.length} 个任务的背景文件缺失或不可访问：\n\n${names}${more}\n\n点“确定”：跳过这些任务，仅导出其余正常任务。\n点“取消”：停止导出，保留原文件路径供重新选择。\n不会自动用纯色背景替代。`
+            );
+            if (!proceed) return;
+            const excluded = new Set(affected.map(entry => entry.task));
+            selectedForExport = selectedForExport.filter(task => !excluded.has(task));
+            if (!selectedForExport.length) {
+                showToast?.('本次选中的任务背景全部异常，导出已取消。请重新选择素材。', 'warning');
+                return;
+            }
+            _reelsAppendExportLogUI(`[前置检查] 已按用户选择跳过 ${affected.length} 个背景异常任务。\n`, 'warning');
+        }
+    }
     
     if (!skipPrompts && !localStorage.getItem('reelsQualityReminderShown')) {
         const proceed = confirm("【画质选择提醒】\\n\\n画质档位会显示目标码率和最大码率：\\n\\n• 口播低质量（默认 2/3 Mbps）：固定机位、人物和背景运动少\\n• 口播高质量（8/11 Mbps）：绿幕、细节多或人物动作较多\\n• Reels高质量（12 Mbps）：动态背景、转场和运动镜头\\n• 自定义码率：按需要手动设置\\n\\n建议先导出一个片段确认画质。您要继续当前导出吗？（本提示仅显示一次）");
