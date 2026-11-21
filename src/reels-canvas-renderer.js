@@ -9943,6 +9943,7 @@ if (typeof window !== 'undefined') {
 if (typeof module !== 'undefined' && module.exports) {
     module.exports = {
         ReelsCanvasRenderer,
+        HOLIDAY_ICON_CATALOG,
         parseSRT,
         formatSRTTime,
         generateASS,

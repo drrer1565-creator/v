@@ -38,6 +38,7 @@ try {
 } catch (_) {}
 
 const ffmpegService = require('../electron/services/ffmpeg');
+const canvaBridge = require('../electron/services/canva-bridge');
 const { routeAPI, routeUpload } = require('../electron/apiRouter');
 const { renderReelsTask, getPackageVersion } = require('./videokit-cli.cjs');
 
@@ -182,6 +183,10 @@ function streamFileWithRange(req, res, filePath, asAttachment = false) {
 
     headers['Content-Length'] = stat.size;
     res.writeHead(200, headers);
+    if (req.method === 'HEAD') {
+        res.end();
+        return;
+    }
     fs.createReadStream(filePath).pipe(res);
 }
 
@@ -795,13 +800,16 @@ function createWebServer(options = {}) {
     const assetsDir = path.join(repoRoot, 'assets');
     const fontsDir = path.join(repoRoot, 'resources', 'fonts');
     const customToken = options && options.token ? String(options.token).trim() : '';
+    const canvaJobManager = (options && options.canvaJobManager) || new canvaBridge.CanvaJobManager({
+        workRoot: path.join(defaultTempDir, 'canva-jobs'),
+    });
 
     return http.createServer(async (req, res) => {
         if (req.method === 'OPTIONS') {
             res.writeHead(204, {
                 'Access-Control-Allow-Origin': '*',
                 'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-                'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+                'Access-Control-Allow-Methods': 'GET, HEAD, POST, PUT, DELETE, OPTIONS',
             });
             res.end();
             return;
@@ -817,14 +825,29 @@ function createWebServer(options = {}) {
             sendJson(res, 200, {
                 status: 'ok',
                 mode: 'web-bridge',
-                version: typeof getPackageVersion === 'function' ? getPackageVersion() : '4.5.9',
+                version: typeof getPackageVersion === 'function' ? getPackageVersion() : '4.6.8',
                 commit: commit || undefined,
                 ui_source: uiInfo.source,
                 ui_reason: uiInfo.reason,
                 platform: process.platform,
                 arch: process.arch,
                 auth_required: Boolean(activeToken),
+                canva_bridge: true,
             });
+            return;
+        }
+
+        // Tokenized per-job file delivery for Canva @canva/asset upload() (no redirect, strict HTTPS/200 OK)
+        const canvaFileMatch = pathname.match(/^\/api\/canva\/files\/([^/]+)\/([^/]+)\/(render\.mp4|thumb\.jpg)$/);
+        if (canvaFileMatch && (req.method === 'GET' || req.method === 'HEAD')) {
+            const [, rawJobId, rawFileToken, fileName] = canvaFileMatch;
+            const kind = fileName === 'thumb.jpg' ? 'thumb' : 'video';
+            const resolved = canvaJobManager.resolveProtectedFile(rawJobId, rawFileToken, kind);
+            if (resolved.errorCode) {
+                sendJson(res, resolved.errorCode, { ok: false, error: resolved.error });
+                return;
+            }
+            streamFileWithRange(req, res, resolved.filePath, false);
             return;
         }
 
@@ -833,6 +856,38 @@ function createWebServer(options = {}) {
                 sendJson(res, 401, { ok: false, error: 'Unauthorized', code: 'UNAUTHORIZED' });
                 return;
             }
+        }
+
+        if (pathname === '/api/canva/presets' && req.method === 'GET') {
+            sendJson(res, 200, { ok: true, ...canvaBridge.buildCanvaPresetCatalog() });
+            return;
+        }
+
+        if (pathname === '/api/canva/render' && req.method === 'POST') {
+            try {
+                const buf = await readRequestBuffer(req, 2 * 1024 * 1024);
+                const body = JSON.parse(buf.toString('utf-8') || '{}');
+                const baseUrl = canvaBridge.resolvePublicBaseUrl(req);
+                const created = canvaJobManager.createJob(body, baseUrl);
+                sendJson(res, 202, {
+                    ...created,
+                    statusUrl: `${baseUrl}/api/canva/jobs/${encodeURIComponent(created.jobId)}`,
+                });
+            } catch (err) {
+                sendJson(res, 400, { ok: false, error: err.message || String(err) });
+            }
+            return;
+        }
+
+        const canvaJobMatch = pathname.match(/^\/api\/canva\/jobs\/([^/]+)$/);
+        if (canvaJobMatch && req.method === 'GET') {
+            const job = canvaJobManager.getJob(canvaJobMatch[1]);
+            if (!job) {
+                sendJson(res, 404, { ok: false, error: 'Canva render job not found' });
+                return;
+            }
+            sendJson(res, 200, canvaJobManager.serializeJob(job));
+            return;
         }
 
         if (pathname === '/api/presets' && req.method === 'GET') {

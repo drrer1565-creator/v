@@ -4937,7 +4937,7 @@ test('Scroll subtitle inspector organizes controls into clean collapsibles while
     assert.strictEqual((scrollBlock.match(/class="[^"]*rop-scroll-card-bg-preset/g) || []).length, 25);
     assert.strictEqual((scrollBlock.match(/class="[^"]*rop-scroll-corner-badge-quick/g) || []).length, 13);
     assert.strictEqual((scrollBlock.match(/class="[^"]*rop-scroll-body-bg-preset/g) || []).length, 13);
-    assert.strictEqual((scrollBlock.match(/class="[^"]*rop-scroll-tw-style-preset/g) || []).length, 10);
+    assert.strictEqual((scrollBlock.match(/class="[^"]*rop-scroll-tw-style-preset/g) || []).length, 14);
     assert.strictEqual((scrollBlock.match(/class="[^"]*rop-scroll-tw-icon-chip/g) || []).length, 41);
     assert.strictEqual((scrollBlock.match(/class="[^"]*rop-scroll-feather-preset/g) || []).length, 5);
 
@@ -7679,7 +7679,7 @@ test('Decor panel supports explicit apply-this-page (task) and apply-this-tab (t
     assert.strictEqual(tB1.overlays.find(o => o.type === 'decor')?.decor_style, 'cinema_35mm_grain', 'In task mode, tabB must remain untouched');
 });
 
-test('Curated 65 scroll presets (deduplicated from sc-01..sc-214) + all 31 boards & 78 emblems render cleanly and resolve legacy aliases', () => {
+test('All 214 scroll presets (sc-01..sc-214) + all 31 boards & 78 emblems render cleanly without collapsing variants', () => {
     const sandbox = loadBrowserScript('src/reels-anim-engine.js', {
         window: { addEventListener() {} },
     });
@@ -7694,8 +7694,8 @@ test('Curated 65 scroll presets (deduplicated from sc-01..sc-214) + all 31 board
 
     const { ReelsOverlay, ReelsBrushEngine, REELS_BUILTIN_SCROLL_STYLE_PRESETS, REELS_SCROLL_PRESET_ID_MAP, resolveBuiltinPreset } = sandbox.window;
 
-    assert.strictEqual(Object.keys(REELS_BUILTIN_SCROLL_STYLE_PRESETS).length, 65, 'Expected 65 curated deduplicated built-in scroll style presets');
-    assert.strictEqual(Object.keys(REELS_SCROLL_PRESET_ID_MAP).length, 130, 'Expected 130 curated scroll preset ID mappings (sc-* & scroll-*)');
+    assert.strictEqual(Object.keys(REELS_BUILTIN_SCROLL_STYLE_PRESETS).length, 214, 'Expected all 214 built-in scroll style presets');
+    assert.strictEqual(Object.keys(REELS_SCROLL_PRESET_ID_MAP).length, 428, 'Expected all 428 scroll preset ID mappings (sc-01..214 & scroll-01..214)');
 
     const newBoardIds = [
         'kraft_torn_note', 'kraft_stamped_letter', 'kraft_espresso_prayer',
@@ -7762,32 +7762,37 @@ test('Curated 65 scroll presets (deduplicated from sc-01..sc-214) + all 31 board
         createPattern() { return null; },
     };
 
-    // 1. Validate & render all curated scroll presets (zero duplicate boards across curated prayer/Xmas/Thx cards)
+    // 1. Validate & render all 214 scroll presets sc-01..sc-214 directly without alias collapsing
     const seenNames = new Set();
     const seenCardBoardsInNaSpecs = new Set();
     const seenCategories = new Set();
-    for (const [name, style] of Object.entries(REELS_BUILTIN_SCROLL_STYLE_PRESETS)) {
-        const scId = style.preset_id;
-        assert.ok(scId, `Preset "${name}" must carry preset_id`);
-        const num = Number(scId.replace(/^sc-/, ''));
-        const aliasId = `scroll-${scId.replace(/^sc-/, '')}`;
+    const seenXmasEmblems = new Set();
+    for (let num = 1; num <= 214; num++) {
+        const pad = num < 10 ? `0${num}` : `${num}`;
+        const scId = `sc-${pad}`;
+        const aliasId = `scroll-${pad}`;
         const resolved = resolveBuiltinPreset(scId);
         const aliasResolved = resolveBuiltinPreset(aliasId);
         assert.ok(resolved && resolved.kind === 'scroll_style' && resolved.style, `${scId} must resolve`);
+        assert.strictEqual(resolved.id, scId, `${scId} must resolve directly to itself without collapsing`);
         assert.ok(aliasResolved && aliasResolved.name === resolved.name, `${aliasId} must alias ${resolved.name}`);
         assert.ok(!seenNames.has(resolved.name), `Duplicate scroll style name: ${resolved.name}`);
         seenNames.add(resolved.name);
         seenCategories.add(resolved.category);
+        const style = resolved.style;
         if (style.bg_enabled && style.bg_style) {
             assert.ok(ReelsBrushEngine.CARD_BACKGROUND_STYLES[style.bg_style], `${scId} bg_style ${style.bg_style} must exist`);
         }
         if (num >= 49) {
-            assert.ok(!seenCardBoardsInNaSpecs.has(style.bg_style), `Curated NA prayer/seasonal preset ${scId} must not duplicate board ${style.bg_style}`);
             seenCardBoardsInNaSpecs.add(style.bg_style);
             assert.strictEqual(style.bg_width, 0, `${scId} card width must auto-follow subtitle clip box (bg_width === 0)`);
             assert.strictEqual(style.bg_height, 0, `${scId} card height must auto-follow subtitle clip box (bg_height === 0)`);
             assert.strictEqual(style.bg_scroll_follow, true, `${scId} must enable bg_scroll_follow`);
             assert.strictEqual(style.feather_mode, 'clip', `${scId} must use clip feathering so card and text fade/expand together`);
+        }
+        if (num >= 149 && num <= 198) {
+            if (style.bg_bookmark_style) seenXmasEmblems.add(style.bg_bookmark_style);
+            if (style.bg_top_mascot && style.bg_top_mascot !== 'none') seenXmasEmblems.add(style.bg_top_mascot);
         }
 
         const ov = ReelsOverlay.createScrollOverlay({
@@ -7809,16 +7814,15 @@ test('Curated 65 scroll presets (deduplicated from sc-01..sc-214) + all 31 board
         ReelsOverlay.drawOverlay(mockCtx, ov, 3.2, 1080, 1920);
     }
 
-    assert.strictEqual(seenCategories.size, 10, 'Expected all 10 curated scroll preset categories');
-    assert.ok(drawCalls.fillText > 60, 'Expected fillText calls when rendering all 65 curated presets');
-
-    // Verify all 214 legacy IDs (sc-01..sc-214 & scroll-01..scroll-214) still resolve silently for old project compatibility
-    for (let num = 1; num <= 214; num++) {
-        const pad = num < 10 ? `0${num}` : `${num}`;
-        const r1 = resolveBuiltinPreset(`sc-${pad}`);
-        const r2 = resolveBuiltinPreset(`scroll-${pad}`);
-        assert.ok(r1 && r1.kind === 'scroll_style' && r1.style, `Legacy ID sc-${pad} must resolve safely`);
-        assert.ok(r2 && r2.name === r1.name, `Legacy alias scroll-${pad} must resolve to same preset as sc-${pad}`);
+    assert.ok(seenCategories.size >= 16, `Expected full scroll preset categories, got ${seenCategories.size}`);
+    assert.ok(drawCalls.fillText > 200, 'Expected fillText calls when rendering all 214 presets');
+    for (const bid of [...newBoardIds, ...newXmasBoardIds]) {
+        assert.ok(seenCardBoardsInNaSpecs.has(bid), `At least one sc-49..sc-198 preset must showcase board ${bid}`);
+    }
+    const expectedXmasEmblems = emblemKeys.filter(k => k.startsWith('na_xmas_'));
+    assert.strictEqual(expectedXmasEmblems.length, 12, 'Expected 12 na_xmas_* emblems');
+    for (const eid of expectedXmasEmblems) {
+        assert.ok(seenXmasEmblems.has(eid), `Christmas presets sc-149..sc-198 must feature emblem ${eid}`);
     }
 
     // Verify every single board definition in newBoardIds + newXmasBoardIds still draws cleanly via createScrollOverlay
@@ -8082,8 +8086,8 @@ test('Atmospheric Scroll Style Preview Studio Modal (.rsl-dialog): categories, m
     const modal = appendedById['rop-scroll-style-picker-popover'];
     assert.ok(modal && modal.classList.contains('rsl-backdrop'), 'Modal #rop-scroll-style-picker-popover must use rsl-backdrop class');
     assert.ok(modal.innerHTML.includes('rsl-dialog'), 'Modal must render centered .rsl-dialog');
-    assert.strictEqual(modal.querySelectorAll('.rsl-card').length, 65, 'All 65 curated scroll cards must render inside studio grid');
-    assert.ok(modal.querySelectorAll('.rsl-chip').length >= 10, 'Expected material/element filter chips including 圣诞贺卡');
+    assert.strictEqual(modal.querySelectorAll('.rsl-card').length, 214, 'All 214 scroll cards must render inside studio grid');
+    assert.ok(modal.querySelectorAll('.rsl-chip').length >= 12, 'Expected full material/element filter chips including life and christmas');
     assert.ok(rafQueue.length > 0, 'Lazy canvas thumbnail & stage RAF loops must be scheduled');
 
     // Flush lazy thumbnail pump batch (renders first 4 cards cleanly)
@@ -8096,24 +8100,24 @@ test('Atmospheric Scroll Style Preview Studio Modal (.rsl-dialog): categories, m
     assert.ok(oldPhotoChip, 'Expected 老照片 filter chip');
     oldPhotoChip.dispatchEvent({ type: 'click' });
     const visibleAfterChip = modal.querySelectorAll('.rsl-card').filter(c => c.style.display !== 'none');
-    assert.ok(visibleAfterChip.length > 0 && visibleAfterChip.length < 65, 'Selecting oldphoto chip should filter cards');
-    assert.ok(modal.querySelector('.rsl-count-readout').textContent.includes(`显示 ${visibleAfterChip.length} / 65`));
+    assert.ok(visibleAfterChip.length > 0 && visibleAfterChip.length < 214, 'Selecting oldphoto chip should filter cards');
+    assert.ok(modal.querySelector('.rsl-count-readout').textContent.includes(`显示 ${visibleAfterChip.length} / 214`));
 
-    // Verify Christmas chip shows curated Christmas cards (and does NOT include sc-199..sc-214 Thanksgiving cards)
+    // Verify Christmas chip shows all 50 Christmas cards sc-149..sc-198 (and does NOT include sc-199..sc-214 Thanksgiving cards)
     oldPhotoChip.dispatchEvent({ type: 'click' });
     const xmasChip = modal.querySelectorAll('.rsl-chip').find(c => c.dataset.flag === 'christmas');
     assert.ok(xmasChip, 'Expected 🎄 圣诞贺卡 filter chip');
     xmasChip.dispatchEvent({ type: 'click' });
     const xmasCards = modal.querySelectorAll('.rsl-card').filter(c => c.style.display !== 'none');
-    assert.ok(xmasCards.length >= 11 && xmasCards.length < 65, `Expected >= 11 curated Christmas scroll cards without overflowing into sc-199..214, got ${xmasCards.length}`);
+    assert.ok(xmasCards.length >= 50 && xmasCards.length < 214, `Expected >= 50 Christmas scroll cards without overflowing into sc-199..214, got ${xmasCards.length}`);
 
-    // Verify Thanksgiving chip shows curated sc-199..sc-213 minimalist autumn/prayer cards
+    // Verify Thanksgiving chip shows all 16 Thanksgiving cards sc-199..sc-214 minimalist autumn/prayer cards
     xmasChip.dispatchEvent({ type: 'click' });
     const thxChip = modal.querySelectorAll('.rsl-chip').find(c => c.dataset.flag === 'thanksgiving');
     assert.ok(thxChip, 'Expected 🍂 感恩节极简 filter chip');
     thxChip.dispatchEvent({ type: 'click' });
     const thxCards = modal.querySelectorAll('.rsl-card').filter(c => c.style.display !== 'none');
-    assert.ok(thxCards.length >= 6 && thxCards.length < 65, `Expected >= 6 curated Thanksgiving scroll cards without leaking Christmas deck, got ${thxCards.length}`);
+    assert.ok(thxCards.length >= 16 && thxCards.length < 214, `Expected >= 16 Thanksgiving scroll cards without leaking Christmas deck, got ${thxCards.length}`);
 
     // Clear chip & search for 白头鹰
     thxChip.dispatchEvent({ type: 'click' });
@@ -9504,17 +9508,14 @@ test('Thanksgiving Pinterest minimalist presets (sub-229..sub-244), sc-199..sc-2
     assert.equal(richCounts.saveCount, richCounts.restoreCount, 'drawRichText box_wipe + cursor must balance save/restore');
     assert.ok(richCtx._ops.some(o => o.op === 'fillText'), 'drawRichText box_wipe + cursor must render text');
 
-    // 3. Verify curated Thanksgiving scroll prayer/lifestyle cards & retired alias resolution
-    const curatedThx = [199, 202, 205, 208, 212, 213];
+    // 3. Verify all 16 Thanksgiving scroll prayer/lifestyle cards resolve directly without aliasing
     for (let sc = 199; sc <= 214; sc++) {
         const resolved = resolveBuiltinPreset(`sc-${sc}`);
         assert.ok(resolved && resolved.style, `sc-${sc} must resolve via resolveBuiltinPreset with .style`);
         assert.equal(resolved.category, '🍂 感恩节 · 极简秋日与祈祷卡', `sc-${sc} must carry Thanksgiving category`);
         const scPreset = REELS_BUILTIN_SCROLL_STYLE_PRESETS[resolved.name];
         assert.ok(scPreset, `sc-${sc} resolved target "${resolved.name}" must exist in REELS_BUILTIN_SCROLL_STYLE_PRESETS`);
-        if (curatedThx.includes(sc)) {
-            assert.strictEqual(scPreset.preset_id, `sc-${sc}`, `Curated sc-${sc} must map directly to itself`);
-        }
+        assert.strictEqual(scPreset.preset_id, `sc-${sc}`, `sc-${sc} must map directly to itself`);
         assert.equal(scPreset.category, '🍂 感恩节 · 极简秋日与祈祷卡', `sc-${sc} preset must carry Thanksgiving category`);
         assert.ok(String(scPreset.bg_style || '').startsWith('thx_'), `sc-${sc} must use a Thanksgiving thx_* card board (got ${scPreset.bg_style})`);
 

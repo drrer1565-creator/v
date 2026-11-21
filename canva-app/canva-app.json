@@ -1,0 +1,25 @@
+{
+  "$schema": "https://www.canva.dev/schemas/canva-app.schema.json",
+  "name": "VideoKit Reels & Subtitles",
+  "entrypoint": "src/index.tsx",
+  "runtime": {
+    "permissions": [
+      {
+        "name": "canva:design:content:read",
+        "type": "mandatory"
+      },
+      {
+        "name": "canva:design:content:write",
+        "type": "mandatory"
+      },
+      {
+        "name": "canva:asset:private:read",
+        "type": "optional"
+      },
+      {
+        "name": "canva:asset:private:write",
+        "type": "mandatory"
+      }
+    ]
+  }
+}

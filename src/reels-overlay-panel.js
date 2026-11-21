@@ -1038,15 +1038,15 @@ class ReelsOverlayPanel {
                         </label>
                     </div>
 
-                    <!-- 🎨 滚动字幕样式预设（精选去重保留精品 / 兼容旧编号 sc-01 ~ sc-214） -->
+                    <!-- 🎨 滚动字幕样式预设（全量 sc-01 ~ sc-214） -->
                     <div class="rop-scroll-preset-card">
                         <div style="font-size:11px;font-weight:700;color:#7dd3fc;margin-bottom:5px;display:flex;justify-content:space-between;align-items:center;">
-                            <span id="rop-scroll-style-preset-heading">🎨 滚动字幕样式预设 (精选精品)</span>
+                            <span id="rop-scroll-style-preset-heading">🎨 滚动字幕样式预设 (sc-01 ~ sc-214)</span>
                             <button type="button" id="rop-scroll-style-picker-btn" class="rop-btn" style="padding:2px 8px;font-size:11px;font-weight:700;background:linear-gradient(135deg,#0284c7,#2563eb);color:#ffffff;border:1px solid rgba(125,211,252,0.45);border-radius:5px;cursor:pointer;" title="打开大气全景滚动字幕样式预览弹窗库">🎨 样式库预览</button>
                         </div>
                         <div style="display:flex;gap:4px;align-items:center;">
                             <select id="rop-scroll-style-preset-select" class="rop-select" style="flex:1;min-width:0;font-size:11px;">
-                                <option value="">— 选择滚动字幕样式 (精选精品) —</option>
+                                <option value="">— 选择滚动字幕样式 (sc-01 ~ sc-214) —</option>
                             </select>
                             <button type="button" id="rop-scroll-style-preset-apply" class="rop-btn" style="padding:3px 8px;font-size:11px;white-space:nowrap;background:rgba(56,189,248,0.18);color:#e0f2fe;border:1px solid rgba(56,189,248,0.35);border-radius:4px;cursor:pointer;" title="应用所选滚动字幕样式">应用</button>
                             <button type="button" id="rop-scroll-style-preset-save" class="rop-btn" style="padding:3px 7px;font-size:11px;white-space:nowrap;background:rgba(34,197,94,0.16);color:#dcfce7;border:1px solid rgba(34,197,94,0.35);border-radius:4px;cursor:pointer;" title="将当前滚动字幕样式保存为自定义预设">保存</button>
@@ -1460,7 +1460,7 @@ class ReelsOverlayPanel {
                                 <div id="rop-scroll-tw-details" class="rop-grid" style="grid-column:span 2;display:none;">
                                     <details class="rop-scroll-subacc" id="rop-scroll-acc-tw-presets">
                                         <summary>
-                                            <span>✨ 一键出字爆款预设 (10款)</span>
+                                            <span>✨ 一键出字爆款预设 (14款)</span>
                                             <span class="rop-acc-badge">点击展开</span>
                                         </summary>
                                         <div class="rop-scroll-subacc-body">
@@ -1468,9 +1468,13 @@ class ReelsOverlayPanel {
                                                 <button type="button" class="btn btn-secondary rop-scroll-tw-style-preset rop-chip-btn is-wide" data-preset="prayer_dove_green">🕊️ 祈祷书签绿卡+白鸽玫瑰+逐行金线跟读</button>
                                                 <button type="button" class="btn btn-secondary rop-scroll-tw-style-preset rop-chip-btn is-wide" data-preset="newspaper">📰 复古旧报纸剪报贴字出字</button>
                                                 <button type="button" class="btn btn-secondary rop-scroll-tw-style-preset rop-chip-btn" data-preset="vet_stars_stripes">🇺🇸 星条旗绶带+星盾笔</button>
+                                                <button type="button" class="btn btn-secondary rop-scroll-tw-style-preset rop-chip-btn" data-preset="vet_honor_medal">🎖️ 老兵金章带+紫心勋章</button>
                                                 <button type="button" class="btn btn-secondary rop-scroll-tw-style-preset rop-chip-btn" data-preset="xmas_candy">🍬 圣诞拐杖糖带+糖笔</button>
                                                 <button type="button" class="btn btn-secondary rop-scroll-tw-style-preset rop-chip-btn" data-preset="xmas_pine">🎄 圣诞松林覆雪+圣诞树</button>
+                                                <button type="button" class="btn btn-secondary rop-scroll-tw-style-preset rop-chip-btn" data-preset="newspaper_sepia">🗞️ 泛黄古董报刊出字</button>
+                                                <button type="button" class="btn btn-secondary rop-scroll-tw-style-preset rop-chip-btn" data-preset="torn_paper">📜 奶油手撕宣纸出字</button>
                                                 <button type="button" class="btn btn-secondary rop-scroll-tw-style-preset rop-chip-btn" data-preset="quill">🪶 羽毛笔朗诵写出</button>
+                                                <button type="button" class="btn btn-secondary rop-scroll-tw-style-preset rop-chip-btn" data-preset="rose">🌹 玫瑰花朗诵写出</button>
                                                 <button type="button" class="btn btn-secondary rop-scroll-tw-style-preset rop-chip-btn" data-preset="image">🖼 上传图片朗诵写出</button>
                                                 <button type="button" class="btn btn-secondary rop-scroll-tw-style-preset rop-chip-btn" data-preset="readfollow">📖 原文不透明跟读高亮</button>
                                                 <button type="button" class="btn btn-secondary rop-scroll-tw-style-preset rop-chip-btn is-wide" data-preset="rainbow_karaoke">🌈 彩虹渐变逐词跟读 (已读保留彩虹·未读纯白)</button>
@@ -8864,15 +8868,15 @@ class ReelsOverlayPanel {
         sel.innerHTML = '';
 
         const builtins = window.REELS_BUILTIN_SCROLL_STYLE_PRESETS || {};
-        const totalBuiltins = Object.keys(builtins).length;
+        const totalBuiltins = Object.keys(builtins).length || 214;
         const headingEl = this.container?.querySelector('#rop-scroll-style-preset-heading');
         if (headingEl) {
-            headingEl.textContent = `🎨 滚动字幕样式预设 (精选 ${totalBuiltins} 款)`;
+            headingEl.textContent = `🎨 滚动字幕样式预设 (sc-01 ~ sc-${totalBuiltins})`;
         }
 
         const placeholder = document.createElement('option');
         placeholder.value = '';
-        placeholder.textContent = `— 选择滚动字幕样式 (精选 ${totalBuiltins} 款) —`;
+        placeholder.textContent = `— 选择滚动字幕样式 (sc-01 ~ sc-${totalBuiltins}) —`;
         sel.appendChild(placeholder);
 
         const groups = new Map();
@@ -9034,10 +9038,10 @@ class ReelsOverlayPanel {
         const sel = this.container?.querySelector('#rop-scroll-style-preset-select');
         const val = sel?.value || '';
         const builtins = window.REELS_BUILTIN_SCROLL_STYLE_PRESETS || {};
-        const totalBuiltins = Object.keys(builtins).length;
+        const totalBuiltins = Object.keys(builtins).length || 214;
         if (!val.startsWith('custom:')) {
             if (typeof window.alert === 'function') {
-                window.alert(`内置滚动字幕样式 (精选 ${totalBuiltins} 款) 不可删除，请选择“⭐ 自定义保存样式”后再删除。`);
+                window.alert(`内置滚动字幕样式 (sc-01 ~ sc-${totalBuiltins}) 不可删除，请选择“⭐ 自定义保存样式”后再删除。`);
             }
             return;
         }
@@ -9097,6 +9101,7 @@ class ReelsOverlayPanel {
             if (emblemInfo) tags.push(emblemInfo.label.replace(/^\S+\s+/, ''));
             if (st.scroll_tw_underline_enabled) tags.push('金线跟读');
             return {
+                isNew100: num >= 49 && num <= 148,
                 isPrayerBoard: Boolean(st.bg_enabled) && num >= 39 && num <= 148 && num !== 48,
                 isChristmas: (num >= 149 && num <= 198) || /xmas|christmas|圣诞/.test(hay),
                 isThanksgiving: (num >= 199 && num <= 214) || (!(num >= 149 && num <= 198) && !/xmas|christmas|圣诞/.test(hay) && /thx|thanksgiving|感恩/.test(hay)),
@@ -9188,11 +9193,13 @@ class ReelsOverlayPanel {
         modal.id = 'rop-scroll-style-picker-popover';
         modal.className = 'rsl-backdrop';
 
+        const builtinCount = Object.keys(builtins).length;
+        const new100Count = items.filter(it => it.isNew100).length;
         const prayerBoardCount = items.filter(it => it.isPrayerBoard).length;
         const thanksgivingCount = items.filter(it => it.isThanksgiving).length;
         const christmasCount = items.filter(it => it.isChristmas).length;
         const customCount = items.filter(it => it.isCustom).length;
-        const countBadgeText = `精选 ${items.length} 款（已去重保留精品）`;
+        const countBadgeText = `共 ${items.length} 款 · sc-01 ~ sc-${builtinCount}`;
 
         const FILTER_CHIPS = [
             ['thanksgiving', '🍂 感恩节简约'],
@@ -9206,6 +9213,7 @@ class ReelsOverlayPanel {
             ['americana', '🇺🇸 宗教与美国'],
             ['floral', '🌸 花草自然'],
             ['animal', '🐦 动物萌宠'],
+            ['life', '🍔 美食/节日/旅途/音乐'],
             ['typewriter', '✍️ 打字跟读'],
         ].filter(([k]) => items.some(it => it.flags.has(k)));
 
@@ -9251,6 +9259,7 @@ class ReelsOverlayPanel {
                     <button type="button" class="rsl-nav-btn active" data-group="all"><span>全部滚动样式</span><small>${items.length}</small></button>
                     <button type="button" class="rsl-nav-btn" data-group="__thanksgiving__"><span>🍂 感恩节秋日简约专区</span><small>${thanksgivingCount}</small></button>
                     <button type="button" class="rsl-nav-btn" data-group="__christmas__"><span>🎄 圣诞卡片专区</span><small>${christmasCount}</small></button>
+                    <button type="button" class="rsl-nav-btn" data-group="__new_100__"><span>✨ 新增100款祷告风</span><small>${new100Count}</small></button>
                     <button type="button" class="rsl-nav-btn" data-group="__prayer_boards__"><span>🕊️ 精品祈祷画板</span><small>${prayerBoardCount}</small></button>
                     <button type="button" class="rsl-nav-btn" data-group="__favorites__"><span>⭐ 我的收藏</span><small class="rsl-fav-count">${favorites.size}</small></button>
                     <button type="button" class="rsl-nav-btn" data-group="__custom__"><span>💾 自定义保存</span><small>${customCount}</small></button>
@@ -9402,7 +9411,8 @@ class ReelsOverlayPanel {
                 const it = items[Number(cardEl.dataset.index)];
                 if (!it) return;
                 let ok = true;
-                if (activeGroup === '__prayer_boards__') ok = it.isPrayerBoard;
+                if (activeGroup === '__new_100__') ok = it.isNew100;
+                else if (activeGroup === '__prayer_boards__') ok = it.isPrayerBoard;
                 else if (activeGroup === '__thanksgiving__') ok = it.isThanksgiving;
                 else if (activeGroup === '__christmas__') ok = it.isChristmas;
                 else if (activeGroup === '__favorites__') ok = favorites.has(it.key);

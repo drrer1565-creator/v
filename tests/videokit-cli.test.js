@@ -547,14 +547,14 @@ test('A20: All 114 preset IDs (se-*, sub-*, scroll-*, ov-*), Canvas style routin
         resolveBuiltinPreset,
     } = require('../src/reels-presets-init.js');
 
-    // 1. All 283 subtitle/scroll preset IDs + 35 overlay preset IDs + 130 curated scroll style IDs (and all legacy aliases sc-01..sc-214) must resolve
+    // 1. All 283 subtitle/scroll preset IDs + 35 overlay preset IDs + 428 scroll style IDs (sc-01..sc-214 & scroll-01..scroll-214) must resolve
     const subIds = Object.keys(REELS_PRESET_ID_MAP);
     const ovIds = Object.keys(REELS_OVERLAY_PRESET_ID_MAP);
     const scIds = Object.keys(REELS_SCROLL_PRESET_ID_MAP);
     assert.equal(subIds.length, 283, 'Expected 283 subtitle/scroll preset IDs');
     assert.equal(ovIds.length, 35, 'Expected 35 overlay preset IDs');
-    assert.equal(Object.keys(REELS_BUILTIN_SCROLL_STYLE_PRESETS).length, 65, 'Expected 65 curated builtin scroll style presets');
-    assert.equal(scIds.length, 130, 'Expected 130 curated scroll style ID mappings');
+    assert.equal(Object.keys(REELS_BUILTIN_SCROLL_STYLE_PRESETS).length, 214, 'Expected all 214 builtin scroll style presets');
+    assert.equal(scIds.length, 428, 'Expected all 428 scroll style ID mappings (sc-01..sc-214 & scroll-01..scroll-214)');
     for (const id of [...subIds, ...ovIds, ...scIds]) {
         const resolved = resolveBuiltinPreset(id);
         assert.ok(resolved, `Preset ID ${id} must resolve`);
@@ -799,4 +799,165 @@ test('A24: CLI routes draggable Christmas sticker overlays to wysiwyg engine aut
     const routed = resolveTaskEngine({ engine: 'auto' }, {}, [{ type: 'sticker', sticker_kind: 'jingle_bell', x: 410, y: 220, w: 260, h: 260 }]);
     assert.equal(routed.engine, 'wysiwyg');
     assert.match(routed.engineReason, /overlay_type=sticker/);
+});
+
+test('A25: Canva bridge SSRF protection, preset catalog, async job queue, tokenized media endpoints, and Canva App scaffold', async () => {
+    const http = require('node:http');
+    const {
+        assertSafeCanvaMediaUrl,
+        buildAutoSegmentsFromText,
+        buildCanvaPresetCatalog,
+        CanvaJobManager,
+    } = require('../electron/services/canva-bridge');
+    const { createWebServer } = require('../bin/videokit-web-server.cjs');
+
+    // 1. Strict HTTPS & SSRF protections
+    assert.throws(() => assertSafeCanvaMediaUrl('http://example.com/a.mp4'), /HTTPS/);
+    assert.throws(() => assertSafeCanvaMediaUrl('https://localhost/a.mp4'), /本机或内网/);
+    assert.throws(() => assertSafeCanvaMediaUrl('https://127.0.0.1/a.mp4'), /本机或内网/);
+    assert.throws(() => assertSafeCanvaMediaUrl('https://169.254.169.254/latest/meta-data'), /本机或内网/);
+    assert.throws(() => assertSafeCanvaMediaUrl('https://192.168.1.10/a.mp4'), /本机或内网/);
+    assert.throws(() => assertSafeCanvaMediaUrl('https://[::1]/a.mp4'), /本机或内网/);
+    assert.throws(() => assertSafeCanvaMediaUrl('https://user:pass@export-download.canva.com/a.mp4'), /凭据/);
+    assert.equal(assertSafeCanvaMediaUrl('https://export-download.canva.com/v/clip.mp4').hostname, 'export-download.canva.com');
+
+    // 2. Auto timed segments from multiline text
+    const segs = buildAutoSegmentsFromText('Line one prayer.\nLine two peace and grace.', 8);
+    assert.equal(segs.length, 2);
+    assert.equal(segs[0].start, 0);
+    assert.ok(segs[0].end > 0 && segs[0].end <= segs[1].start + 0.001);
+    assert.equal(segs[1].end, 8);
+
+    // 3. Preset catalog reflects restored 214 scroll styles + 250 subtitles + Cardinal feather cursor + sentence reveal
+    const catalog = buildCanvaPresetCatalog();
+    assert.equal(catalog.scrolls.length, 214, 'Canva catalog must expose all 214 restored sc-* presets');
+    assert.equal(catalog.subtitles.length, 250, 'Canva catalog must expose all 250 sub-* presets');
+    assert.equal(catalog.overlays.length, 35, 'Canva catalog must expose all 35 ov-* presets');
+    assert.ok(catalog.cursorIcons.some(c => c.id === 'cardinal_feather'), 'Canva catalog must include cardinal_feather');
+    assert.ok(catalog.revealTypes.some(r => r.id === 'sentence'), 'Canva catalog must include sentence reveal option');
+
+    // 4. End-to-end async Canva render HTTP flow via createWebServer
+    const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'vk-canva-test-'));
+    const recordedTasks = [];
+    let webServer = null;
+    let mockCanvaServer = null;
+    try {
+        mockCanvaServer = http.createServer((req, res) => {
+            res.writeHead(200, { 'Content-Type': 'video/mp4' });
+            res.end(Buffer.from('FAKE_CANVA_MP4_BYTES_123456'));
+        });
+        await new Promise(resolve => mockCanvaServer.listen(0, '127.0.0.1', resolve));
+        const mockCanvaPort = mockCanvaServer.address().port;
+
+        const jobMgr = new CanvaJobManager({
+            workRoot: tmpRoot,
+            allowInsecureTestHttp: true,
+            allowLocalhostMedia: true,
+            ffmpeg: {
+                getDuration: async () => 6.0,
+                runCommand: async (_cmd, args) => {
+                    const outThumb = args[args.length - 1];
+                    fs.writeFileSync(outThumb, Buffer.from([0xff, 0xd8, 0xff, 0xd9]));
+                },
+            },
+            renderReelsTask: async (taskFile, cliArgs) => {
+                const taskJson = JSON.parse(fs.readFileSync(taskFile, 'utf-8'));
+                recordedTasks.push(taskJson);
+                fs.writeFileSync(cliArgs.output, Buffer.from('RENDERED_VIDEOKIT_MP4'));
+                return { output: cliArgs.output, engine: 'wysiwyg', duration: taskJson.duration };
+            },
+        });
+
+        webServer = createWebServer({ token: 'canva-test-token', canvaJobManager: jobMgr });
+        await new Promise(resolve => webServer.listen(0, '127.0.0.1', resolve));
+        const serverPort = webServer.address().port;
+        const base = `http://127.0.0.1:${serverPort}`;
+
+        // Unauthorized call rejected
+        const unauthRes = await fetch(`${base}/api/canva/presets`);
+        assert.equal(unauthRes.status, 401);
+
+        // Authorized presets listing
+        const presetsRes = await fetch(`${base}/api/canva/presets`, {
+            headers: { Authorization: 'Bearer canva-test-token' },
+        });
+        assert.equal(presetsRes.status, 200);
+        const presetsBody = await presetsRes.json();
+        assert.equal(presetsBody.scrolls.length, 214);
+
+        // Submit Canva render job with Cardinal feather & sentence reveal behind forwarded HTTPS proxy headers
+        const renderRes = await fetch(`${base}/api/canva/render`, {
+            method: 'POST',
+            headers: {
+                Authorization: 'Bearer canva-test-token',
+                'Content-Type': 'application/json',
+                'X-Forwarded-Proto': 'https',
+                'X-Forwarded-Host': 'studio.example.com',
+            },
+            body: JSON.stringify({
+                mediaUrl: `http://127.0.0.1:${mockCanvaPort}/page-export.mp4`,
+                preset: 'sc-39',
+                revealType: 'sentence',
+                cursorKind: 'cardinal_feather',
+                scrollTitle: 'MORNING PRAYER',
+                text: 'Line one.\nLine two.',
+            }),
+        });
+        assert.equal(renderRes.status, 202);
+        const created = await renderRes.json();
+        assert.ok(created.jobId);
+        assert.equal(created.statusUrl, `https://studio.example.com/api/canva/jobs/${created.jobId}`);
+
+        // Wait for async job completion
+        await jobMgr.jobs.get(created.jobId)._promise;
+
+        const statusRes = await fetch(`${base}/api/canva/jobs/${created.jobId}`, {
+            headers: { Authorization: 'Bearer canva-test-token' },
+        });
+        assert.equal(statusRes.status, 200);
+        const jobStatus = await statusRes.json();
+        assert.equal(jobStatus.status, 'done');
+        assert.ok(jobStatus.outputUrl.startsWith(`https://studio.example.com/api/canva/files/${created.jobId}/`));
+        assert.ok(jobStatus.outputUrl.endsWith('/render.mp4'));
+        assert.ok(jobStatus.thumbnailUrl.endsWith('/thumb.jpg'));
+
+        // Verify generated VideoKit task JSON properties
+        assert.equal(recordedTasks.length, 1);
+        assert.equal(recordedTasks[0].duration, 6.0);
+        assert.equal(recordedTasks[0].bgVolume, 1.0);
+        assert.equal(recordedTasks[0].overlays[0].scroll_tw_reveal_type, 'sentence');
+        assert.equal(recordedTasks[0].overlays[0].scroll_tw_cursor_kind, 'cardinal_feather');
+
+        // Verify tokenized file route works for Canva fetch (HEAD + GET 200 OK) & rejects forged tokens
+        const fileRel = new URL(jobStatus.outputUrl).pathname;
+        const badFileRes = await fetch(`${base}/api/canva/files/${created.jobId}/deadbeef00000000/render.mp4`);
+        assert.equal(badFileRes.status, 403);
+
+        const headRes = await fetch(`${base}${fileRel}`, { method: 'HEAD' });
+        assert.equal(headRes.status, 200);
+        assert.equal(headRes.headers.get('content-type'), 'video/mp4');
+
+        const dlRes = await fetch(`${base}${fileRel}`);
+        assert.equal(dlRes.status, 200);
+        assert.equal(await dlRes.text(), 'RENDERED_VIDEOKIT_MP4');
+    } finally {
+        if (webServer) await new Promise(r => webServer.close(r));
+        if (mockCanvaServer) await new Promise(r => mockCanvaServer.close(r));
+        try { fs.rmSync(tmpRoot, { recursive: true, force: true }); } catch (_) {}
+    }
+
+    // 5. Verify Canva App plugin scaffold exists & wires official Canva SDK APIs
+    const appDir = path.join(repoRoot, 'canva-app');
+    const manifest = JSON.parse(fs.readFileSync(path.join(appDir, 'canva-app.json'), 'utf-8'));
+    const permNames = manifest.runtime.permissions.map(p => p.name);
+    for (const reqPerm of ['canva:design:content:read', 'canva:design:content:write', 'canva:asset:private:write']) {
+        assert.ok(permNames.includes(reqPerm), `canva-app.json must request permission ${reqPerm}`);
+    }
+    const appTsx = fs.readFileSync(path.join(appDir, 'src', 'app.tsx'), 'utf-8');
+    assert.match(appTsx, /requestExport/);
+    assert.match(appTsx, /upload\(/);
+    assert.match(appTsx, /addElementAtPoint/);
+    assert.match(appTsx, /addElementAtCursor/);
+    assert.match(appTsx, /cardinal_feather/);
+    assert.ok(fs.existsSync(path.join(repoRoot, 'docs', 'CANVA_APP_SETUP.md')));
 });

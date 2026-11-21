@@ -2653,6 +2653,8 @@ module.exports = {
     getIntroDelaySecForOverlays,
     parseSemverTag,
     compareSemverStrings,
+    parseSRTContent,
+    probeMediaDuration,
     parseArgs,
     resolveFontFamily,
     resolveTaskEngine,

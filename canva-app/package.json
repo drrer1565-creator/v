@@ -1,0 +1,25 @@
+{
+  "name": "videokit-canva-app",
+  "version": "1.0.0",
+  "private": true,
+  "description": "VideoKit Canva Editor Plugin: export current Canva page video/image or private upload selection, render VideoKit subtitles/scroll/Cardinal feather presets on HTTPS backend, and insert the rendered MP4 back onto the Canva page.",
+  "scripts": {
+    "start": "canva apps run",
+    "build": "canva apps build",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@canva/app-hooks": "^2.0.0",
+    "@canva/app-ui-kit": "^2.0.0",
+    "@canva/asset": "^2.0.0",
+    "@canva/design": "^2.0.0",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0"
+  },
+  "devDependencies": {
+    "@canva/cli": "^2.0.0",
+    "@types/react": "^18.2.0",
+    "@types/react-dom": "^18.2.0",
+    "typescript": "^5.4.0"
+  }
+}

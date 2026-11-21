@@ -8335,42 +8335,87 @@ function _buildScrollPreset(presetId, category, overrides = {}) {
 }
 
 const REELS_BUILTIN_SCROLL_STYLE_PRESETS = {
-    // ── 一、经典描边与渐变滚动 (6款，精选去重) ──
-    "手写白字粗黑边滚动": _buildScrollPreset("sc-01", "经典描边与渐变滚动", {
+    // ── 一、经典描边滚动 (sc-01 ~ sc-10) ──
+    "手写白字粗黑边滚动": _buildScrollPreset("sc-01", "经典描边滚动", {
         font_family: "Kalam", fontsize: 89, font_weight: 400, bold: false,
         color: "#FFFFFF", stroke_color: "#000000", stroke_width: 10,
     }),
-    "手写红字白边滚动": _buildScrollPreset("sc-04", "经典描边与渐变滚动", {
+    "手写白字细黑边滚动": _buildScrollPreset("sc-02", "经典描边滚动", {
+        font_family: "Kalam", fontsize: 89, font_weight: 400, bold: false,
+        color: "#FFFFFF", stroke_color: "#000000", stroke_width: 4,
+    }),
+    "手写白字砖红边滚动": _buildScrollPreset("sc-03", "经典描边滚动", {
+        font_family: "Kalam", fontsize: 89, font_weight: 400, bold: false,
+        color: "#FFFFFF", stroke_color: "#A93D3D", stroke_width: 10,
+    }),
+    "手写红字白边滚动": _buildScrollPreset("sc-04", "经典描边滚动", {
         font_family: "Kalam", fontsize: 90, font_weight: 700, bold: true,
         color: "#FF0000", stroke_color: "#FFFFFF", stroke_width: 6.5,
         scroll_from_y: 1101, feather_top: 300,
     }),
-    "文楷粗白字黑边滚动": _buildScrollPreset("sc-05", "经典描边与渐变滚动", {
+    "文楷粗白字黑边滚动": _buildScrollPreset("sc-05", "经典描边滚动", {
         font_family: "LXGW WenKai", fontsize: 90, font_weight: 700, bold: true,
         color: "#FFFFFF", stroke_color: "#000000", stroke_width: 6.5,
         scroll_from_y: 1101, feather_top: 300,
     }),
-    "马克笔明黄黑边滚动": _buildScrollPreset("sc-06", "经典描边与渐变滚动", {
+    "马克笔明黄黑边滚动": _buildScrollPreset("sc-06", "经典描边滚动", {
         font_family: "Permanent Marker", fontsize: 90, font_weight: 400, bold: false,
         color: "#FFDD00", stroke_color: "#000000", stroke_width: 6.5,
         scroll_from_y: 1101, feather_top: 300,
     }),
-    "极简无衬线白字细边滚动": _buildScrollPreset("sc-09", "经典描边与渐变滚动", {
+    "圆润手写白字中黑边滚动": _buildScrollPreset("sc-07", "经典描边滚动", {
+        font_family: "Patrick Hand", fontsize: 89, font_weight: 400, bold: false,
+        color: "#FFFFFF", stroke_color: "#000000", stroke_width: 5.5,
+    }),
+    "圆润手写白字重黑边滚动": _buildScrollPreset("sc-08", "经典描边滚动", {
+        font_family: "Patrick Hand", fontsize: 89, font_weight: 400, bold: false,
+        color: "#FFFFFF", stroke_color: "#000000", stroke_width: 10,
+    }),
+    "极简无衬线白字细边滚动": _buildScrollPreset("sc-09", "经典描边滚动", {
         font_family: "Arial", fontsize: 40, font_weight: 400, bold: false,
         color: "#FFFFFF", stroke_color: "#000000", stroke_width: 2,
         scroll_uppercase: true,
     }),
-    "手写粉橙渐变粗黑边滚动": _buildScrollPreset("sc-11", "经典描边与渐变滚动", {
+    "极简无衬线玫红细边滚动": _buildScrollPreset("sc-10", "经典描边滚动", {
+        font_family: "Arial", fontsize: 40, font_weight: 400, bold: false,
+        color: "#FF2A85", stroke_color: "#000000", stroke_width: 2,
+        scroll_uppercase: true,
+    }),
+
+    // ── 二、渐变流光滚动 (sc-11 ~ sc-12) ──
+    "手写粉橙渐变粗黑边滚动": _buildScrollPreset("sc-11", "渐变流光滚动", {
         font_family: "Kalam", fontsize: 89, font_weight: 400, bold: false,
         color: "#FF2A85,#FF9F21", gradient_direction: "horizontal", scroll_gradient_direction: "horizontal",
         stroke_color: "#000000", stroke_width: 10,
     }),
+    "手写烈焰红金渐变粗黑边滚动": _buildScrollPreset("sc-12", "渐变流光滚动", {
+        font_family: "Kalam", fontsize: 89, font_weight: 400, bold: false,
+        color: "#F12711,#F5AF19", gradient_direction: "horizontal", scroll_gradient_direction: "horizontal",
+        stroke_color: "#000000", stroke_width: 10,
+    }),
 
-    // ── 二、半透底框滚动 (4款，黑白/几何/左对齐各具代表性) ──
+    // ── 三、半透底框滚动 (sc-13 ~ sc-22) ──
     "手写金橙三色渐变+黑半透圆角底框": _buildScrollPreset("sc-13", "半透底框滚动", {
         font_family: "Kalam", fontsize: 85, font_weight: 400, bold: false,
         color: "#FFE259,#FFA751,#FF6B35", gradient_direction: "horizontal", scroll_gradient_direction: "horizontal",
         stroke_color: "#000000", stroke_width: 10, scroll_letter_spacing: -1,
+        scroll_body_bg_enabled: true, scroll_body_bg_style: "solid", scroll_body_bg_mode: "block",
+        scroll_body_bg_color: "#000000", scroll_body_bg_opacity: 60, scroll_body_bg_radius: 42,
+        scroll_body_bg_pad_h: 3, scroll_body_bg_pad_top: 38, scroll_body_bg_pad_bottom: 13,
+        feather_top: 200,
+    }),
+    "无衬线粉橙渐变+黑半透圆角底框": _buildScrollPreset("sc-14", "半透底框滚动", {
+        font_family: "Arial", fontsize: 85, font_weight: 400, bold: false,
+        color: "#FF2A85,#FF9F21", gradient_direction: "horizontal", scroll_gradient_direction: "horizontal",
+        stroke_color: "#000000", stroke_width: 10, scroll_letter_spacing: -1,
+        scroll_body_bg_enabled: true, scroll_body_bg_style: "solid", scroll_body_bg_mode: "block",
+        scroll_body_bg_color: "#000000", scroll_body_bg_opacity: 60, scroll_body_bg_radius: 42,
+        scroll_body_bg_pad_h: 3, scroll_body_bg_pad_top: 38, scroll_body_bg_pad_bottom: 13,
+        feather_top: 200,
+    }),
+    "手写暖黄粗黑边+黑半透圆角底框": _buildScrollPreset("sc-15", "半透底框滚动", {
+        font_family: "Kalam", fontsize: 85, font_weight: 400, bold: false,
+        color: "#FFE259", stroke_color: "#000000", stroke_width: 10, scroll_letter_spacing: -1,
         scroll_body_bg_enabled: true, scroll_body_bg_style: "solid", scroll_body_bg_mode: "block",
         scroll_body_bg_color: "#000000", scroll_body_bg_opacity: 60, scroll_body_bg_radius: 42,
         scroll_body_bg_pad_h: 3, scroll_body_bg_pad_top: 38, scroll_body_bg_pad_bottom: 13,
@@ -8382,6 +8427,38 @@ const REELS_BUILTIN_SCROLL_STYLE_PRESETS = {
         scroll_body_bg_enabled: true, scroll_body_bg_style: "solid", scroll_body_bg_mode: "block",
         scroll_body_bg_color: "#000000", scroll_body_bg_opacity: 60, scroll_body_bg_radius: 42,
         scroll_body_bg_pad_h: 3, scroll_body_bg_pad_top: 38, scroll_body_bg_pad_bottom: 13,
+        feather_top: 200,
+    }),
+    "纤细手写暖黄粗边+白半透圆角底框": _buildScrollPreset("sc-17", "半透底框滚动", {
+        font_family: "Handlee", fontsize: 85, font_weight: 400, bold: false,
+        color: "#FFE259", stroke_color: "#000000", stroke_width: 10, scroll_letter_spacing: -1,
+        scroll_body_bg_enabled: true, scroll_body_bg_style: "solid", scroll_body_bg_mode: "block",
+        scroll_body_bg_color: "#FFFFFF", scroll_body_bg_opacity: 60, scroll_body_bg_radius: 42,
+        scroll_body_bg_pad_h: 3, scroll_body_bg_pad_top: 38, scroll_body_bg_pad_bottom: 13,
+        feather_top: 200,
+    }),
+    "窄体无衬线金黄粗边+白半透圆角底框": _buildScrollPreset("sc-18", "半透底框滚动", {
+        font_family: "Encode Sans Condensed", fontsize: 85, font_weight: 400, bold: false,
+        color: "#FFD500", stroke_color: "#000000", stroke_width: 10, scroll_letter_spacing: -1,
+        scroll_body_bg_enabled: true, scroll_body_bg_style: "solid", scroll_body_bg_mode: "block",
+        scroll_body_bg_color: "#FFFFFF", scroll_body_bg_opacity: 60, scroll_body_bg_radius: 42,
+        scroll_body_bg_pad_h: 3, scroll_body_bg_pad_top: 38, scroll_body_bg_pad_bottom: 13,
+        feather_top: 200,
+    }),
+    "圆润手写金黄粗边+白半透圆角底框": _buildScrollPreset("sc-19", "半透底框滚动", {
+        font_family: "Patrick Hand", fontsize: 85, font_weight: 400, bold: false,
+        color: "#FFD500", stroke_color: "#000000", stroke_width: 10, scroll_letter_spacing: -1,
+        scroll_body_bg_enabled: true, scroll_body_bg_style: "solid", scroll_body_bg_mode: "block",
+        scroll_body_bg_color: "#FFFFFF", scroll_body_bg_opacity: 60, scroll_body_bg_radius: 42,
+        scroll_body_bg_pad_h: 3, scroll_body_bg_pad_top: 38, scroll_body_bg_pad_bottom: 13,
+        feather_top: 200,
+    }),
+    "圆润手写纯白细边+白半透大圆角底框": _buildScrollPreset("sc-20", "半透底框滚动", {
+        font_family: "Patrick Hand", fontsize: 81, font_weight: 400, bold: false,
+        color: "#FFFFFF", stroke_color: "#000000", stroke_width: 4.5, scroll_letter_spacing: -1,
+        scroll_body_bg_enabled: true, scroll_body_bg_style: "solid", scroll_body_bg_mode: "block",
+        scroll_body_bg_color: "#FFFFFF", scroll_body_bg_opacity: 60, scroll_body_bg_radius: 62,
+        scroll_body_bg_pad_h: 27, scroll_body_bg_pad_top: 48, scroll_body_bg_pad_bottom: 13,
         feather_top: 200,
     }),
     "现代几何粗白字黑边+白半透底框": _buildScrollPreset("sc-21", "半透底框滚动", {
@@ -8401,7 +8478,7 @@ const REELS_BUILTIN_SCROLL_STYLE_PRESETS = {
         scroll_from_y: 1180, scroll_auto_stop_lead: 2.5,
     }),
 
-    // ── 三、固定标题+正文滚动 (2款) ──
+    // ── 四、固定标题+正文滚动 (sc-23 ~ sc-24) ──
     "红字白边固定标题+手写粗白字黑边滚动": _buildScrollPreset("sc-23", "固定标题+正文滚动", {
         font_family: "Kalam", fontsize: 89, font_weight: 700, bold: true,
         color: "#FFFFFF", stroke_color: "#000000", stroke_width: 5,
@@ -8418,7 +8495,14 @@ const REELS_BUILTIN_SCROLL_STYLE_PRESETS = {
         scroll_title_stroke_color: "#FFFFFF", scroll_title_stroke_width: 7.5,
     }),
 
-    // ── 四、贴字底衬与节日连体带滚动 (7款，每款底带材质唯一) ──
+    // ── 五、贴字底衬与节日画板滚动 (sc-25 ~ sc-29) ──
+    "圣诞拐杖糖连体底带+手写暖白暗红边滚动": _buildScrollPreset("sc-25", "贴字底衬与节日画板滚动", {
+        font_family: "Kalam", fontsize: 89, font_weight: 400, bold: false,
+        color: "#FFFDF9", stroke_color: "#4A0404", stroke_width: 1.8,
+        scroll_body_bg_enabled: true, scroll_body_bg_style: "xmas_candy_ribbon", scroll_body_bg_mode: "inline-joined",
+        scroll_body_bg_color: "#000000", scroll_body_bg_opacity: 100, scroll_body_bg_radius: 16,
+        scroll_body_bg_pad_h: 24, scroll_body_bg_pad_top: 11, scroll_body_bg_pad_bottom: 11,
+    }),
     "圣诞拐杖糖连体底带+手写暗红边打字机出字": _buildScrollPreset("sc-26", "贴字底衬与节日画板滚动", {
         font_family: "Kalam", fontsize: 89, font_weight: 400, bold: false,
         color: "#FFFDF9", stroke_color: "#4A0404", stroke_width: 1.8,
@@ -8463,6 +8547,60 @@ const REELS_BUILTIN_SCROLL_STYLE_PRESETS = {
         scroll_tw_cursor_enabled: true, scroll_tw_cursor_kind: "christmas_tree",
         scroll_tw_cursor_scale: 1.25, scroll_tw_cursor_angle: 0,
     }),
+
+    // ── 六、朗诵跟读与打字机出字滚动 (sc-30 ~ sc-34) ──
+    "红标固定标题+手写白字逐词金黄跟读高亮": _buildScrollPreset("sc-30", "朗诵跟读与打字机出字滚动", {
+        font_family: "Kalam", fontsize: 85, font_weight: 700, bold: true,
+        color: "#FFFFFF", stroke_color: "#000000", stroke_width: 5,
+        scroll_title_fixed: true, scroll_title_font_family: "Anton", scroll_title_fontsize: 84,
+        scroll_title_font_weight: 400, scroll_title_bold: false, scroll_title_color: "#F50000",
+        scroll_title_stroke_color: "#FFFFFF", scroll_title_stroke_width: 7.5,
+        scroll_typewriter_enabled: true, scroll_tw_speech_sync: true, scroll_tw_reveal_type: "word",
+        scroll_tw_hide_unread: false, scroll_tw_unrevealed_opacity: 100,
+        scroll_tw_active_highlight: true, scroll_tw_active_color: "#FFD700",
+        scroll_tw_cursor_enabled: false,
+    }),
+    "金标暗红边标题+手写暖白暗红边逐词金黄跟读": _buildScrollPreset("sc-31", "朗诵跟读与打字机出字滚动", {
+        font_family: "Kalam", fontsize: 85, font_weight: 700, bold: true,
+        color: "#FFFDF9", stroke_color: "#4A0404", stroke_width: 2,
+        scroll_title_fixed: true, scroll_title_font_family: "Anton", scroll_title_fontsize: 71,
+        scroll_title_font_weight: 400, scroll_title_bold: false, scroll_title_color: "#FFD700",
+        scroll_title_stroke_color: "#4A0404", scroll_title_stroke_width: 2,
+        scroll_typewriter_enabled: true, scroll_tw_speech_sync: true, scroll_tw_reveal_type: "word",
+        scroll_tw_hide_unread: false, scroll_tw_unrevealed_opacity: 100,
+        scroll_tw_active_highlight: true, scroll_tw_active_color: "#FFD700",
+        scroll_tw_cursor_enabled: false,
+    }),
+    "手写白字粗黑边+逐字金黄跟读高亮": _buildScrollPreset("sc-32", "朗诵跟读与打字机出字滚动", {
+        font_family: "Kalam", fontsize: 89, font_weight: 400, bold: false,
+        color: "#FFFFFF", stroke_color: "#000000", stroke_width: 10,
+        scroll_typewriter_enabled: true, scroll_tw_speech_sync: true, scroll_tw_reveal_type: "char",
+        scroll_tw_hide_unread: false, scroll_tw_unrevealed_opacity: 100,
+        scroll_tw_active_highlight: true, scroll_tw_active_color: "#FFD700",
+        scroll_tw_cursor_enabled: false,
+    }),
+    "手写白字黑边+复古羽毛笔逐字朗诵写出": _buildScrollPreset("sc-33", "朗诵跟读与打字机出字滚动", {
+        font_family: "Kalam", fontsize: 89, font_weight: 700, bold: true,
+        color: "#FFFFFF", stroke_color: "#000000", stroke_width: 6,
+        scroll_typewriter_enabled: true, scroll_tw_speech_sync: true, scroll_tw_reveal_type: "char",
+        scroll_tw_hide_unread: true, scroll_tw_unrevealed_opacity: 0,
+        scroll_tw_active_highlight: true, scroll_tw_active_color: "#FFD700",
+        scroll_tw_cursor_enabled: true, scroll_tw_cursor_kind: "quill",
+        scroll_tw_cursor_scale: 1.15, scroll_tw_cursor_angle: -8,
+    }),
+    "粗白字黑边+彩虹渐变逐词累积跟读": _buildScrollPreset("sc-34", "朗诵跟读与打字机出字滚动", {
+        font_family: "Kalam", fontsize: 85, font_weight: 700, bold: true,
+        color: "#FFFFFF", stroke_color: "#0D0B18", stroke_width: 5,
+        shadow_enabled: true, shadow_color: "#000000", shadow_blur: 8, scroll_shadow_x: 0, scroll_shadow_y: 4,
+        scroll_typewriter_enabled: true, scroll_tw_speech_sync: true, scroll_tw_reveal_type: "word",
+        scroll_tw_hide_unread: false, scroll_tw_unrevealed_opacity: 100,
+        scroll_tw_active_highlight: true,
+        scroll_tw_active_color: "#FF3824,#FF8800,#FFD600,#2AD648,#00C2D1,#246BFF,#9B4DFF",
+        scroll_tw_keep_read_color: true,
+        scroll_tw_cursor_enabled: false,
+    }),
+
+    // ── 七、美国退伍军人节限定滚动样式 (sc-35 ~ sc-38) ──
     "🇺🇸 星条旗荣耀连体底带+星盾笔尖出字": _buildScrollPreset("sc-35", "贴字底衬与节日画板滚动", {
         font_family: "Playfair Display", fontsize: 82, font_weight: 700, bold: true, italic: true,
         color: "#FFFDF9", stroke_color: "#09152B", stroke_width: 2.2,
@@ -8473,6 +8611,18 @@ const REELS_BUILTIN_SCROLL_STYLE_PRESETS = {
         scroll_tw_hide_unread: true, scroll_tw_unrevealed_opacity: 0,
         scroll_tw_active_highlight: true, scroll_tw_active_color: "#FBBF24",
         scroll_tw_cursor_enabled: true, scroll_tw_cursor_kind: "us_flag_shield",
+        scroll_tw_cursor_scale: 1.25, scroll_tw_cursor_angle: 0,
+    }),
+    "🎖️ 老兵金章深蓝绶带+紫心勋章逐词跟读": _buildScrollPreset("sc-36", "贴字底衬与节日画板滚动", {
+        font_family: "Playfair Display", fontsize: 82, font_weight: 700, bold: true, italic: true,
+        color: "#FFF8EB", stroke_color: "#09152B", stroke_width: 2.2,
+        scroll_body_bg_enabled: true, scroll_body_bg_style: "vet_honor_medal_banner", scroll_body_bg_mode: "inline-joined",
+        scroll_body_bg_color: "#0B172A", scroll_body_bg_opacity: 100, scroll_body_bg_radius: 16,
+        scroll_body_bg_pad_h: 26, scroll_body_bg_pad_top: 12, scroll_body_bg_pad_bottom: 12,
+        scroll_typewriter_enabled: true, scroll_tw_speech_sync: true, scroll_tw_reveal_type: "word",
+        scroll_tw_hide_unread: false, scroll_tw_unrevealed_opacity: 100,
+        scroll_tw_active_highlight: true, scroll_tw_active_color: "#FDE047",
+        scroll_tw_cursor_enabled: true, scroll_tw_cursor_kind: "purple_heart_medal",
         scroll_tw_cursor_scale: 1.25, scroll_tw_cursor_angle: 0,
     }),
     "🏷️ 美军拉丝钢印铭牌底带+军牌笔尖写出": _buildScrollPreset("sc-37", "贴字底衬与节日画板滚动", {
@@ -8500,58 +8650,7 @@ const REELS_BUILTIN_SCROLL_STYLE_PRESETS = {
         scroll_tw_cursor_scale: 1.2, scroll_tw_cursor_angle: -6,
     }),
 
-    // ── 五、朗诵跟读与打字机出字滚动 (4款，各具独立动效) ──
-    "红标固定标题+手写白字逐词金黄跟读高亮": _buildScrollPreset("sc-30", "朗诵跟读与打字机出字滚动", {
-        font_family: "Kalam", fontsize: 85, font_weight: 700, bold: true,
-        color: "#FFFFFF", stroke_color: "#000000", stroke_width: 5,
-        scroll_title_fixed: true, scroll_title_font_family: "Anton", scroll_title_fontsize: 84,
-        scroll_title_font_weight: 400, scroll_title_bold: false, scroll_title_color: "#F50000",
-        scroll_title_stroke_color: "#FFFFFF", scroll_title_stroke_width: 7.5,
-        scroll_typewriter_enabled: true, scroll_tw_speech_sync: true, scroll_tw_reveal_type: "word",
-        scroll_tw_hide_unread: false, scroll_tw_unrevealed_opacity: 100,
-        scroll_tw_active_highlight: true, scroll_tw_active_color: "#FFD700",
-        scroll_tw_cursor_enabled: false,
-    }),
-    "手写白字黑边+复古羽毛笔逐字朗诵写出": _buildScrollPreset("sc-33", "朗诵跟读与打字机出字滚动", {
-        font_family: "Kalam", fontsize: 89, font_weight: 700, bold: true,
-        color: "#FFFFFF", stroke_color: "#000000", stroke_width: 6,
-        scroll_typewriter_enabled: true, scroll_tw_speech_sync: true, scroll_tw_reveal_type: "char",
-        scroll_tw_hide_unread: true, scroll_tw_unrevealed_opacity: 0,
-        scroll_tw_active_highlight: true, scroll_tw_active_color: "#FFD700",
-        scroll_tw_cursor_enabled: true, scroll_tw_cursor_kind: "quill",
-        scroll_tw_cursor_scale: 1.15, scroll_tw_cursor_angle: -8,
-    }),
-    "粗白字黑边+彩虹渐变逐词累积跟读": _buildScrollPreset("sc-34", "朗诵跟读与打字机出字滚动", {
-        font_family: "Kalam", fontsize: 85, font_weight: 700, bold: true,
-        color: "#FFFFFF", stroke_color: "#0D0B18", stroke_width: 5,
-        shadow_enabled: true, shadow_color: "#000000", shadow_blur: 8, scroll_shadow_x: 0, scroll_shadow_y: 4,
-        scroll_typewriter_enabled: true, scroll_tw_speech_sync: true, scroll_tw_reveal_type: "word",
-        scroll_tw_hide_unread: false, scroll_tw_unrevealed_opacity: 100,
-        scroll_tw_active_highlight: true,
-        scroll_tw_active_color: "#FF3824,#FF8800,#FFD600,#2AD648,#00C2D1,#246BFF,#9B4DFF",
-        scroll_tw_keep_read_color: true,
-        scroll_tw_cursor_enabled: false,
-    }),
-    "🪶 三行黑透圆角条+金羽绿字跟读滚动 (Anointed Woman同款)": _buildScrollPreset("sc-48", "朗诵跟读与打字机出字滚动", {
-        x: 60, y: 740, w: 960, h: 480,
-        font_family: "Dancing Script", fontsize: 64, font_weight: 700, bold: true, italic: false,
-        color: "#FFFFFF", stroke_color: "#000000", stroke_width: 4.5,
-        shadow_enabled: true, shadow_color: "#000000", shadow_opacity: 190, shadow_blur: 4, scroll_shadow_x: 0, scroll_shadow_y: 2,
-        text_width: 820, line_spacing: 28, scroll_letter_spacing: 0, scroll_uppercase: false,
-        scroll_body_bg_enabled: true, scroll_body_bg_style: "solid", scroll_body_bg_mode: "inline",
-        scroll_body_bg_color: "#000000", scroll_body_bg_opacity: 48, scroll_body_bg_radius: 22,
-        scroll_body_bg_pad_h: 24, scroll_body_bg_pad_top: 10, scroll_body_bg_pad_bottom: 10,
-        feather_mode: "clip", feather_top: 55, feather_bottom: 55,
-        scroll_focus_flow_enabled: true, scroll_focus_start_pct: 42, scroll_focus_end_pct: 58,
-        scroll_typewriter_enabled: true, scroll_tw_speech_sync: true, scroll_tw_reveal_type: "char",
-        scroll_tw_hide_unread: false, scroll_tw_unrevealed_opacity: 100,
-        scroll_tw_active_highlight: true, scroll_tw_active_color: "#18A84B", scroll_tw_keep_read_color: false,
-        scroll_tw_active_char_sweep: true,
-        scroll_tw_cursor_enabled: true, scroll_tw_cursor_kind: "feather_gold",
-        scroll_tw_cursor_scale: 1.35, scroll_tw_cursor_angle: -8,
-    }),
-
-    // ── 六、爆款祈祷书签卡与逐行金线跟读 (7款，精选色系不重复) ──
+    // ── 八、爆款祈祷书签卡与白鸽逐行金线跟读 (sc-39 ~ sc-41) ──
     "🕊️ 祈祷书签绿卡+白鸽玫瑰+逐行金线跟读 (爆款同款)": _buildScrollPreset("sc-39", "祈祷书签卡与逐行金线跟读", {
         x: 100, y: 680, w: 880, h: 920,
         font_family: "Georgia", fontsize: 54, font_weight: 700, bold: true, italic: false,
@@ -8767,6 +8866,24 @@ const REELS_BUILTIN_SCROLL_STYLE_PRESETS = {
         scroll_tw_underline_thickness: 2.5, scroll_tw_underline_style: "solid",
         scroll_tw_underline_width_mode: "card_ratio", scroll_tw_underline_width_ratio: 84,
         scroll_tw_underline_offset_y: 14, scroll_tw_underline_opacity: 92,
+    }),
+    "🪶 三行黑透圆角条+金羽绿字跟读滚动 (Anointed Woman同款)": _buildScrollPreset("sc-48", "朗诵跟读与打字机出字滚动", {
+        x: 60, y: 740, w: 960, h: 480,
+        font_family: "Dancing Script", fontsize: 64, font_weight: 700, bold: true, italic: false,
+        color: "#FFFFFF", stroke_color: "#000000", stroke_width: 4.5,
+        shadow_enabled: true, shadow_color: "#000000", shadow_opacity: 190, shadow_blur: 4, scroll_shadow_x: 0, scroll_shadow_y: 2,
+        text_width: 820, line_spacing: 28, scroll_letter_spacing: 0, scroll_uppercase: false,
+        scroll_body_bg_enabled: true, scroll_body_bg_style: "solid", scroll_body_bg_mode: "inline",
+        scroll_body_bg_color: "#000000", scroll_body_bg_opacity: 48, scroll_body_bg_radius: 22,
+        scroll_body_bg_pad_h: 24, scroll_body_bg_pad_top: 10, scroll_body_bg_pad_bottom: 10,
+        feather_mode: "clip", feather_top: 55, feather_bottom: 55,
+        scroll_focus_flow_enabled: true, scroll_focus_start_pct: 42, scroll_focus_end_pct: 58,
+        scroll_typewriter_enabled: true, scroll_tw_speech_sync: true, scroll_tw_reveal_type: "char",
+        scroll_tw_hide_unread: false, scroll_tw_unrevealed_opacity: 100,
+        scroll_tw_active_highlight: true, scroll_tw_active_color: "#18A84B", scroll_tw_keep_read_color: false,
+        scroll_tw_active_char_sweep: true,
+        scroll_tw_cursor_enabled: true, scroll_tw_cursor_kind: "feather_gold",
+        scroll_tw_cursor_scale: 1.35, scroll_tw_cursor_angle: -8,
     }),
 };
 
@@ -9082,49 +9199,246 @@ const _SCROLL_ARCHETYPES = {
 };
 
 // [id, category, name, archetype, emblemId, mode ('badge'|'mascot'|'both'), fontOverride, cursorKind]
-// 经去重精选：每种卡片画板与视觉氛围仅保留最具代表性的精品样式，避免同一背景重复堆砌大量变体。
 const _NA_PRAYER_STYLE_SPECS = [
-    // ── 一、牛皮纸与简约纸祷告卡 (7款) ──
-    ['sc-49', '牛皮纸与简约纸祷告卡', '✝️ 手撕牛皮纸+鎏金十字架祷告卡', 'kraft_light', 'na_cross_gold', 'both', 'Playfair Display', 'quill'],
-    ['sc-50', '牛皮纸与简约纸祷告卡', '🐦 邮戳牛皮信笺+北美红雀鸟报喜祷告', 'kraft_stamped', 'na_cardinal_bird', 'both', 'Cormorant Garamond', 'quill'],
-    ['sc-51', '牛皮纸与简约纸祷告卡', '🦅 白边牛皮剪贴+美国白头鹰守护祈福', 'kraft_clip', 'na_bald_eagle', 'both', 'Merriweather', 'bald_eagle_crest'],
-    ['sc-65', '牛皮纸与简约纸祷告卡', '🤍 简约米白棉纸+极简手绘小花祷告卡', 'minimal_ivory', 'na_minimal_flower', 'both', 'Cormorant Garamond', 'quill'],
-    ['sc-67', '牛皮纸与简约纸祷告卡', '🪷 鼠尾草亚麻纸+纯洁百合花清新祷词', 'minimal_sage', 'na_lily', 'both', 'Lora', 'quill'],
-    ['sc-69', '牛皮纸与简约纸祷告卡', '🌸 柔粉羊皮纸+馥郁芍药花女性祝福', 'minimal_blush', 'na_peony', 'both', 'Dancing Script', 'sakura'],
-    ['sc-72', '牛皮纸与简约纸祷告卡', '✝️ 极简深灰美术纸+圣洁鎏金十字银线卡', 'minimal_slate', 'na_cross_gold', 'both', 'Cinzel', 'cross_light'],
+    // ── 一、牛皮纸祷告卡 (sc-49 ~ sc-64, 16款) ──
+    ['sc-49', '牛皮纸祷告卡', '✝️ 手撕牛皮纸+鎏金十字架祷告卡', 'kraft_light', 'na_cross_gold', 'both', 'Playfair Display', 'quill'],
+    ['sc-50', '牛皮纸祷告卡', '🐦 邮戳牛皮信笺+北美红雀鸟报喜祷告', 'kraft_stamped', 'na_cardinal_bird', 'both', 'Cormorant Garamond', 'quill'],
+    ['sc-51', '牛皮纸祷告卡', '🦅 白边牛皮剪贴+美国白头鹰守护祈福', 'kraft_clip', 'na_bald_eagle', 'both', 'Merriweather', 'bald_eagle_crest'],
+    ['sc-52', '牛皮纸祷告卡', '🇺🇸 深烘牛皮羽化卡+美国星条旗祈祷', 'kraft_dark', 'na_us_flag', 'badge', 'Libre Baskerville', 'us_flag_shield'],
+    ['sc-53', '牛皮纸祷告卡', '🌼 手撕牛皮纸+简约手绘小花晨祷', 'kraft_light', 'na_minimal_flower', 'both', 'Handlee', 'brush'],
+    ['sc-54', '牛皮纸祷告卡', '🌻 邮戳牛皮信笺+阳光向日葵感恩卡', 'kraft_stamped', 'na_sunflower', 'mascot', 'Caveat', 'sparkle_wand'],
+    ['sc-55', '牛皮纸祷告卡', '🌹 深烘牛皮羽化卡+红玫瑰祈祷书签', 'kraft_dark', 'na_rose', 'both', 'Lora', 'rose'],
+    ['sc-56', '牛皮纸祷告卡', '🍀 手撕牛皮纸+幸运四叶草恩典随笔', 'kraft_light', 'na_four_leaf_clover', 'badge', 'Kalam', 'leaf'],
+    ['sc-57', '牛皮纸祷告卡', '☕ 邮戳牛皮信笺+暖心咖啡杯晨间灵修', 'kraft_stamped', 'na_coffee_cup', 'mascot', 'Homemade Apple', 'fountain_pen'],
+    ['sc-58', '牛皮纸祷告卡', '📖 深烘牛皮羽化卡+圣经翻开书卷颂读', 'kraft_dark', 'na_open_book', 'both', 'Cinzel', 'feather_gold'],
+    ['sc-59', '牛皮纸祷告卡', '🍁 手撕牛皮纸+金秋枫叶感恩节祈祷', 'kraft_light', 'na_season_autumn', 'both', 'Gelasio', 'leaf'],
+    ['sc-60', '牛皮纸祷告卡', '🦋 白边牛皮剪贴+绚丽蝴蝶新生祷告', 'kraft_clip', 'na_butterfly', 'mascot', 'Dancing Script', 'butterfly'],
+    ['sc-61', '牛皮纸祷告卡', '🎸 邮戳牛皮信笺+乡村木吉他赞美诗', 'kraft_stamped', 'na_guitar', 'badge', 'Roboto Slab', 'music_note'],
+    ['sc-62', '牛皮纸祷告卡', '🙏 深烘牛皮羽化卡+虔诚祈祷双手金线', 'kraft_dark', 'na_praying_hands', 'both', 'DM Serif Display', 'cross_light'],
+    ['sc-63', '牛皮纸祷告卡', '🚂 手撕牛皮纸+怀旧蒸汽火车信仰旅途', 'kraft_light', 'na_train', 'badge', 'Lora', 'fountain_pen'],
+    ['sc-64', '牛皮纸祷告卡', '🌾 白边牛皮剪贴+丰收南瓜田园感恩卡', 'kraft_clip', 'na_farm_pumpkin', 'both', 'Handlee', 'brush'],
 
-    // ── 二、格子手账与复古老照片 (9款) ──
-    ['sc-81', '格子手账与复古老照片', '🐦 红黑水牛格子卡+北美红雀鸟冬日祷告', 'plaid_red', 'na_cardinal_bird', 'both', 'Libre Baskerville', 'quill'],
-    ['sc-93', '格子手账与复古老照片', '💠 乡村蓝白小格子+蓝色绣球花宁静祷告', 'plaid_blue', 'na_hydrangea', 'both', 'Lora', 'fountain_pen'],
-    ['sc-95', '格子手账与复古老照片', '✝️ 森林松绿格纹金卡+圣洁十字圣经诵读', 'plaid_forest', 'na_cross_gold', 'both', 'Cinzel', 'feather_gold'],
-    ['sc-97', '格子手账与复古老照片', '✝️ 做旧茶渍古书手稿+鎏金十字复古祈祷', 'vintage_paper', 'na_cross_gold', 'both', 'Gelasio', 'quill'],
-    ['sc-99', '格子手账与复古老照片', '🌺 植物标本馆档案纸+温馨康乃馨悼念与感恩', 'vintage_herbarium', 'na_carnation', 'both', 'DM Serif Display', 'rose'],
-    ['sc-103', '格子手账与复古老照片', '⛪ 烫金赞美诗藏蓝卡+圣光祈祷双手', 'vintage_hymnal', 'na_praying_hands', 'both', 'Playfair Display', 'cross_light'],
-    ['sc-105', '格子手账与复古老照片', '📸 复古棕调贴角老照片+红玫瑰岁月祝福', 'oldphoto_sepia', 'na_rose', 'both', 'Libre Baskerville', 'quill'],
-    ['sc-107', '格子手账与复古老照片', '🖼 拍立得白边老照片框+温馨爱心记忆珍藏', 'oldphoto_polaroid', 'na_sacred_heart', 'both', 'Satisfy', 'heart'],
-    ['sc-109', '格子手账与复古老照片', '🎞 35mm老照片胶卷框+黑胶唱片敬拜之歌', 'oldphoto_film', 'na_vinyl_record', 'both', 'Prata', 'feather_gold'],
+    // ── 二、简约纸张祈祷风 (sc-65 ~ sc-80, 16款) ──
+    ['sc-65', '简约纸张祈祷风', '🤍 简约米白棉纸+极简手绘小花祷告卡', 'minimal_ivory', 'na_minimal_flower', 'both', 'Cormorant Garamond', 'quill'],
+    ['sc-66', '简约纸张祈祷风', '🕊️ 简约米白棉纸+和平白鸽衔枝祝祷', 'minimal_ivory', 'na_peace_dove', 'mascot', 'Playfair Display', 'dove'],
+    ['sc-67', '简约纸张祈祷风', '🪷 鼠尾草亚麻纸+纯洁百合花清新祷词', 'minimal_sage', 'na_lily', 'both', 'Lora', 'quill'],
+    ['sc-68', '简约纸张祈祷风', '🌼 简约米白棉纸+清新雏菊晨曦灵修', 'minimal_ivory', 'na_daisy', 'badge', 'Satisfy', 'brush'],
+    ['sc-69', '简约纸张祈祷风', '🌸 柔粉羊皮纸+馥郁芍药花女性祝福', 'minimal_blush', 'na_peony', 'both', 'Dancing Script', 'sakura'],
+    ['sc-70', '简约纸张祈祷风', '🪻 极简深灰美术纸+雅致紫罗兰晚祷', 'minimal_slate', 'na_violet', 'mascot', 'Playfair Display', 'sparkle_wand'],
+    ['sc-71', '简约纸张祈祷风', '🪷 鼠尾草亚麻纸+晨曦牵牛花希望祷告', 'minimal_sage', 'na_morning_glory', 'badge', 'Gelasio', 'fountain_pen'],
+    ['sc-72', '简约纸张祈祷风', '✝️ 极简深灰美术纸+圣洁鎏金十字银线卡', 'minimal_slate', 'na_cross_gold', 'both', 'Cinzel', 'cross_light'],
+    ['sc-73', '简约纸张祈祷风', '📖 简约米白棉纸+打开的圣经极简读经', 'minimal_ivory', 'na_open_book', 'badge', 'Libre Baskerville', 'fountain_pen'],
+    ['sc-74', '简约纸张祈祷风', '🚲 鼠尾草亚麻纸+休闲单车宁静田园曲', 'minimal_sage', 'na_bicycle', 'mascot', 'Handlee', 'quill'],
+    ['sc-75', '简约纸张祈祷风', '🏡 简约米白棉纸+温馨家园与灯火家庭祷告', 'minimal_ivory', 'na_cozy_home', 'both', 'Lora', 'candle_flame'],
+    ['sc-76', '简约纸张祈祷风', '🎵 极简深灰美术纸+灵动音符静夜颂赞', 'minimal_slate', 'na_music_notes', 'mascot', 'Lato', 'music_note'],
+    ['sc-77', '简约纸张祈祷风', '👩 柔粉羊皮纸+独立女性星冕祈福卡', 'minimal_blush', 'na_independent_woman', 'both', 'Great Vibes', 'crown'],
+    ['sc-78', '简约纸张祈祷风', '🐰 柔粉羊皮纸+温柔小白兔春季祷词', 'minimal_blush', 'na_rabbit', 'mascot', 'Caveat', 'brush'],
+    ['sc-79', '简约纸张祈祷风', '⛵ 极简深灰美术纸+航海白帆平安远航', 'minimal_slate', 'na_sailboat', 'both', 'Bricolage Grotesque', 'sparkle_wand'],
+    ['sc-80', '简约纸张祈祷风', '🐦 鼠尾草亚麻纸+知更鸟与麻雀颂歌', 'minimal_sage', 'na_robin_sparrow', 'badge', 'Merriweather', 'quill'],
 
-    // ── 三、圣诞贺卡与圣夜祈祷 (11款) ──
-    ['sc-149', '🎄 圣诞贺卡与圣夜祈祷', '🍷 勃艮第酒红丝绒烫金卡+圣诞冬青花环长卷祈祷', 'xmas_burgundy_foil', 'na_xmas_wreath', 'both', 'Cormorant Garamond', 'holly_berry'],
-    ['sc-152', '🎄 圣诞贺卡与圣夜祈祷', '🕯️ 平安夜壁炉烛光暖棕卡+将临期平安烛守夜祷文', 'xmas_candle_hearth', 'na_xmas_candle', 'both', 'Gelasio', 'candle_flame'],
-    ['sc-158', '🎄 圣诞贺卡与圣夜祈祷', '🍬 圣诞红白拐杖糖画框+薄荷拐杖糖甜蜜圣诞祷告', 'xmas_candy_ribbon', 'na_xmas_candy_cane', 'both', 'Dancing Script', 'candy_cane'],
-    ['sc-160', '🎄 圣诞贺卡与圣夜祈祷', '🍪 圣诞姜饼屋糖霜贺卡+姜饼人家庭暖心祈祷', 'xmas_gingerbread_warm', 'na_xmas_gingerbread_man', 'both', 'Handlee', 'candy_cane'],
-    ['sc-162', '🎄 圣诞贺卡与圣夜祈祷', '🌟 伯利恒平安夜圣星长卷+伯利恒晨星指路祈祷', 'xmas_nativity_star', 'na_xmas_bethlehem_star', 'both', 'Cinzel', 'cross_light'],
-    ['sc-167', '🎄 圣诞贺卡与圣夜祈祷', '✝️ 哥特教堂彩绘玻璃卡+鎏金十字架教堂赞美诗', 'xmas_stained_glass', 'na_cross_gold', 'both', 'Libre Baskerville', 'cross_light'],
-    ['sc-169', '🎄 圣诞贺卡与圣夜祈祷', '💜 将临期主教紫烫金卡+将临期平安烛敬拜祷文', 'xmas_advent_plum', 'na_xmas_candle', 'both', 'DM Serif Display', 'candle_flame'],
-    ['sc-172', '🎄 圣诞贺卡与圣夜祈祷', '🎼 《平安夜》圣诗乐谱卡+圣夜金钟百年圣诞颂歌', 'xmas_silent_hymnal', 'na_xmas_bell', 'both', 'Libre Baskerville', 'music_note'],
-    ['sc-175', '🎄 圣诞贺卡与圣夜祈祷', '🏴󠁧󠁢󠁳󠁣󠁴󠁿 皇家圣诞苏格兰红绿格纹+冬青花环家族祝祷', 'xmas_royal_tartan', 'na_xmas_wreath', 'both', 'Libre Baskerville', 'holly_berry'],
-    ['sc-187', '🎄 圣诞贺卡与圣夜祈祷', '❄️ 冰霜银箔冬夜圣诞卡+冰晶大雪花纯洁平安祈祷', 'xmas_frosted_ice', 'na_xmas_snowflake', 'both', 'Cormorant Garamond', 'snowflake_wand'],
-    ['sc-190', '🎄 圣诞贺卡与圣夜祈祷', '🌌 圣诞极光飘雪夜空板+伯利恒晨星极光守夜长祷', 'xmas_starry_aurora', 'na_xmas_bethlehem_star', 'both', 'Cormorant Garamond', 'snowflake_wand'],
+    // ── 三、格子手账与格纹祷告 (sc-81 ~ sc-96, 16款) ──
+    ['sc-81', '格子手账与格纹祷告', '🐦 红黑水牛格子卡+北美红雀鸟冬日祷告', 'plaid_red', 'na_cardinal_bird', 'both', 'Libre Baskerville', 'quill'],
+    ['sc-82', '格子手账与格纹祷告', '🎄 红黑水牛格子卡+圣诞松树节日祈福', 'plaid_red', 'na_christmas_tree', 'mascot', 'Playfair Display', 'christmas_tree'],
+    ['sc-83', '格子手账与格纹祷告', '🐶 英伦卡其苏格兰格+忠诚小狗陪伴祷词', 'plaid_beige', 'na_dog', 'both', 'Merriweather', 'pencil'],
+    ['sc-84', '格子手账与格纹祷告', '🐱 乡村蓝白小格子+温柔猫咪居家灵修', 'plaid_blue', 'na_cat', 'mascot', 'Caveat', 'pencil'],
+    ['sc-85', '格子手账与格纹祷告', '🐿️ 英伦卡其苏格兰格+活泼小松鼠秋日礼赞', 'plaid_beige', 'na_squirrel', 'badge', 'Lora', 'leaf'],
+    ['sc-86', '格子手账与格纹祷告', '🦕 方格笔记本手账+萌趣恐龙亲子晚安祷告', 'grid_note', 'na_dinosaur', 'both', 'Kalam', 'pencil'],
+    ['sc-87', '格子手账与格纹祷告', '🍔 方格笔记本手账+美式经典汉堡感恩餐前祷', 'grid_note', 'na_burger', 'badge', 'Handlee', 'fountain_pen'],
+    ['sc-88', '格子手账与格纹祷告', '🍕 红黑水牛格子卡+热烤披萨家庭团聚祝福', 'plaid_red', 'na_pizza', 'mascot', 'Roboto Slab', 'brush'],
+    ['sc-89', '格子手账与格纹祷告', '☕ 英伦卡其苏格兰格+暖心咖啡晨间日记', 'plaid_beige', 'na_coffee_cup', 'both', 'Gelasio', 'fountain_pen'],
+    ['sc-90', '格子手账与格纹祷告', '🍩 春日丁香紫小格子+糖霜甜甜圈甜蜜日签', 'plaid_lilac', 'na_donut', 'mascot', 'Satisfy', 'heart'],
+    ['sc-91', '格子手账与格纹祷告', '🍦 乡村蓝白小格子+夏日冰淇淋喜乐经文', 'plaid_blue', 'na_ice_cream', 'badge', 'Caveat', 'sparkle_wand'],
+    ['sc-92', '格子手账与格纹祷告', '🌷 春日丁香紫小格子+郁金香芬芳祈祷笺', 'plaid_lilac', 'na_tulip', 'both', 'Dancing Script', 'rose'],
+    ['sc-93', '格子手账与格纹祷告', '💠 乡村蓝白小格子+蓝色绣球花宁静祷告', 'plaid_blue', 'na_hydrangea', 'both', 'Lora', 'fountain_pen'],
+    ['sc-94', '格子手账与格纹祷告', '🚌 方格笔记本手账+公路大巴旅途平安祈祷', 'grid_note', 'na_coach_bus', 'badge', 'Lato', 'pencil'],
+    ['sc-95', '格子手账与格纹祷告', '✝️ 森林松绿格纹金卡+圣洁十字圣经诵读', 'plaid_forest', 'na_cross_gold', 'both', 'Cinzel', 'feather_gold'],
+    ['sc-96', '格子手账与格纹祷告', '🦅 森林松绿格纹金卡+美国白头鹰山林护佑', 'plaid_forest', 'na_bald_eagle', 'mascot', 'Playfair Display', 'bald_eagle_crest'],
 
-    // ── 四、感恩节 · 极简秋日与祈祷卡 (6款) ──
+    // ── 四、复古纸张与老照片祷告 (sc-97 ~ sc-114, 18款) ──
+    ['sc-97', '复古纸张与老照片祷告', '✝️ 做旧茶渍古书手稿+鎏金十字复古祈祷', 'vintage_paper', 'na_cross_gold', 'both', 'Gelasio', 'quill'],
+    ['sc-98', '复古纸张与老照片祷告', '🦅 做旧茶渍古书手稿+美国白头鹰先贤祷词', 'vintage_paper', 'na_bald_eagle', 'mascot', 'Libre Baskerville', 'feather_gold'],
+    ['sc-99', '复古纸张与老照片祷告', '🌺 植物标本馆档案纸+温馨康乃馨/雏红悼念与感恩', 'vintage_herbarium', 'na_carnation', 'both', 'DM Serif Display', 'rose'],
+    ['sc-100', '复古纸张与老照片祷告', '🌼 植物标本馆档案纸+春日水仙/马蹄莲复兴祷告', 'vintage_herbarium', 'na_daffodil', 'badge', 'Cormorant Garamond', 'quill'],
+    ['sc-101', '复古纸张与老照片祷告', '🇺🇸 泛黄古董报刊版+美国星条旗历史金句', 'vintage_sepia_news', 'na_us_flag', 'both', 'Roboto Slab', 'us_flag_shield'],
+    ['sc-102', '复古纸张与老照片祷告', '📰 泛黄古董报刊版+圣经开卷福音专刊', 'vintage_sepia_news', 'na_open_book', 'badge', 'Merriweather', 'fountain_pen'],
+    ['sc-103', '复古纸张与老照片祷告', '⛪ 烫金赞美诗藏蓝卡+圣光祈祷双手', 'vintage_hymnal', 'na_praying_hands', 'both', 'Playfair Display', 'cross_light'],
+    ['sc-104', '复古纸张与老照片祷告', '🌙 烫金赞美诗藏蓝卡+星月同辉晚安圣咏', 'vintage_hymnal', 'na_stars_moon', 'mascot', 'Cinzel', 'sparkle_wand'],
+    ['sc-105', '复古纸张与老照片祷告', '📸 复古棕调贴角老照片+红玫瑰岁月祝福', 'oldphoto_sepia', 'na_rose', 'both', 'Libre Baskerville', 'quill'],
+    ['sc-106', '复古纸张与老照片祷告', '📷 复古棕调贴角老照片+复古相机家族记忆祷告', 'oldphoto_sepia', 'na_camera_film', 'badge', 'Lora', 'fountain_pen'],
+    ['sc-107', '复古纸张与老照片祷告', '🖼 拍立得白边老照片框+温馨爱心记忆珍藏', 'oldphoto_polaroid', 'na_sacred_heart', 'both', 'Satisfy', 'heart'],
+    ['sc-108', '复古纸张与老照片祷告', '🚗 拍立得白边老照片框+老爷敞篷车美式公路回忆', 'oldphoto_polaroid', 'na_vintage_car', 'mascot', 'Caveat', 'sparkle_wand'],
+    ['sc-109', '复古纸张与老照片祷告', '🎞 35mm老照片胶卷框+黑胶唱片老派敬拜之歌', 'oldphoto_film', 'na_vinyl_record', 'both', 'Prata', 'feather_gold'],
+    ['sc-110', '复古纸张与老照片祷告', '🎙 35mm老照片胶卷框+复古麦克风讲道金句', 'oldphoto_film', 'na_microphone', 'badge', 'DM Serif Display', 'music_note'],
+    ['sc-111', '复古纸张与老照片祷告', '🕰 馆藏老照片灰黑框+灯塔圣光穿越风暴', 'oldphoto_archive', 'na_lighthouse_torch', 'both', 'Playfair Display', 'candle_flame'],
+    ['sc-112', '复古纸张与老照片祷告', '🎨 馆藏老照片灰黑框+艺术调色盘创造之美', 'oldphoto_archive', 'na_palette_brush', 'badge', 'Cormorant Garamond', 'brush'],
+    ['sc-113', '复古纸张与老照片祷告', '🕊 馆藏老照片灰黑框+和平白鸽时代祈愿', 'oldphoto_archive', 'na_peace_dove', 'mascot', 'Lora', 'dove'],
+    ['sc-114', '复古纸张与老照片祷告', '🏈 复古棕调贴角老照片+美式橄榄球青春纪念', 'oldphoto_sepia', 'na_sports_football', 'badge', 'Roboto Slab', 'fountain_pen'],
+
+    // ── 五、美国元素与自然花鸟动物 (sc-115 ~ sc-132, 18款) ──
+    ['sc-115', '美国文化与自然花鸟动物', '🐦 翡翠羽化祈祷卡+北美红雀鸟天使信使', 'feather_emerald', 'na_cardinal_bird', 'both', 'Playfair Display', 'quill'],
+    ['sc-116', '美国文化与自然花鸟动物', '🦅 深夜蓝羽化祈祷卡+美国白头鹰雄鹰展翅', 'feather_navy', 'na_bald_eagle', 'both', 'Cinzel', 'bald_eagle_crest'],
+    ['sc-117', '美国文化与自然花鸟动物', '🇺🇸 深夜蓝羽化祈祷卡+美国星条旗为国代祷', 'feather_navy', 'na_us_flag', 'both', 'Merriweather', 'us_flag_shield'],
+    ['sc-118', '美国文化与自然花鸟动物', '🍀 翡翠羽化祈祷卡+幸运四叶草神恩降临', 'feather_emerald', 'na_four_leaf_clover', 'both', 'Cormorant Garamond', 'leaf'],
+    ['sc-119', '美国文化与自然花鸟动物', '🦋 深褐圣经羽化卡+绚丽帝王蝶生命蜕变', 'feather_brown', 'na_butterfly', 'mascot', 'Dancing Script', 'butterfly'],
+    ['sc-120', '美国文化与自然花鸟动物', '🌻 深褐圣经羽化卡+向日葵面向圣光祷告', 'feather_brown', 'na_sunflower', 'both', 'Lora', 'quill'],
+    ['sc-121', '美国文化与自然花鸟动物', '🪷 深夜蓝羽化祈祷卡+晨曦牵牛花黎明希望', 'feather_navy', 'na_morning_glory', 'both', 'Gelasio', 'fountain_pen'],
+    ['sc-122', '美国文化与自然花鸟动物', '🌷 酒红丝绒羽化卡+春日郁金香温柔恩典', 'feather_burgundy', 'na_tulip', 'mascot', 'Playfair Display', 'rose'],
+    ['sc-123', '美国文化与自然花鸟动物', '💠 深夜蓝羽化祈祷卡+蓝绣球花治愈诗篇', 'feather_navy', 'na_hydrangea', 'badge', 'Lora', 'sparkle_wand'],
+    ['sc-124', '美国文化与自然花鸟动物', '🌸 酒红丝绒羽化卡+馥郁芍药花母爱祈福', 'feather_burgundy', 'na_peony', 'both', 'Cormorant Garamond', 'sakura'],
+    ['sc-125', '美国文化与自然花鸟动物', '🪻 深夜蓝羽化祈祷卡+紫罗兰谦卑静谧祈祷', 'feather_navy', 'na_violet', 'both', 'Libre Baskerville', 'dove'],
+    ['sc-126', '美国文化与自然花鸟动物', '🐶 深褐圣经羽化卡+忠诚金毛小狗暖心陪伴', 'feather_brown', 'na_dog', 'mascot', 'Merriweather', 'pencil'],
+    ['sc-127', '美国文化与自然花鸟动物', '🐱 酒红丝绒羽化卡+温顺猫咪岁月静好祷词', 'feather_burgundy', 'na_cat', 'both', 'Handlee', 'pencil'],
+    ['sc-128', '美国文化与自然花鸟动物', '🐦 翡翠羽化祈祷卡+知更鸟与麻雀天父看顾', 'feather_emerald', 'na_robin_sparrow', 'both', 'Lora', 'quill'],
+    ['sc-129', '美国文化与自然花鸟动物', '🐿 深褐圣经羽化卡+林间活泼小松鼠感恩丰足', 'feather_brown', 'na_squirrel', 'mascot', 'Caveat', 'leaf'],
+    ['sc-130', '美国文化与自然花鸟动物', '🐰 翡翠羽化祈祷卡+温柔小兔子春天新生福杯', 'feather_emerald', 'na_rabbit', 'both', 'Satisfy', 'heart'],
+    ['sc-131', '美国文化与自然花鸟动物', '🦕 翡翠羽化祈祷卡+可爱恐龙奇妙创造之歌', 'feather_emerald', 'na_dinosaur', 'mascot', 'Bricolage Grotesque', 'pencil'],
+    ['sc-132', '美国文化与自然花鸟动物', '🌼 酒红丝绒羽化卡+极简花朵纯真主日祷文', 'feather_burgundy', 'na_minimal_flower', 'both', 'Playfair Display', 'feather_gold'],
+
+    // ── 六、节日四季·美食旅途音乐祈祷 (sc-133 ~ sc-148, 16款) ──
+    ['sc-133', '节日四季·美食旅途音乐祈祷', '🎄 圣诞红丝绒金卡+圣诞树平安夜祷告', 'fest_xmas_velvet', 'na_christmas_tree', 'both', 'Playfair Display', 'christmas_tree'],
+    ['sc-134', '节日四季·美食旅途音乐祈祷', '❄️ 圣诞松林覆雪卡+冬日雪花圣夜祝福', 'fest_xmas_pine', 'na_season_winter', 'both', 'Great Vibes', 'snowflake_wand'],
+    ['sc-135', '节日四季·美食旅途音乐祈祷', '🎆 美国星条旗画框+独立日7月4日烟花祷词', 'fest_us_stripes', 'na_fireworks', 'both', 'Merriweather', 'us_flag_shield'],
+    ['sc-136', '节日四季·美食旅途音乐祈祷', '🥚 暖白冬青信纸卡+复活节彩蛋重生赞美', 'fest_cream_holly', 'na_easter_egg', 'both', 'Dancing Script', 'sparkle_wand'],
+    ['sc-137', '节日四季·美食旅途音乐祈祷', '❤️ 圣诞红丝绒金卡+神圣爱心永恒挚爱祈祷', 'fest_xmas_velvet', 'na_sacred_heart', 'both', 'Cormorant Garamond', 'heart'],
+    ['sc-138', '节日四季·美食旅途音乐祈祷', '🌱 暖白冬青信纸卡+春季嫩芽与繁花复苏', 'fest_cream_holly', 'na_season_spring', 'mascot', 'Lora', 'brush'],
+    ['sc-139', '节日四季·美食旅途音乐祈祷', '☀️ 乡村蓝白格纹+盛夏骄阳活力恩典祷文', 'plaid_blue', 'na_season_summer', 'both', 'Caveat', 'sparkle_wand'],
+    ['sc-140', '节日四季·美食旅途音乐祈祷', '🍟 邮戳牛皮纸卡+美式酥脆薯片快乐相聚', 'kraft_stamped', 'na_potato_chips', 'badge', 'Handlee', 'pencil'],
+    ['sc-141', '节日四季·美食旅途音乐祈祷', '🍔 暖白冬青信纸卡+美式汉堡家庭感恩聚餐', 'fest_cream_holly', 'na_burger', 'badge', 'Roboto Slab', 'fountain_pen'],
+    ['sc-142', '节日四季·美食旅途音乐祈祷', '🍩 柔粉极简纸张+甜甜圈主日茶话喜乐', 'minimal_blush', 'na_donut', 'mascot', 'Satisfy', 'heart'],
+    ['sc-143', '节日四季·美食旅途音乐祈祷', '✈️ 美国星条旗画框+飞越云端旅途平安代祷', 'fest_us_stripes', 'na_airplane', 'both', 'Lato', 'sparkle_wand'],
+    ['sc-144', '节日四季·美食旅途音乐祈祷', '⛵ 鼠尾草亚麻纸+航海帆船顺风顺水祝祷', 'minimal_sage', 'na_sailboat', 'both', 'Lora', 'fountain_pen'],
+    ['sc-145', '节日四季·美食旅途音乐祈祷', '🎸 圣诞松林覆雪卡+乡村吉他围炉颂赞夜', 'fest_xmas_pine', 'na_guitar', 'mascot', 'Great Vibes', 'music_note'],
+    ['sc-146', '节日四季·美食旅途音乐祈祷', '💿 极简深灰美术纸+黑胶唱片经典老圣诗', 'minimal_slate', 'na_vinyl_record', 'both', 'Prata', 'music_note'],
+    ['sc-147', '节日四季·美食旅途音乐祈祷', '🔊 深夜蓝羽化祈祷卡+福音音响宣教金句', 'feather_navy', 'na_speaker', 'badge', 'Bricolage Grotesque', 'music_note'],
+    ['sc-148', '节日四季·美食旅途音乐祈祷', '👩 柔粉极简羊皮纸+独立女性蒙福前行祈祷', 'minimal_blush', 'na_independent_woman', 'both', 'Playfair Display', 'crown'],
+
+    // ── 七、圣诞奢华烫金丝绒卡片 (sc-149 ~ sc-161, 13款) ──
+    ['sc-149', '🎄 圣诞奢华烫金丝绒卡片', '🍷 勃艮第酒红丝绒烫金卡+圣诞冬青花环长卷祈祷', 'xmas_burgundy_foil', 'na_xmas_wreath', 'both', 'Cormorant Garamond', 'holly_berry'],
+    ['sc-150', '🎄 圣诞奢华烫金丝绒卡片', '🔔 勃艮第酒红丝绒烫金卡+圣夜金钟平安祝祷', 'xmas_burgundy_foil', 'na_xmas_bell', 'both', 'Playfair Display', 'jingle_bell'],
+    ['sc-151', '🎄 圣诞奢华烫金丝绒卡片', '🎁 勃艮第酒红丝绒烫金卡+圣诞礼盒蝴蝶结恩典长文', 'xmas_burgundy_foil', 'na_xmas_gift_box', 'badge', 'DM Serif Display', 'feather_gold'],
+    ['sc-152', '🎄 圣诞奢华烫金丝绒卡片', '🕯️ 平安夜壁炉烛光暖棕卡+将临期平安烛守夜祷文', 'xmas_candle_hearth', 'na_xmas_candle', 'both', 'Gelasio', 'candle_flame'],
+    ['sc-153', '🎄 圣诞奢华烫金丝绒卡片', '🧦 平安夜壁炉烛光暖棕卡+壁炉圣诞袜家庭祝福', 'xmas_candle_hearth', 'na_xmas_stocking', 'both', 'Lora', 'santa_feather'],
+    ['sc-154', '🎄 圣诞奢华烫金丝绒卡片', '🐦 平安夜壁炉烛光暖棕卡+北美红雀冬夜感恩诗篇', 'xmas_candle_hearth', 'na_cardinal_bird', 'both', 'Cormorant Garamond', 'quill'],
+    ['sc-155', '🎄 圣诞奢华烫金丝绒卡片', '☕ 平安夜壁炉烛光暖棕卡+热可可咖啡炉边夜话', 'xmas_candle_hearth', 'na_coffee_cup', 'mascot', 'Handlee', 'candle_flame'],
+    ['sc-156', '🎄 圣诞奢华烫金丝绒卡片', '🎅 皇家圣诞红丝绒金卡+红鼻驯鹿平安夜福音', 'fest_xmas_velvet', 'na_xmas_reindeer', 'both', 'Great Vibes', 'santa_feather'],
+    ['sc-157', '🎄 圣诞奢华烫金丝绒卡片', '✨ 皇家圣诞红丝绒金卡+圣诞冬青铃铛金句长卷', 'fest_xmas_velvet', 'na_xmas_bell', 'both', 'Prata', 'jingle_bell'],
+    ['sc-158', '🎄 圣诞奢华烫金丝绒卡片', '🍬 圣诞红白拐杖糖画框+薄荷拐杖糖甜蜜圣诞祷告', 'xmas_candy_ribbon', 'na_xmas_candy_cane', 'both', 'Dancing Script', 'candy_cane'],
+    ['sc-159', '🎄 圣诞奢华烫金丝绒卡片', '🎄 圣诞红白拐杖糖画框+圣诞树礼物感恩颂赞', 'xmas_candy_ribbon', 'na_christmas_tree', 'both', 'Playfair Display', 'christmas_tree'],
+    ['sc-160', '🎄 圣诞奢华烫金丝绒卡片', '🍪 圣诞姜饼屋糖霜贺卡+姜饼人甜心家庭暖心祈祷', 'xmas_gingerbread_warm', 'na_xmas_gingerbread_man', 'both', 'Handlee', 'candy_cane'],
+    ['sc-161', '🎄 圣诞奢华烫金丝绒卡片', '❤️ 圣诞姜饼屋糖霜贺卡+神圣爱心平安喜乐长文', 'xmas_gingerbread_warm', 'na_sacred_heart', 'both', 'Caveat', 'heart'],
+
+    // ── 八、圣诞教堂圣夜与将临期祈祷 (sc-162 ~ sc-174, 13款) ──
+    ['sc-162', '⛪ 圣诞教堂圣夜与将临期祈祷', '🌟 伯利恒平安夜圣星长卷+伯利恒晨星指路祈祷', 'xmas_nativity_star', 'na_xmas_bethlehem_star', 'both', 'Cinzel', 'cross_light'],
+    ['sc-163', '⛪ 圣诞教堂圣夜与将临期祈祷', '✝️ 伯利恒平安夜圣星长卷+圣婴马槽剪影子夜弥撒', 'xmas_nativity_star', 'na_xmas_nativity_manger', 'both', 'Cormorant Garamond', 'candle_flame'],
+    ['sc-164', '⛪ 圣诞教堂圣夜与将临期祈祷', '🕊️ 伯利恒平安夜圣星长卷+和平白鸽圣诞平安福音', 'xmas_nativity_star', 'na_peace_dove', 'both', 'Lora', 'dove'],
+    ['sc-165', '⛪ 圣诞教堂圣夜与将临期祈祷', '🙏 伯利恒平安夜圣星长卷+鎏金十字架圣诞子夜代祷', 'xmas_nativity_star', 'na_cross_gold', 'both', 'Merriweather', 'cross_light'],
+    ['sc-166', '⛪ 圣诞教堂圣夜与将临期祈祷', '⛪ 哥特教堂彩绘玻璃卡+圣婴马槽福音经文长卷', 'xmas_stained_glass', 'na_xmas_nativity_manger', 'both', 'Merriweather', 'fountain_pen'],
+    ['sc-167', '⛪ 圣诞教堂圣夜与将临期祈祷', '✝️ 哥特教堂彩绘玻璃卡+鎏金十字架教堂赞美诗', 'xmas_stained_glass', 'na_cross_gold', 'both', 'Libre Baskerville', 'cross_light'],
+    ['sc-168', '⛪ 圣诞教堂圣夜与将临期祈祷', '📖 哥特教堂彩绘玻璃卡+圣经与书卷路加福音第二章', 'xmas_stained_glass', 'na_open_book', 'both', 'Lora', 'quill'],
+    ['sc-169', '⛪ 圣诞教堂圣夜与将临期祈祷', '💜 将临期主教紫烫金卡+将临期平安烛四周敬拜祷文', 'xmas_advent_plum', 'na_xmas_candle', 'both', 'DM Serif Display', 'candle_flame'],
+    ['sc-170', '⛪ 圣诞教堂圣夜与将临期祈祷', '🙏 将临期主教紫烫金卡+虔诚祈祷手基督降临祈愿', 'xmas_advent_plum', 'na_praying_hands', 'both', 'Cinzel', 'cross_light'],
+    ['sc-171', '⛪ 圣诞教堂圣夜与将临期祈祷', '🌷 将临期主教紫烫金卡+纯洁百合花圣母报喜颂赞', 'xmas_advent_plum', 'na_lily', 'both', 'Cormorant Garamond', 'feather_gold'],
+    ['sc-172', '⛪ 圣诞教堂圣夜与将临期祈祷', '🎼 《平安夜》圣诗乐谱卡+圣夜金钟百年圣诞颂歌', 'xmas_silent_hymnal', 'na_xmas_bell', 'both', 'Libre Baskerville', 'music_note'],
+    ['sc-173', '⛪ 圣诞教堂圣夜与将临期祈祷', '🎵 《平安夜》圣诗乐谱卡+灵动音符平安夜合唱祷文', 'xmas_silent_hymnal', 'na_music_notes', 'both', 'Playfair Display', 'music_note'],
+    ['sc-174', '⛪ 圣诞教堂圣夜与将临期祈祷', '🗼 《平安夜》圣诗乐谱卡+灯塔圣光新年盼望长信', 'xmas_silent_hymnal', 'na_lighthouse_torch', 'badge', 'Prata', 'quill'],
+
+    // ── 九、圣诞苏格兰格纹与经典冬日卡片 (sc-175 ~ sc-186, 12款) ──
+    ['sc-175', '🏴󠁧󠁢󠁳󠁣󠁴󠁿 圣诞苏格兰格纹与经典冬日卡片', '🏴󠁧󠁢󠁳󠁣󠁴󠁿 皇家圣诞苏格兰红绿格纹+圣诞冬青花环家族祝祷', 'xmas_royal_tartan', 'na_xmas_wreath', 'both', 'Libre Baskerville', 'holly_berry'],
+    ['sc-176', '🏴󠁧󠁢󠁳󠁣󠁴󠁿 圣诞苏格兰格纹与经典冬日卡片', '🐦 皇家圣诞苏格兰红绿格纹+红胸知更鸟冬日来信', 'xmas_royal_tartan', 'na_xmas_robin_holly', 'both', 'Lora', 'quill'],
+    ['sc-177', '🏴󠁧󠁢󠁳󠁣󠁴󠁿 圣诞苏格兰格纹与经典冬日卡片', '🧦 皇家圣诞苏格兰红绿格纹+壁炉圣诞袜儿童祝福', 'xmas_royal_tartan', 'na_xmas_stocking', 'both', 'Handlee', 'candy_cane'],
+    ['sc-178', '🏴󠁧󠁢󠁳󠁣󠁴󠁿 圣诞苏格兰格纹与经典冬日卡片', '🚂 皇家圣诞苏格兰红绿格纹+怀旧雪国列车返乡祈祷', 'xmas_royal_tartan', 'na_train', 'mascot', 'Roboto Slab', 'fountain_pen'],
+    ['sc-179', '🏴󠁧󠁢󠁳󠁣󠁴󠁿 圣诞苏格兰格纹与经典冬日卡片', '🌲 常青松绿红金苏格兰格纹+圣诞树森林平安祈祷', 'xmas_evergreen_plaid', 'na_christmas_tree', 'both', 'Merriweather', 'christmas_tree'],
+    ['sc-180', '🏴󠁧󠁢󠁳󠁣󠁴󠁿 圣诞苏格兰格纹与经典冬日卡片', '🦌 常青松绿红金苏格兰格纹+圣诞红鼻驯鹿感恩长信', 'xmas_evergreen_plaid', 'na_xmas_reindeer', 'both', 'Playfair Display', 'santa_feather'],
+    ['sc-181', '🏴󠁧󠁢󠁳󠁣󠁴󠁿 圣诞苏格兰格纹与经典冬日卡片', '🏡 常青松绿红金苏格兰格纹+温馨家园圣诞团圆祝祷', 'xmas_evergreen_plaid', 'na_cozy_home', 'both', 'Bricolage Grotesque', 'candle_flame'],
+    ['sc-182', '🏴󠁧󠁢󠁳󠁣󠁴󠁿 圣诞苏格兰格纹与经典冬日卡片', '🚗 常青松绿红金苏格兰格纹+复古敞篷车圣诞载归祈福', 'xmas_evergreen_plaid', 'na_vintage_car', 'badge', 'Lato', 'holly_berry'],
+    ['sc-183', '🏴󠁧󠁢󠁳󠁣󠁴󠁿 圣诞苏格兰格纹与经典冬日卡片', '🎄 圣诞松林覆雪木牌+红鼻驯鹿雪夜牧羊人祷告', 'fest_xmas_pine', 'na_xmas_reindeer', 'both', 'Great Vibes', 'snowflake_wand'],
+    ['sc-184', '🏴󠁧󠁢󠁳󠁣󠁴󠁿 圣诞苏格兰格纹与经典冬日卡片', '🐶 圣诞松林覆雪木牌+忠诚小狗冬夜陪伴暖心祈福', 'fest_xmas_pine', 'na_dog', 'both', 'Lora', 'christmas_tree'],
+    ['sc-185', '🏴󠁧󠁢󠁳󠁣󠁴󠁿 圣诞苏格兰格纹与经典冬日卡片', '✉️ 圣诞暖白信纸冬青贺卡+圣夜金钟基督降生祝祷', 'fest_cream_holly', 'na_xmas_bell', 'both', 'Cormorant Garamond', 'jingle_bell'],
+    ['sc-186', '🏴󠁧󠁢󠁳󠁣󠁴󠁿 圣诞苏格兰格纹与经典冬日卡片', '🐱 圣诞暖白信纸冬青贺卡+炉边暖猫冬日温柔祈祷', 'fest_cream_holly', 'na_cat', 'mascot', 'Handlee', 'holly_berry'],
+
+    // ── 十、圣诞冰雪银箔与简约棉纸植物贺卡 (sc-187 ~ sc-198, 12款) ──
+    ['sc-187', '❄️ 圣诞冰雪银箔与简约棉纸植物贺卡', '❄️ 冰霜银箔冬夜圣诞卡+冰晶大雪花纯洁平安祈祷', 'xmas_frosted_ice', 'na_xmas_snowflake', 'both', 'Cormorant Garamond', 'snowflake_wand'],
+    ['sc-188', '❄️ 圣诞冰雪银箔与简约棉纸植物贺卡', '🌬️ 冰霜银箔冬夜圣诞卡+凛冬雪花银铃静夜祷文', 'xmas_frosted_ice', 'na_season_winter', 'both', 'Playfair Display', 'snowflake_wand'],
+    ['sc-189', '❄️ 圣诞冰雪银箔与简约棉纸植物贺卡', '🐇 冰霜银箔冬夜圣诞卡+雪地温柔小兔平安祝福', 'xmas_frosted_ice', 'na_rabbit', 'mascot', 'Dancing Script', 'sparkle_wand'],
+    ['sc-190', '❄️ 圣诞冰雪银箔与简约棉纸植物贺卡', '🌌 圣诞极光飘雪夜空板+伯利恒晨星极光守夜长祷', 'xmas_starry_aurora', 'na_xmas_bethlehem_star', 'both', 'Cormorant Garamond', 'snowflake_wand'],
+    ['sc-191', '❄️ 圣诞冰雪银箔与简约棉纸植物贺卡', '🌙 圣诞极光飘雪夜空板+星月辉映圣诞前夜感恩诗', 'xmas_starry_aurora', 'na_stars_moon', 'both', 'Cinzel', 'sparkle_wand'],
+    ['sc-192', '❄️ 圣诞冰雪银箔与简约棉纸植物贺卡', '📜 厚磅象牙棉纸朱批圣诞函+红玫瑰冬青典雅祝祷', 'xmas_cotton_press', 'na_rose', 'both', 'Lora', 'fountain_pen'],
+    ['sc-193', '❄️ 圣诞冰雪银箔与简约棉纸植物贺卡', '🕊️ 厚磅象牙棉纸朱批圣诞函+和平白鸽手写体圣诞信', 'xmas_cotton_press', 'na_peace_dove', 'both', 'Homemade Apple', 'quill'],
+    ['sc-194', '❄️ 圣诞冰雪银箔与简约棉纸植物贺卡', '🎁 厚磅象牙棉纸朱批圣诞函+圣诞礼盒岁末感谢长文', 'xmas_cotton_press', 'na_xmas_gift_box', 'badge', 'Gelasio', 'feather_gold'],
+    ['sc-195', '❄️ 圣诞冰雪银箔与简约棉纸植物贺卡', '🌿 冬日鼠尾草绿花环卡+圣诞冬青花环自然系长信', 'xmas_sage_wreath', 'na_xmas_wreath', 'both', 'Playfair Display', 'leaf'],
+    ['sc-196', '❄️ 圣诞冰雪银箔与简约棉纸植物贺卡', '🍀 冬日鼠尾草绿花环卡+幸运四叶草新年平安祷词', 'xmas_sage_wreath', 'na_four_leaf_clover', 'both', 'Satisfy', 'leaf'],
+    ['sc-197', '❄️ 圣诞冰雪银箔与简约棉纸植物贺卡', '📦 牛皮纸冬日松果红果卡+红胸知更鸟圣诞手作信', 'xmas_kraft_botanical', 'na_xmas_robin_holly', 'both', 'Handlee', 'brush'],
+    ['sc-198', '❄️ 圣诞冰雪银箔与简约棉纸植物贺卡', '🐿️ 牛皮纸冬日松果红果卡+松林小松鼠冬日丰收感恩', 'xmas_kraft_botanical', 'na_squirrel', 'mascot', 'Kalam', 'pencil'],
+
+    // ── 十一、北美Pinterest简约感恩节 · 秋日生活与祈祷卡 (sc-199 ~ sc-214, 16款) ──
     ['sc-199', '🍂 感恩节 · 极简秋日与祈祷卡', '🌾 极简燕麦亚麻棉纸笺+感恩金麦穗晨间祈祷', 'thx_oat_minimal', 'na_thx_wheat', 'both', 'Lora', 'wheat_stalk'],
+    ['sc-200', '🍂 感恩节 · 极简秋日与祈祷卡', '☕ 极简燕麦亚麻棉纸笺+秋日热饮陶杯慢生活日记', 'thx_oat_minimal', 'na_thx_autumn_mug', 'mascot', 'Cormorant Garamond', 'warm_mug'],
+    ['sc-201', '🍂 感恩节 · 极简秋日与祈祷卡', '🍁 极简燕麦亚麻棉纸笺+赤陶秋枫叶简约感恩祷词', 'thx_oat_minimal', 'na_thx_maple', 'badge', 'Playfair Display', 'maple_leaf'],
     ['sc-202', '🍂 感恩节 · 极简秋日与祈祷卡', '🍂 焦糖陶红亚麻外框卡+赤陶秋枫叶丰收餐桌祝福', 'thx_terracotta_linen', 'na_thx_maple', 'both', 'Playfair Display', 'maple_leaf'],
+    ['sc-203', '🍂 感恩节 · 极简秋日与祈祷卡', '🎃 焦糖陶红亚麻外框卡+奶油赤陶南瓜秋日日常卡', 'thx_terracotta_linen', 'na_thx_heirloom_pumpkin', 'both', 'Lora', 'minimal_pumpkin'],
+    ['sc-204', '🍂 感恩节 · 极简秋日与祈祷卡', '🌾 焦糖陶红亚麻外框卡+金麦穗家族感恩长文笺', 'thx_terracotta_linen', 'na_thx_wheat', 'badge', 'Libre Baskerville', 'wheat_stalk'],
     ['sc-205', '🍂 感恩节 · 极简秋日与祈祷卡', '🌿 鼠尾草绿静谧祷告笺+感恩橄榄枝平安祷词', 'thx_sage_quiet', 'na_thx_olive_wreath', 'both', 'Cormorant Garamond', 'olive_branch'],
+    ['sc-206', '🍂 感恩节 · 极简秋日与祈祷卡', '🕊️ 鼠尾草绿静谧祷告笺+和平白鸽莫兰迪静心祈祷', 'thx_sage_quiet', 'na_peace_dove', 'mascot', 'Lora', 'dove'],
+    ['sc-207', '🍂 感恩节 · 极简秋日与祈祷卡', '✝️ 鼠尾草绿静谧祷告笺+极简圣洁十字秋日灵修', 'thx_sage_quiet', 'na_cross_gold', 'badge', 'DM Serif Display', 'cross_light'],
     ['sc-208', '🍂 感恩节 · 极简秋日与祈祷卡', '🕯️ 暖秋琥珀壁炉卡+守望烛火感恩夜长祷', 'thx_amber_hearth', 'na_xmas_candle', 'both', 'Gelasio', 'candle_flame'],
+    ['sc-209', '🍂 感恩节 · 极简秋日与祈祷卡', '🌰 暖秋琥珀壁炉卡+森系橡果秋夜恩典随笔', 'thx_amber_hearth', 'na_thx_acorn', 'both', 'Playfair Display', 'acorn'],
+    ['sc-210', '🍂 感恩节 · 极简秋日与祈祷卡', '☕ 深萃可可极简烫金卡+暖秋热饮清晨感恩默想', 'thx_espresso_gold', 'na_thx_autumn_mug', 'both', 'DM Serif Display', 'warm_mug'],
+    ['sc-211', '🍂 感恩节 · 极简秋日与祈祷卡', '🍁 深萃可可极简烫金卡+极简秋枫鎏金高级祝福卡', 'thx_espresso_gold', 'na_thx_maple', 'mascot', 'Cormorant Garamond', 'maple_leaf'],
     ['sc-212', '🍂 感恩节 · 极简秋日与祈祷卡', '✝️ 深萃可可极简烫金卡+十字架感恩祈祷守望卡', 'thx_espresso_gold', 'na_cross_gold', 'both', 'Lora', 'cross_light'],
     ['sc-213', '🍂 感恩节 · 极简秋日与祈祷卡', '🎃 极简牛皮麻绳信札+奶油南瓜乡村秋日手帐', 'thx_kraft_harvest', 'na_thx_heirloom_pumpkin', 'both', 'Handlee', 'minimal_pumpkin'],
+    ['sc-214', '🍂 感恩节 · 极简秋日与祈祷卡', '🌰 极简牛皮麻绳信札+胡桃橡果秋日丰收手写祷文', 'thx_kraft_harvest', 'na_thx_acorn', 'both', 'Merriweather', 'quill'],
 ];
+
+const REELS_SCROLL_PRESET_ID_MAP = {
+    "sc-01": "手写白字粗黑边滚动",
+    "sc-02": "手写白字细黑边滚动",
+    "sc-03": "手写白字砖红边滚动",
+    "sc-04": "手写红字白边滚动",
+    "sc-05": "文楷粗白字黑边滚动",
+    "sc-06": "马克笔明黄黑边滚动",
+    "sc-07": "圆润手写白字中黑边滚动",
+    "sc-08": "圆润手写白字重黑边滚动",
+    "sc-09": "极简无衬线白字细边滚动",
+    "sc-10": "极简无衬线玫红细边滚动",
+    "sc-11": "手写粉橙渐变粗黑边滚动",
+    "sc-12": "手写烈焰红金渐变粗黑边滚动",
+    "sc-13": "手写金橙三色渐变+黑半透圆角底框",
+    "sc-14": "无衬线粉橙渐变+黑半透圆角底框",
+    "sc-15": "手写暖黄粗黑边+黑半透圆角底框",
+    "sc-16": "圆润手写纯白粗边+黑半透圆角底框",
+    "sc-17": "纤细手写暖黄粗边+白半透圆角底框",
+    "sc-18": "窄体无衬线金黄粗边+白半透圆角底框",
+    "sc-19": "圆润手写金黄粗边+白半透圆角底框",
+    "sc-20": "圆润手写纯白细边+白半透大圆角底框",
+    "sc-21": "现代几何粗白字黑边+白半透底框",
+    "sc-22": "手写左对齐白字深褐边+白微透底框",
+    "sc-23": "红字白边固定标题+手写粗白字黑边滚动",
+    "sc-24": "红字白边固定标题+紧缩黑体白字大行距滚动",
+    "sc-25": "圣诞拐杖糖连体底带+手写暖白暗红边滚动",
+    "sc-26": "圣诞拐杖糖连体底带+手写暗红边打字机出字",
+    "sc-27": "复古旧报纸剪报连体贴条+衬线斜体逐词出字",
+    "sc-28": "怀旧泛黄报刊连体贴条+衬线斜体逐词出字",
+    "sc-29": "圣诞松林覆雪连体底带+圣诞树笔尖写出",
+    "sc-30": "红标固定标题+手写白字逐词金黄跟读高亮",
+    "sc-31": "金标暗红边标题+手写暖白暗红边逐词金黄跟读",
+    "sc-32": "手写白字粗黑边+逐字金黄跟读高亮",
+    "sc-33": "手写白字黑边+复古羽毛笔逐字朗诵写出",
+    "sc-34": "粗白字黑边+彩虹渐变逐词累积跟读",
+    "sc-35": "🇺🇸 星条旗荣耀连体底带+星盾笔尖出字",
+    "sc-36": "🎖️ 老兵金章深蓝绶带+紫心勋章逐词跟读",
+    "sc-37": "🏷️ 美军拉丝钢印铭牌底带+军牌笔尖写出",
+    "sc-38": "🌺 纪念虞美人花宣纸贴条+红罂粟花逐词出字",
+    "sc-39": "🕊️ 祈祷书签绿卡+白鸽玫瑰+逐行金线跟读 (爆款同款)",
+    "sc-40": "🔖 祈祷书签深褐卡+逐行金线跟读 (古典圣经风)",
+    "sc-41": "🌌 祈祷书签深蓝卡+白鸽橄榄枝+逐行金线跟读",
+    "sc-42": "🌹 皇家酒红丝绒卡+左上玫瑰金章+白鸽跟读",
+    "sc-43": "🇺🇸 海军深蓝荣耀卡+左上星条金盾角标+逐行金线",
+    "sc-44": "🏵️ 复古胡桃古籍卡+左上火漆金章角标+逐行金线",
+    "sc-45": "🌿 翡翠金线祈祷卡+左上橄榄枝桂冠角标+白鸽跟读",
+    "sc-46": "❝ 曜石黑杂志金线卡+左上双引号金标+逐行金线",
+    "sc-47": "👑 圣洁皇冠紫檀卡+左上皇冠鎏金角标+祈祷圣光",
+    "sc-48": "🪶 三行黑透圆角条+金羽绿字跟读滚动 (Anointed Woman同款)",
+};
 
 for (const [id, cat, name, archKey, emblemId, mode, fontOverride, cursorKind] of _NA_PRAYER_STYLE_SPECS) {
     const a = _SCROLL_ARCHETYPES[archKey] || _SCROLL_ARCHETYPES.minimal_ivory;
@@ -9202,69 +9516,12 @@ for (const [id, cat, name, archKey, emblemId, mode, fontOverride, cursorKind] of
         scroll_tw_cursor_scale: 1.05,
         scroll_tw_cursor_angle: -8,
     });
+    REELS_SCROLL_PRESET_ID_MAP[id] = name;
 }
 
-const REELS_SCROLL_PRESET_ID_MAP = {};
-for (const [scName, sc] of Object.entries(REELS_BUILTIN_SCROLL_STYLE_PRESETS)) {
-    const scId = sc?.preset_id;
-    if (!scId) continue;
-    REELS_SCROLL_PRESET_ID_MAP[scId] = scName;
+for (const [scId, scName] of Object.entries({ ...REELS_SCROLL_PRESET_ID_MAP })) {
     const num = scId.replace(/^sc-/, '');
     REELS_SCROLL_PRESET_ID_MAP[`scroll-${num}`] = scName;
-}
-
-// 兼容已下线/合并的旧编号：历史工程与 CLI 传参静默映射到最接近的保留精品，避免列表冗余又不破坏旧工程
-const _RETIRED_SCROLL_PRESET_ALIAS = {
-    'sc-02': 'sc-01', 'sc-03': 'sc-01',
-    'sc-07': 'sc-05', 'sc-08': 'sc-05',
-    'sc-10': 'sc-09', 'sc-12': 'sc-11',
-    'sc-14': 'sc-13', 'sc-15': 'sc-13',
-    'sc-17': 'sc-21', 'sc-18': 'sc-21', 'sc-19': 'sc-21', 'sc-20': 'sc-21',
-    'sc-25': 'sc-26',
-    'sc-31': 'sc-30', 'sc-32': 'sc-30',
-    'sc-36': 'sc-35',
-    'sc-52': 'sc-43', 'sc-53': 'sc-49', 'sc-54': 'sc-50', 'sc-55': 'sc-49',
-    'sc-56': 'sc-49', 'sc-57': 'sc-50', 'sc-58': 'sc-49', 'sc-59': 'sc-49',
-    'sc-60': 'sc-51', 'sc-61': 'sc-50', 'sc-62': 'sc-49', 'sc-63': 'sc-49', 'sc-64': 'sc-51',
-    'sc-66': 'sc-65', 'sc-68': 'sc-65', 'sc-70': 'sc-72', 'sc-71': 'sc-67',
-    'sc-73': 'sc-65', 'sc-74': 'sc-67', 'sc-75': 'sc-65', 'sc-76': 'sc-72',
-    'sc-77': 'sc-69', 'sc-78': 'sc-69', 'sc-79': 'sc-72', 'sc-80': 'sc-67',
-    'sc-82': 'sc-81', 'sc-83': 'sc-95', 'sc-84': 'sc-93', 'sc-85': 'sc-95',
-    'sc-86': 'sc-93', 'sc-87': 'sc-93', 'sc-88': 'sc-81', 'sc-89': 'sc-95',
-    'sc-90': 'sc-93', 'sc-91': 'sc-93', 'sc-92': 'sc-93', 'sc-94': 'sc-93', 'sc-96': 'sc-95',
-    'sc-98': 'sc-97', 'sc-100': 'sc-99', 'sc-101': 'sc-99', 'sc-102': 'sc-99',
-    'sc-104': 'sc-103', 'sc-106': 'sc-105', 'sc-108': 'sc-107', 'sc-110': 'sc-109',
-    'sc-111': 'sc-105', 'sc-112': 'sc-105', 'sc-113': 'sc-105', 'sc-114': 'sc-105',
-    'sc-115': 'sc-39', 'sc-116': 'sc-41', 'sc-117': 'sc-41', 'sc-118': 'sc-39',
-    'sc-119': 'sc-40', 'sc-120': 'sc-40', 'sc-121': 'sc-41', 'sc-122': 'sc-42',
-    'sc-123': 'sc-41', 'sc-124': 'sc-42', 'sc-125': 'sc-41', 'sc-126': 'sc-40',
-    'sc-127': 'sc-42', 'sc-128': 'sc-39', 'sc-129': 'sc-40', 'sc-130': 'sc-39',
-    'sc-131': 'sc-39', 'sc-132': 'sc-42',
-    'sc-133': 'sc-149', 'sc-134': 'sc-175', 'sc-135': 'sc-35', 'sc-136': 'sc-172',
-    'sc-137': 'sc-149', 'sc-138': 'sc-172', 'sc-139': 'sc-93', 'sc-140': 'sc-50',
-    'sc-141': 'sc-172', 'sc-142': 'sc-69', 'sc-143': 'sc-35', 'sc-144': 'sc-67',
-    'sc-145': 'sc-175', 'sc-146': 'sc-72', 'sc-147': 'sc-41', 'sc-148': 'sc-69',
-    'sc-150': 'sc-149', 'sc-151': 'sc-149', 'sc-153': 'sc-152', 'sc-154': 'sc-152',
-    'sc-155': 'sc-152', 'sc-156': 'sc-149', 'sc-157': 'sc-149', 'sc-159': 'sc-158',
-    'sc-161': 'sc-160', 'sc-163': 'sc-162', 'sc-164': 'sc-162', 'sc-165': 'sc-162',
-    'sc-166': 'sc-167', 'sc-168': 'sc-167', 'sc-170': 'sc-169', 'sc-171': 'sc-169',
-    'sc-173': 'sc-172', 'sc-174': 'sc-172', 'sc-176': 'sc-175', 'sc-177': 'sc-175',
-    'sc-178': 'sc-175', 'sc-179': 'sc-175', 'sc-180': 'sc-175', 'sc-181': 'sc-175',
-    'sc-182': 'sc-175', 'sc-183': 'sc-175', 'sc-184': 'sc-175', 'sc-185': 'sc-172',
-    'sc-186': 'sc-172', 'sc-188': 'sc-187', 'sc-189': 'sc-187', 'sc-191': 'sc-190',
-    'sc-192': 'sc-172', 'sc-193': 'sc-172', 'sc-194': 'sc-172', 'sc-195': 'sc-175',
-    'sc-196': 'sc-175', 'sc-197': 'sc-175', 'sc-198': 'sc-175',
-    'sc-200': 'sc-199', 'sc-201': 'sc-199', 'sc-203': 'sc-202', 'sc-204': 'sc-202',
-    'sc-206': 'sc-205', 'sc-207': 'sc-205', 'sc-209': 'sc-208', 'sc-210': 'sc-212',
-    'sc-211': 'sc-212', 'sc-214': 'sc-213',
-};
-
-function _resolveScrollAliasCode(code) {
-    const raw = String(code || '').trim().toLowerCase();
-    if (!raw) return '';
-    if (REELS_SCROLL_PRESET_ID_MAP[raw]) return raw;
-    const scKey = raw.startsWith('scroll-') ? ('sc-' + raw.slice(7)) : raw;
-    return _RETIRED_SCROLL_PRESET_ALIAS[scKey] || '';
 }
 
 function resolveBuiltinPreset(idOrName) {
@@ -9274,12 +9531,7 @@ function resolveBuiltinPreset(idOrName) {
     if (bracketMatch) {
         const bracketCode = bracketMatch[1].toLowerCase();
         const bracketName = bracketMatch[2].trim();
-        if (
-            REELS_PRESET_ID_MAP[bracketCode]
-            || REELS_SCROLL_PRESET_ID_MAP[bracketCode]
-            || REELS_OVERLAY_PRESET_ID_MAP[bracketCode]
-            || _resolveScrollAliasCode(bracketCode)
-        ) {
+        if (REELS_PRESET_ID_MAP[bracketCode] || REELS_SCROLL_PRESET_ID_MAP[bracketCode] || REELS_OVERLAY_PRESET_ID_MAP[bracketCode]) {
             key = bracketCode;
         } else if (bracketName) {
             key = bracketName;
@@ -9310,11 +9562,7 @@ function resolveBuiltinPreset(idOrName) {
             overlays: [{ ...sc, type: 'scroll' }],
         };
     }
-    const resolvedScrollAlias = _resolveScrollAliasCode(key);
-    const mappedScrollName =
-        REELS_SCROLL_PRESET_ID_MAP[key]
-        || REELS_SCROLL_PRESET_ID_MAP[key.toLowerCase()]
-        || (resolvedScrollAlias ? REELS_SCROLL_PRESET_ID_MAP[resolvedScrollAlias] : null);
+    const mappedScrollName = REELS_SCROLL_PRESET_ID_MAP[key] || REELS_SCROLL_PRESET_ID_MAP[key.toLowerCase()];
     if (mappedScrollName && REELS_BUILTIN_SCROLL_STYLE_PRESETS[mappedScrollName]) {
         const sc = REELS_BUILTIN_SCROLL_STYLE_PRESETS[mappedScrollName];
         return {
