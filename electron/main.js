@@ -18,6 +18,7 @@ const { spawnSync } = require('child_process');
 const { Readable } = require('stream');
 const ffmpegService = require('./services/ffmpeg');
 const { ReelsMediaAvailability } = require('./services/reels-media-availability');
+const { guardWorkspaceClose } = require('./services/close-save-guard');
 const { initAutoUpdater } = require('./updater');
 
 const { assertTrustedRenderer, isTrustedRendererUrl } = require('./services/trustedRenderer');
@@ -1355,26 +1356,61 @@ function createWindow() {
         })();
     }
 
-    mainWindow.on('close',async event=>{
-        if(workspaceCloseApproved || app._updateRestartApproved || mainWindow?.webContents?.isDestroyed())return;
+    mainWindow.on('close', async event => {
+        if (workspaceCloseApproved || app._updateRestartApproved || mainWindow?.webContents?.isDestroyed()) return;
         event.preventDefault();
-        if(workspaceCloseSaving)return;
-        workspaceCloseSaving=true;
-        const closingWindow=mainWindow;
-        try{
-            const result=await closingWindow.webContents.executeJavaScript(`(()=>{
-                if(typeof window.reelsFlushWorkspaceBeforeClose!=='function')return {ok:true,skipped:true};
-                const result=window.reelsFlushWorkspaceBeforeClose();
-                if(result?.ok)window._workspaceCloseAlreadySaved=true;
-                return result;
-            })()`,true);
-            if(!result?.ok)throw new Error(result?.error||'自动保存未完成');
-            workspaceCloseApproved=true;
-            closingWindow.close();
-        }catch(error){
-            log('[Workspace] Close save failed: '+error.message);
-            if(!closingWindow.isDestroyed())dialog.showMessageBoxSync(closingWindow,{type:'error',title:'自动保存失败',message:'当前编辑未能保存，已取消退出。',detail:error.message,buttons:['返回软件'],defaultId:0});
-        }finally{workspaceCloseSaving=false;}
+        if (workspaceCloseSaving) return; // one watchdog and one dialog at a time
+        workspaceCloseSaving = true;
+        const closingWindow = mainWindow;
+        const alive = () => !closingWindow.isDestroyed();
+        try {
+            await guardWorkspaceClose({
+                requestSave: () => closingWindow.webContents.executeJavaScript(`(()=>{
+                    if(typeof window.reelsFlushWorkspaceBeforeClose!=='function')return {ok:true,skipped:true};
+                    const result=window.reelsFlushWorkspaceBeforeClose();
+                    if(result?.ok)window._workspaceCloseAlreadySaved=true;
+                    return result;
+                })()`, true),
+                isAlive: alive,
+                timeoutMs: 4000,
+                closeNormally: () => {
+                    workspaceCloseApproved = true;
+                    if (alive()) closingWindow.close();
+                },
+                // BrowserWindow.destroy bypasses a hung renderer's beforeunload.
+                // This is only used after an explicit user choice.
+                forceClose: () => {
+                    workspaceCloseApproved = true;
+                    if (alive()) closingWindow.destroy();
+                },
+                decide: async (reason, error) => {
+                    if (!alive()) return 'cancel';
+                    const timeout = reason === 'timeout';
+                    const opts = timeout ? {
+                        type: 'warning',
+                        title: '等待工程保存超时',
+                        message: '编辑界面没有响应，无法确认最近的修改是否已经保存。',
+                        detail: '强制退出可能丢失最近未保存的修改。你可以继续等待，或直接退出卡住的窗口。',
+                        buttons: ['继续等待', '强制退出', '取消退出'],
+                        defaultId: 0, cancelId: 2, noLink: true
+                    } : {
+                        type: 'error',
+                        title: '工程自动保存失败',
+                        message: '最近的修改可能尚未保存。',
+                        detail: String(error?.message || '未知保存错误'),
+                        buttons: ['返回软件', '仍要退出'],
+                        defaultId: 0, cancelId: 0, noLink: true
+                    };
+                    const { response } = await dialog.showMessageBox(closingWindow, opts);
+                    if (timeout) return response === 0 ? 'wait' : response === 1 ? 'exit' : 'cancel';
+                    return response === 1 ? 'exit' : 'cancel';
+                }
+            });
+        } catch (error) {
+            log('[Workspace] Close guard failed: ' + (error?.message || error));
+        } finally {
+            workspaceCloseSaving = false;
+        }
     });
 
     mainWindow.on('closed', () => {
