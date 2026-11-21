@@ -45,3 +45,9 @@ jobs:
           node --check src/reels-media-availability.js
       - name: Focused regression tests
         run: node --test tests/reels-media-availability.test.js tests/close-save-guard.test.js tests/template-preview-segments.test.js
+      - name: Install application dependencies
+        run: npm ci --ignore-scripts
+      - name: Existing project regression suite
+        run: npm test
+      - name: Build frontend assets
+        run: npm run build
