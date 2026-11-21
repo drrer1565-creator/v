@@ -15658,7 +15658,14 @@ async function _reelsStartExportImpl(options = {}) {
                 ? task.bgClipPool.filter(p => typeof p === 'string' && p.trim())
                 : [task.bgPath || task.videoPath || ''].filter(Boolean);
             if (!mediaPaths.length) continue; // Existing validation handles truly empty backgrounds.
-            const results = await Promise.all([...new Set(mediaPaths)].map(path => mediaHealth.check(path)));
+            const uniquePaths = [...new Set(mediaPaths)];
+            const results = [];
+            // Do not flood the bounded media checker on very large template pools.
+            for (let offset = 0; offset < uniquePaths.length; offset += 4) {
+                const batch = await Promise.all(uniquePaths.slice(offset, offset + 4)
+                    .map(path => mediaHealth.check(path)));
+                results.push(...batch);
+            }
             const bad = results.filter(result => result.status !== 'available');
             if (bad.length) affected.push({ task, count: bad.length });
         }
