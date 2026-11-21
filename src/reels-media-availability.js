@@ -47,6 +47,7 @@
     }
     function isUsable(path) {
         if (typeof path !== 'string' || !path.trim()) return false;
+        if (window._reelsSafeRestoreNoMedia) return false;
         if (/^blob:/i.test(path)) return false; // persisted blob URLs cannot survive a restart
         const result = get(path);
         if (result.status === 'unchecked') void check(path);
@@ -73,6 +74,12 @@
         generation++;
         if (path) records.delete(path);
         else records.clear();
+    }
+    function markFailed(path, reason = 'decode-error') {
+        if (typeof path !== 'string' || !path.trim()) return;
+        const old = get(path).status;
+        records.set(path, { result: { status: 'failed', reason }, expiry: Date.now() + TTL.failed });
+        if (old !== 'failed') window.dispatchEvent(new CustomEvent('reels-media-availability-changed', { detail: { path, status: 'failed' } }));
     }
     async function retryTask(task) {
         const paths = pathsForTask(task);
@@ -125,6 +132,6 @@
     }
     window.ReelsMediaAvailability = {
         get, check, isUsable, preflightTask, preflightProject,
-        getTaskProblems, invalidate, retryTask, updateWarning
+        getTaskProblems, invalidate, markFailed, retryTask, updateWarning
     };
 })();
