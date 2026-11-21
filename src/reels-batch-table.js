@@ -2692,6 +2692,7 @@ window.reelsApplySealedTemplate = async function(tplData, options = {}) {
         }
     }
 
+    if (options.loadId && options.loadId !== window._reelsTemplateLoadGeneration) return false;
     const restored = (typeof window.ReelsProject?.applyProjectData === 'function')
         ? window.ReelsProject.applyProjectData(tplData.projectData)
         : { tasks: tplData.projectData.tasks || [], style: tplData.projectData.style, exportOpts: tplData.projectData.exportOpts, watermarks: tplData.projectData.watermarks };
@@ -2710,6 +2711,10 @@ window.reelsApplySealedTemplate = async function(tplData, options = {}) {
         }
         return clean;
     });
+
+    // Check the active task before drawing the player. Paths and clip data remain untouched.
+    if (tasks[0]) await window.ReelsMediaAvailability?.preflightTask(tasks[0]);
+    if (options.loadId && options.loadId !== window._reelsTemplateLoadGeneration) return false;
 
     const id = 'tab_' + _batchTableState.nextTabId++;
     const cleanTplWatermarks = Array.isArray(restored.watermarks) && restored.watermarks.length > 0
@@ -2747,6 +2752,8 @@ window.reelsApplySealedTemplate = async function(tplData, options = {}) {
         _batchTableState.libraryFolderTotalCount = 0;
     }
 
+    window._reelsTemplateApplyActive = true;
+    try {
     _applyImportedTabsToState([sealedTab], {
         tabs: [sealedTab],
         activeTabId: sealedTab.id,
@@ -2766,6 +2773,10 @@ window.reelsApplySealedTemplate = async function(tplData, options = {}) {
     }
     window.reelsUpdateActiveFolderBar?.();
     if (_batchTableState.visible) _renderBatchTable();
+    } finally {
+        window._reelsTemplateApplyActive = false;
+    }
+    // Perform a single complete snapshot write after successful application.
     _batchAutoSave({ skipSync: true, skipLibrarySync: true, forceFullSerialize: true });
     return true;
 };
@@ -21211,6 +21222,8 @@ function _batchAutoSave(options = {}) {
     // Template viewers share Chromium storage with the editor. They may load
     // an older cached workspace, and must never become workspace writers.
     if(window.location?.hash?.startsWith('#template='))return true;
+    // Never overwrite the recovery snapshot with a half-loaded template.
+    if (window._reelsTemplateApplyActive) return true;
     try {
         // 模板封面截图会短暂把预览任务切换为单个队列。这段时间严禁
         // 把临时的 6 条任务反写到完整批量工程。
