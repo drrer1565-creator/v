@@ -17,6 +17,7 @@ const fs = require('fs');
 const { spawnSync } = require('child_process');
 const { Readable } = require('stream');
 const ffmpegService = require('./services/ffmpeg');
+const { ReelsMediaAvailability } = require('./services/reels-media-availability');
 const { initAutoUpdater } = require('./updater');
 
 const { assertTrustedRenderer, isTrustedRendererUrl } = require('./services/trustedRenderer');
@@ -31,6 +32,7 @@ const { registerAPIHandlers } = require('./apiRouter');
 const persistentPresetStore = require('./services/persistentPresetStore');
 const overlayPresetPackage = require('./services/overlayPresetPackage');
 const sharedProfile = require('./services/sharedProfile');
+const reelsMediaAvailability = new ReelsMediaAvailability({ resolvePath: p => sharedProfile.resolveSharedProfileFilePath(p) });
 const codeCacheGuard = require('./services/codeCacheGuard');
 
 ipcMain.on('profile:runtime-paths', (event) => {
@@ -2636,11 +2638,22 @@ app.whenReady().then(async () => {
         return packageReelsProject(payload);
     });
 
-    // IPC: 获取媒体时长
-    handleTrusted('get-media-duration', async (event, filePath) => {
+    // Template media checks must never synchronously scan folders in the renderer.
+    handleTrusted('reels-check-media-status', (_event, filePath, options = {}) =>
+        reelsMediaAvailability.check(filePath, { force: options?.force === true }));
+
+    // Skip FFprobe entirely for missing, inaccessible or timed-out media.
+    handleTrusted('get-media-duration', async (_event, filePath) => {
+        const probe = await reelsMediaAvailability.check(filePath);
+        if (probe.status !== 'available') return 0;
         return ffmpegService.getDuration(filePath);
     });
-    handleTrusted('get-media-duration-detail', async (event, filePath) => {
+    handleTrusted('get-media-duration-detail', async (_event, filePath) => {
+        const probe = await reelsMediaAvailability.check(filePath);
+        if (probe.status !== 'available') return {
+            ok: false, duration: null, code: probe.status === 'missing' ? 'NOT_FOUND' : 'ACCESS_FAILED',
+            reason: probe.status === 'missing' ? '背景文件不存在' : '媒体暂不可读取'
+        };
         return ffmpegService.getDurationDetailed(filePath);
     });
 
