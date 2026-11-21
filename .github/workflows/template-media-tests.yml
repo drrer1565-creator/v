@@ -16,6 +16,7 @@ on:
       - 'src/index.html'
       - 'tests/reels-media-availability.test.js'
       - 'tests/close-save-guard.test.js'
+      - 'tests/template-preview-segments.test.js'
       - '.github/workflows/template-media-tests.yml'
   workflow_dispatch:
 
@@ -43,4 +44,4 @@ jobs:
           node --check src/reels-preview-v2.js
           node --check src/reels-media-availability.js
       - name: Focused regression tests
-        run: node --test tests/reels-media-availability.test.js tests/close-save-guard.test.js
+        run: node --test tests/reels-media-availability.test.js tests/close-save-guard.test.js tests/template-preview-segments.test.js
