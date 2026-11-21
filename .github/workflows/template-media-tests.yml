@@ -45,8 +45,16 @@ jobs:
           node --check src/reels-media-availability.js
       - name: Focused regression tests
         run: node --test tests/reels-media-availability.test.js tests/close-save-guard.test.js tests/template-preview-segments.test.js
-      - name: Install application dependencies
-        run: npm ci --ignore-scripts
+      - name: Ensure FFmpeg and FFprobe are available for media regression tests
+        run: |
+          if ! command -v ffmpeg >/dev/null 2>&1 || ! command -v ffprobe >/dev/null 2>&1; then
+            sudo apt-get update
+            sudo apt-get install -y ffmpeg
+          fi
+          command -v ffmpeg
+          command -v ffprobe
+      - name: Install application dependencies (including Electron)
+        run: npm ci
       - name: Existing project regression suite
         run: npm test
       - name: Build frontend assets
