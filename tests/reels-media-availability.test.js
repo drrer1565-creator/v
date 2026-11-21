@@ -48,8 +48,11 @@ test('hung checks time out, no more than maxConcurrent underlying operations', a
     assert.ok(results.every(s => s.status === 'unavailable' && s.reason === 'timeout'));
     assert.equal(started, 2);
     assert.equal(fake.active, 2);
-    assert.deepEqual(await fake.check('/6.mp4'), await new Promise(resolve => {
-        // A saturated executor must remain bounded; third request is queued, never starts.
-        setTimeout(() => resolve({ status: 'queued' }), 5);
-    }).then(() => ({ status: 'unavailable', reason: 'busy' })));
+    // Three more checks may queue, but cannot start another stat call.
+    void fake.check('/3.mp4');
+    void fake.check('/4.mp4');
+    void fake.check('/5.mp4');
+    const busy = await fake.check('/6.mp4');
+    assert.deepEqual(busy, { status: 'unavailable', reason: 'busy' });
+    assert.equal(started, 2);
 });
