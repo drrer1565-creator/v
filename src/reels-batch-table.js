@@ -10833,7 +10833,7 @@ async function _batchPasteScrollFromSheet(targetId = null, targetIdx = null) {
 }
 
 // ═══════════════════════════════════════════════════════
-// Column visibility settings (per tab, saved to localStorage)
+// Column visibility settings (global user preference, saved to localStorage)
 // ═══════════════════════════════════════════════════════
 
 const _RBT_COLUMNS = [
@@ -10975,38 +10975,60 @@ function _installBatchColumnResize(container){
     _syncBatchColumnWidths(table);
 }
 
+// Column visibility is a user preference, independent of regenerated template/tab IDs.
 function _getColVisStorageKey() {
-    const tabId = _batchTableState.activeTabId || 'default';
-    return `rbt-col-vis-${tabId}`;
+    return 'rbt-column-visibility-global-v1';
+}
+
+function _readSavedColVisibility(key) {
+    try {
+        const value = JSON.parse(localStorage.getItem(key) || 'null');
+        if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+        const saved = {};
+        for (const col of _RBT_COLUMNS) {
+            if (typeof value[col.key] === 'boolean') saved[col.key] = value[col.key];
+        }
+        return Object.keys(saved).length ? saved : null;
+    } catch (_) { return null; }
 }
 
 function _getColVisibility() {
     const key = _getColVisStorageKey();
-    // 一次性迁移：将旧存储的列设置重置为全显示（版本号升级触发）
-    const RESET_VERSION = 'v5-column-unification';
-    const resetKey = key + '-reset-version';
-    if (localStorage.getItem(resetKey) !== RESET_VERSION) {
-        localStorage.removeItem(key);
-        localStorage.setItem(resetKey, RESET_VERSION);
+    let saved = _readSavedColVisibility(key);
+    if (!saved) {
+        // Preserve the current legacy tab first. A newly generated tab has no
+        // entry: recover a customized legacy layout before an all-visible one.
+        saved = _readSavedColVisibility('rbt-col-vis-' + (_batchTableState.activeTabId || 'default'));
+        if (!saved) {
+            const candidates = [];
+            try {
+                for (let i = 0; i < localStorage.length; i++) {
+                    const oldKey = localStorage.key(i);
+                    if (!oldKey?.startsWith('rbt-col-vis-') || oldKey.endsWith('-reset-version')) continue;
+                    const value = _readSavedColVisibility(oldKey);
+                    if (value) candidates.push(value);
+                }
+            } catch (_) { }
+            saved = candidates.find(value => Object.values(value).includes(false)) || candidates[0] || null;
+        }
+        // Do not persist defaults during startup; a legacy tab may become
+        // available later in restoration. Never delete legacy preferences.
+        if (saved) _saveColVisibility(saved);
     }
-    const saved = localStorage.getItem(key);
-    // 始终以 _RBT_COLUMNS 的 default 为基准，合并已保存的设置
     const vis = {};
-    for (const col of _RBT_COLUMNS) vis[col.key] = col.default;
-    if (saved) {
-        try {
-            const parsed = JSON.parse(saved);
-            for (const col of _RBT_COLUMNS) {
-                if (col.key in parsed) vis[col.key] = parsed[col.key];
-            }
-        } catch (e) { }
+    for (const col of _RBT_COLUMNS) {
+        vis[col.key] = saved && typeof saved[col.key] === 'boolean' ? saved[col.key] : col.default;
     }
     return vis;
 }
 
 function _saveColVisibility(vis) {
-    const key = _getColVisStorageKey();
-    localStorage.setItem(key, JSON.stringify(vis));
+    try {
+        localStorage.setItem(_getColVisStorageKey(), JSON.stringify(vis));
+    } catch (error) {
+        console.warn('[BatchTable] Could not save column visibility:', error);
+        if (typeof showToast === 'function') showToast('列显示设置保存失败，请检查本地存储空间', 'warning');
+    }
 }
 
 /** 点击 AI 按钮时自动显示 TTS 相关列 */
