@@ -35,7 +35,8 @@
             if (!result || !['available', 'missing', 'unavailable', 'failed'].includes(result.status))
                 result = { status: 'failed', reason: 'invalid-result' };
             if (serial === generation) {
-                const old = get(path).status;
+                // Compare with the last observation even when its TTL has expired.
+                const old = records.get(path)?.result.status;
                 records.set(path, { result, expiry: Date.now() + (TTL[result.status] || 4000) });
                 if (records.size > 1000) records.delete(records.keys().next().value);
                 if (old !== result.status) window.dispatchEvent(new CustomEvent('reels-media-availability-changed', { detail: { path, status: result.status } }));

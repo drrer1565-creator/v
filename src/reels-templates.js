@@ -2972,48 +2972,26 @@ function _bindFolderCards(st, modal, container) {
 }
 
 let _tplInlineEditing = null;
-function _editNameInPlace(title, save) {
-    if (_tplInlineEditing) { _tplInlineEditing.focus(); return; }
-    _tplInlineEditing = title;
-    const original = title.textContent, oldStyle = title.getAttribute('style');
-    const card = title.closest('.tpl-card,.tpl-folder-card'), wasDraggable = card?.getAttribute('draggable');
-    if (card) card.draggable = false;
-    title.contentEditable = 'plaintext-only'; title.spellcheck = false;
-    title.setAttribute('role', 'textbox'); title.setAttribute('aria-label', '修改名称');
-    Object.assign(title.style, { cursor: 'text', outline: '1px solid #8999e8', borderRadius: '4px', background: '#6366f11a', minHeight: '1.5em', userSelect: 'text' });
-    let done = false;
-    const stop = event => event.stopPropagation();
-    const clean = () => {
-        title.removeAttribute('contenteditable'); title.removeAttribute('role'); title.removeAttribute('aria-label');
-        if (oldStyle === null) title.removeAttribute('style'); else title.setAttribute('style', oldStyle);
-        if (card) { if (wasDraggable === null) card.removeAttribute('draggable'); else card.setAttribute('draggable', wasDraggable); }
-        title.removeEventListener('blur', blur); title.removeEventListener('keydown', key);
-        for (const type of ['click', 'dblclick', 'mousedown', 'dragstart']) title.removeEventListener(type, stop);
-        _tplInlineEditing = null;
-    };
-    const finish = async cancel => {
-        if (done) return;
-        done = true;
-        const name = title.textContent.replace(/[\r\n]+/g, ' ').trim();
-        clean();
-        if (cancel || !name || name === original) { title.textContent = original; return; }
-        if (name.length > 200) { title.textContent = original; showToast?.('名称最多200字', 'warning'); return; }
-        title.textContent = name;
-        try { await save(name); } catch (error) { title.textContent = original; showToast?.('重命名失败：' + error.message, 'error'); }
-    };
-    const blur = () => finish(false);
-    const key = event => {
-        event.stopPropagation();
-        if (event.isComposing) return;
-        if (event.key === 'Enter') { event.preventDefault(); finish(false); }
-        else if (event.key === 'Escape') { event.preventDefault(); finish(true); }
-    };
-    title.addEventListener('blur', blur);
-    title.addEventListener('keydown', key);
-    for (const type of ['click', 'dblclick', 'mousedown', 'dragstart']) title.addEventListener(type, stop);
-    title.focus();
-    const range = document.createRange(); range.selectNodeContents(title); range.collapse(false);
-    const selection = window.getSelection(); selection.removeAllRanges(); selection.addRange(range);
+async function _editNameInPlace(title, save) {
+    // A real input outside the draggable card avoids Chromium contenteditable
+    // focus failures and survives a library refresh while the dialog is open.
+    if (_tplInlineEditing?.isConnected) { _tplInlineEditing.focus(); return; }
+    _tplInlineEditing = null;
+    const original = title.textContent;
+    const pending = _showInputDialog('重命名', '输入新名称', original);
+    const input = document.getElementById('_input_dialog_val');
+    _tplInlineEditing = input;
+    try {
+        const value = await pending;
+        const name = String(value || '').replace(/[\r\n]+/g, ' ').trim();
+        if (!name || name === original) return;
+        if (name.length > 200) { showToast?.('名称最多200字', 'warning'); return; }
+        await save(name);
+    } catch (error) {
+        showToast?.('重命名失败：' + error.message, 'error');
+    } finally {
+        if (_tplInlineEditing === input) _tplInlineEditing = null;
+    }
 }
 
 function _paintLibrarySelection(st) {
