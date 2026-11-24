@@ -7105,7 +7105,7 @@ window.addEventListener('reels-media-availability-changed', event => {
     _reelsMediaStatusRefreshTimer = setTimeout(() => {
         _reelsMediaStatusRefreshTimer = null;
         if (window._reelsState?.tasks?.[window._reelsState?.selectedIdx] !== task) return;
-        reelsSelectTask(window._reelsState.selectedIdx, { preserveScroll: true });
+        reelsSelectTask(window._reelsState.selectedIdx, { preserveScroll: true, preserveOverlaySelection: true });
     }, 80);
 });
 
@@ -11587,6 +11587,8 @@ async function _preFetchTaskMediaDurations(task) {
 }
 
 function reelsSelectTask(idx, options = {}) {
+    const selectedOverlayId = options.preserveOverlaySelection
+        ? _reelsState.overlayPanel?._selectedOv?.id : null;
     // ── 保存当前任务的覆层 ──
     _flushAllPendingReelsEdits();
     const prevTask = _reelsState.tasks[_reelsState.selectedIdx];
@@ -11647,6 +11649,10 @@ function reelsSelectTask(idx, options = {}) {
         if (_reelsState.overlayPanel) {
             _reelsState.overlayPanel.deselectOverlay();
             _reelsState.overlayPanel._refreshList();
+            if (selectedOverlayId) {
+                const selected = mgr.overlays.find(ov => ov.id === selectedOverlayId);
+                if (selected) _reelsState.overlayPanel.selectOverlay(selected);
+            }
         }
         if (_reelsState.decorPanel && typeof _reelsState.decorPanel.refresh === 'function') {
             _reelsState.decorPanel.refresh();

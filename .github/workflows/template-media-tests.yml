@@ -15,6 +15,7 @@ on:
       - 'src/reels-templates.js'
       - 'src/index.html'
       - 'tests/reels-media-availability.test.js'
+      - 'tests/reels-edit-align-isolation.test.js'
       - 'tests/close-save-guard.test.js'
       - 'tests/template-preview-segments.test.js'
       - '.github/workflows/template-media-tests.yml'
@@ -44,7 +45,7 @@ jobs:
           node --check src/reels-preview-v2.js
           node --check src/reels-media-availability.js
       - name: Focused regression tests
-        run: node --test tests/reels-media-availability.test.js tests/close-save-guard.test.js tests/template-preview-segments.test.js
+        run: node --test tests/reels-edit-align-isolation.test.js tests/reels-media-availability.test.js tests/close-save-guard.test.js tests/template-preview-segments.test.js
       - name: Ensure FFmpeg and FFprobe are available for media regression tests
         run: |
           if ! command -v ffmpeg >/dev/null 2>&1 || ! command -v ffprobe >/dev/null 2>&1; then

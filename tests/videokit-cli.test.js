@@ -49,7 +49,14 @@ test('A2 & A8: Single-task render (image + inline segments) and ASS structure ve
         assert.match(ass, /\\pos\(360,666\)/);
         assert.match(ass, /\{\\kf\d+\\1c&H0000D7FF\}/);
         assert.match(ass, /Style: Credit,Anton,/);
-        assert.match(ass, /Dialogue: 10,0:00:00\.00,0:00:03\.00,Credit,,0,0,0,,AI Created/);
+        // MP3 probe duration includes encoder padding (e.g. 3.03s). The
+        // attribution must cover the planned output, not a hardcoded 3s.
+        const credit = ass.match(/^Dialogue: 10,([^,]+),([^,]+),Credit,,0,0,0,,AI Created$/m);
+        assert.ok(credit, 'Expected attribution cue');
+        const seconds = value => value.split(':').reduce((total, part) => total * 60 + Number(part), 0);
+        assert.equal(seconds(credit[1]), 0);
+        assert.ok(Math.abs(seconds(credit[2]) - plan.targetDuration) <= 0.011,
+            `Attribution should cover planned duration ${plan.targetDuration}s`);
 
         // Render MP4 (A2)
         const res = runCliProcess(['reels', '--task', taskPath, '--output', outMp4, '--quality', 'low']);

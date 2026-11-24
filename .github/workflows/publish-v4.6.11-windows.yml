@@ -1,0 +1,208 @@
+name: Publish VideoKit v4.6.11 Windows
+
+on:
+  push:
+    branches:
+      - release/v4.6.11
+
+permissions:
+  contents: read
+
+concurrency:
+  group: videokit-v4.6.11-windows
+  cancel-in-progress: false
+
+env:
+  PYTHON_EMBED_VERSION: '3.11.9'
+
+jobs:
+  build-windows:
+    name: 🪟 Windows (x64)
+    runs-on: windows-latest
+    
+    steps:
+      - name: 📥 检出代码
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      
+      - name: 📦 设置 Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+      
+      - name: 🐍 下载 Python Embedded
+        shell: pwsh
+        run: |
+          $pythonUrl = "https://www.python.org/ftp/python/${{ env.PYTHON_EMBED_VERSION }}/python-${{ env.PYTHON_EMBED_VERSION }}-embed-amd64.zip"
+          $pythonZip = "python-embed.zip"
+          
+          Write-Host "📥 下载 Python Embedded from $pythonUrl"
+          Invoke-WebRequest -Uri $pythonUrl -OutFile $pythonZip
+          
+          # 创建目录并解压
+          New-Item -ItemType Directory -Force -Path "vendor/windows/python"
+          Expand-Archive -Path $pythonZip -DestinationPath "vendor/windows/python" -Force
+          Remove-Item $pythonZip
+          
+          # 修改 python311._pth 启用 site-packages
+          $pthFile = "vendor/windows/python/python311._pth"
+          @"
+          python311.zip
+          .
+          Lib/site-packages
+          import site
+          "@ | Set-Content $pthFile -Encoding UTF8
+          
+          Write-Host "📄 python311._pth 内容:"
+          Get-Content $pthFile
+          
+          # 下载 get-pip.py 并直接解压内置 pip 到 site-packages（规避 pip 26.3 在 Windows 下 get-pip.py 自修改拦截报错）
+          Write-Host "📥 下载 get-pip.py"
+          Invoke-WebRequest -Uri "https://bootstrap.pypa.io/get-pip.py" -OutFile "vendor/windows/python/get-pip.py"
+          
+          # 创建 site-packages 目录
+          New-Item -ItemType Directory -Force -Path "vendor/windows/python/Lib/site-packages"
+          
+          # 解压 get-pip.py 内置的 pip 到 Lib/site-packages
+          Write-Host "🔧 安装 pip 到 Lib/site-packages"
+          $gpContent = Get-Content "vendor/windows/python/get-pip.py" -Raw
+          $gpContent = $gpContent.Replace("pip_zip.extractall(tmpdir)", "pip_zip.extractall('vendor/windows/python/Lib/site-packages')")
+          $gpContent = $gpContent.Replace("bootstrap(tmpdir=tmpdir)", "print('pip extracted to site-packages OK')")
+          Set-Content "vendor/windows/python/get-pip.py" -Value $gpContent -Encoding UTF8
+          & "vendor/windows/python/python.exe" "vendor/windows/python/get-pip.py"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Remove-Item "vendor/windows/python/get-pip.py" -Force -ErrorAction SilentlyContinue
+          & "vendor/windows/python/python.exe" -m pip --version
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          
+          # 安装依赖到 site-packages
+          Write-Host "🔧 安装 Python 依赖"
+          & "vendor/windows/python/python.exe" -m pip install -r requirements-edge.txt yt-dlp requests --target "vendor/windows/python/Lib/site-packages" --no-warn-script-location
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          
+          # 验证依赖安装
+          Write-Host "🔍 验证 Edge TTS 与 yt-dlp 安装:"
+          & "vendor/windows/python/python.exe" -c "import edge_tts, yt_dlp; print('Edge TTS runtime OK')"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          
+          Write-Host "✅ Python Embedded 安装完成"
+          dir "vendor/windows/python"
+          dir "vendor/windows/python/Lib/site-packages"
+      
+      - name: 📥 下载 FFmpeg (Windows)
+        shell: pwsh
+        run: |
+          $ffmpegUrl = "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip"
+          $ffmpegZip = "ffmpeg.zip"
+          
+          Write-Host "📥 下载 FFmpeg from $ffmpegUrl"
+          Invoke-WebRequest -Uri $ffmpegUrl -OutFile $ffmpegZip
+          
+          # 解压到临时目录
+          Expand-Archive -Path $ffmpegZip -DestinationPath "ffmpeg-temp" -Force
+          
+          # 创建目标目录并移动文件
+          New-Item -ItemType Directory -Force -Path "vendor/windows/ffmpeg/bin"
+          
+          # 找到解压后的目录（名称可能包含版本号）
+          $extractedDir = Get-ChildItem -Path "ffmpeg-temp" -Directory | Select-Object -First 1
+          Copy-Item "$($extractedDir.FullName)/bin/ffmpeg.exe" "vendor/windows/ffmpeg/bin/"
+          Copy-Item "$($extractedDir.FullName)/bin/ffprobe.exe" "vendor/windows/ffmpeg/bin/"
+          Copy-Item "$($extractedDir.FullName)/LICENSE.txt" "vendor/windows/ffmpeg/" -ErrorAction Stop
+          
+          # 清理
+          Remove-Item $ffmpegZip
+          Remove-Item -Recurse -Force "ffmpeg-temp"
+          
+          Write-Host "✅ FFmpeg 安装完成"
+          dir "vendor/windows/ffmpeg/bin"
+      
+      - name: 🔧 安装 Node 依赖
+        run: npm ci
+      
+      - name: Test compatibility and security
+        run: |
+          node scripts/check-security-boundaries.cjs
+          node scripts/check-safe-extract.cjs
+          node scripts/check-batch-preview-follow.cjs
+          node scripts/check-scroll-preset-duration.cjs
+          node scripts/check-queue-features.cjs
+          node scripts/check-edge-tts.cjs
+      - name: Run complete regression suite
+        run: npm test
+      - name: 🏗️ 构建前端
+        run: npm run build
+      
+      - name: 📦 打包 Windows x64
+        run: npx electron-builder --win --x64 --publish never
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      
+      - name: Include release notes
+        shell: pwsh
+        run: Copy-Item docs/RELEASE_4.6.11.md dist-electron/RELEASE_NOTES.md
+      - name: 📤 上传 Windows 产物
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: windows-builds
+          path: |
+            dist-electron/*.zip
+            dist-electron/*.exe
+            dist-electron/*.yml
+            dist-electron/RELEASE_NOTES.md
+            dist-electron/*.blockmap
+          retention-days: 30
+
+  publish-release:
+    name: Publish Windows installation and portable ZIP
+    needs: [build-windows]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Fetch release notes
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Download verified Windows build artifacts
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: windows-builds
+          path: release-files
+      - name: Verify installers, portable ZIP and declared package version
+        shell: bash
+        run: |
+          shopt -s nullglob
+          exe=(release-files/*.exe)
+          zip=(release-files/*.zip)
+          if [ "${#exe[@]}" -lt 1 ] || [ "${#zip[@]}" -lt 1 ]; then
+            echo "Windows installer or portable ZIP missing from artifacts" >&2
+            exit 1
+          fi
+          grep -q '"version": "4.6.11"' package.json
+          for file in "${exe[@]}" "${zip[@]}"; do
+            test -s "$file"
+            echo "OK: $file"
+          done
+      - name: Generate checksums
+        shell: bash
+        run: |
+          (cd release-files && sha256sum *.exe *.zip > SHA256SUMS.txt)
+      - name: Publish GitHub Release with downloadable Windows binaries
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
+        with:
+          tag_name: v4.6.11
+          target_commitish: ${{ github.sha }}
+          name: VideoKit v4.6.11 — Fix Template Rename and Tab Alignment
+          draft: false
+          prerelease: false
+          make_latest: true
+          generate_release_notes: false
+          body_path: release-files/RELEASE_NOTES.md
+          files: |
+            release-files/*.exe
+            release-files/*.zip
+            release-files/*.yml
+            release-files/*.blockmap
+            release-files/SHA256SUMS.txt
+          fail_on_unmatched_files: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
